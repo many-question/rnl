@@ -1,0 +1,20 @@
+version = 1
+
+# Default for everything not matched below: code, configuration, and the
+# repository README files.
+[[annotations]]
+path = "**"
+SPDX-FileCopyrightText = "2026 many-question"
+SPDX-License-Identifier = "MIT"
+
+# Specification text and project documentation.
+[[annotations]]
+path = ["spec/**", "docs/**"]
+SPDX-FileCopyrightText = "2026 many-question"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+# Data: standard libraries, test corpora, and examples.
+[[annotations]]
+path = ["libraries/**", "tests/**", "examples/**"]
+SPDX-FileCopyrightText = "2026 many-question"
+SPDX-License-Identifier = "CC0-1.0"

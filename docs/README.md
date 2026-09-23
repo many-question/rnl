@@ -1,7 +1,8 @@
 # Documentation map
 
-- [Architecture baseline](architecture-baseline.md) records the agreed repository and module direction without claiming an implementation.
+- [Toolchain architecture](rnl-toolchain-architecture.md) (in Chinese) is the proposal for the runtime, solver, viewer/editor, repository layout, and distribution. It records requirements and recommendations, not an implemented system.
 - [Roadmap](roadmap.md) is the single list of completed bootstrap work and future milestones.
-- [`../spec/`](../spec/README.md) will hold language documents after their ownership and migration are settled.
+- [Decision records](decisions/README.md) log settled project decisions, one file per decision.
+- [`../spec/`](../spec/README.md) holds the RNL language drafts.
 
-The source architecture proposal and language drafts currently remain in `D:\repositories\analog-canvas\docs\standards\`. See the architecture baseline for their names and status. This repository does not copy or relicense them in its first commit.
+The architecture proposal and the two language drafts were migrated from Analog Canvas on 2026-09-24; each file names its source commit at the top. This repository is now their only maintained location, as recorded in [decision 0001](decisions/0001-canonical-rnl-documents.md).

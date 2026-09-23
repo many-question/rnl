@@ -5,9 +5,13 @@ This is the central TODO list. A checked box means work present in this reposito
 ## Bootstrap
 
 - [x] Create the independent directory map and documentation entry points.
-- [x] Record the architecture baseline and draft provenance without copying source material.
-- [ ] Decide the independent project's license and contribution terms.
-- [ ] Agree on ownership, provenance, and migration of the language drafts into `spec/`.
+- [x] Migrate the principles draft, syntax draft 0.1-draft.2, and toolchain architecture proposal from Analog Canvas with provenance ([decision 0001](decisions/0001-canonical-rnl-documents.md)).
+- [x] Start the decision record log.
+- [x] Confirm that the migrated documents belong to the maintainer's personal project and can be relicensed here.
+- [x] Decide the licenses for code, specification text, and data ([decision 0002](decisions/0002-licenses.md)).
+- [x] Reserve the npm organization scope `@rich-netlist` ([decision 0003](decisions/0003-npm-scope.md)).
+- [x] Decide the contribution terms ([decision 0004](decisions/0004-contribution-terms.md), [CONTRIBUTING.md](../CONTRIBUTING.md)).
+- [ ] Replace the Analog Canvas copies with pointers once this repository is public; until then they are marked migrated and frozen.
 
 ## Toolchain foundation
 
@@ -32,4 +36,5 @@ This is the central TODO list. A checked box means work present in this reposito
 ## Release
 
 - [ ] Define package compatibility and publication policy after the first working end-to-end path.
+- [ ] Claim crate names with the first real crate release.
 - [ ] Establish platform builds, performance baselines, documentation, and release checks.
