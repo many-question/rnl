@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title><zh>RNL 富网表</zh><en>RNL · Rich Netlist</en></title>
-<meta name="description" content="<zh>RNL（Rich Netlist，富网表）项目介绍：把原理图的理解与画法写进网表注释，让同一份网表既能仿真，也能画成原理图。</zh>
-  <en>An introduction to RNL (Rich Netlist): it writes how a schematic should be understood and drawn into netlist comments, so the same netlist can be simulated and drawn as a schematic.</en>">
+<title>Rich Netlist (RNL)</title>
+<meta name="description" content="<zh>Rich Netlist（RNL）项目介绍：把原理图的理解与画法写进网表注释，让同一份网表既能仿真，也能画成原理图。</zh>
+  <en>An introduction to Rich Netlist (RNL): it writes how a schematic should be understood and drawn into netlist comments, so the same netlist can be simulated and drawn as a schematic.</en>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&<zh>family=Noto+Sans+SC:wght@400;500;700;900</zh><en>family=IBM+Plex+Sans:wght@400;500;600;700</en>&display=swap">
@@ -69,7 +69,7 @@
 
 <header class="topbar">
   <div class="wrap topbar-in">
-    <a class="brand" href="#top"><span class="brand-mark">RNL</span><span class="brand-sub"><zh>富网表</zh><en>Rich Netlist</en></span></a>
+    <a class="brand" href="#top"><span class="brand-mark">RNL</span><span class="brand-sub">Rich Netlist</span></a>
     <nav class="toc" id="toc" aria-label="<zh>章节</zh><en>Sections</en>">
       <a href="#what"><zh>是什么</zh><en>What</en></a>
       <a href="#why"><zh>为什么</zh><en>Why</en></a>
@@ -95,7 +95,7 @@
   <div class="wrap">
     <div class="hero-grid">
       <div class="hero-copy">
-        <p class="eyebrow"><span><zh>RICH NETLIST · 富网表</zh><en>RICH NETLIST</en></span><span class="chip chip-warn"><zh>原型阶段 · 语法未定稿</zh><en>Prototype · syntax not final</en></span></p>
+        <p class="eyebrow"><span>RICH NETLIST</span><span class="chip chip-warn"><zh>原型阶段 · 语法未定稿</zh><en>Prototype · syntax not final</en></span></p>
         <h1 id="hero-title"><span class="wordmark">RNL</span></h1>
         <p class="thesis"><zh>让一份网表既能仿真，也能画成原理图。</zh><en>A netlist you can simulate and also draw as a schematic.</en></p>
         <p class="lead"><zh>RNL 把“这个电路该怎么理解、怎么画”写进网表的注释里。仿真器照常把它当注释跳过；支持 RNL 的工具读它，画出整洁的原理图。</zh>
@@ -106,7 +106,7 @@
         </div>
       </div>
       <dl class="titleblock" aria-label="<zh>项目信息</zh><en>Project facts</en>">
-        <div class="tb-main"><dt><zh>项目</zh><en>Project</en></dt><dd>RNL · Rich Netlist</dd></div>
+        <div class="tb-main"><dt><zh>项目</zh><en>Project</en></dt><dd>Rich Netlist (RNL)</dd></div>
         <div><dt><zh>是什么</zh><en>What</en></dt><dd><zh>附着在网表上的元数据扩展</zh><en>A metadata extension attached to netlists</en></dd></div>
         <div><dt><zh>宿主</zh><en>Hosts</en></dt><dd><zh>SPICE、Spectre 等网表，写在注释里</zh><en>SPICE, Spectre and other netlists, inside comments</en></dd></div>
         <div><dt><zh>阶段</zh><en>Stage</en></dt><dd><zh>原型；语言标准逐条讨论中</zh><en>Prototype; the language is being settled topic by topic</en></dd></div>
@@ -197,8 +197,8 @@
       <p class="sheet-no"><zh>01 · 是什么</zh><en>01 · What</en></p>
       <h2><zh>网表定义电路，<span class="mk">RNL 描述怎样理解和呈现它。</span></zh>
         <en>The netlist defines the circuit. <span class="mk">RNL describes how to understand and present it.</span></en></h2>
-      <p class="lead"><zh>RNL（Rich Netlist，富网表）不是一种新的网表格式。它是写在现有网表注释里的一层描述：这些器件构成什么结构，设计者希望怎么摆，图上怎么画。</zh>
-        <en>RNL (Rich Netlist) is not a new netlist format. It is a layer of description written in the comments of existing netlists: which structures the devices form, how the designer wants them placed, and how the drawing should look.</en></p>
+      <p class="lead"><zh>Rich Netlist（RNL）不是一种新的网表格式。它是写在现有网表注释里的一层描述：这些器件构成什么结构，设计者希望怎么摆，图上怎么画。</zh>
+        <en>Rich Netlist (RNL) is not a new netlist format. It is a layer of description written in the comments of existing netlists: which structures the devices form, how the designer wants them placed, and how the drawing should look.</en></p>
     </header>
 
     <blockquote class="motto">
@@ -1115,8 +1115,8 @@ M5 tail vbias vss vss nch W=4u L=1u"></div><p class="bubble-note"><zh>网表写�
   <div class="wrap foot-grid">
     <div>
       <span class="brand-mark">RNL</span>
-      <p><zh>Rich Netlist · 富网表。本页用于介绍项目：语法均为当前讨论稿的示意，不是已发布的格式；图中的坐标由本页手工排布，符号由本页自绘。</zh>
-        <en>Rich Netlist. This page introduces the project: all syntax is illustrative, taken from the current discussion draft, not a published format; the coordinates in the drawings were placed by hand and the symbols were drawn for this page.</en></p>
+      <p><zh>Rich Netlist（RNL）。本页用于介绍项目：语法均为当前讨论稿的示意，不是已发布的格式；图中的坐标由本页手工排布，符号由本页自绘。</zh>
+        <en>Rich Netlist (RNL). This page introduces the project: all syntax is illustrative, taken from the current discussion draft, not a published format; the coordinates in the drawings were placed by hand and the symbols were drawn for this page.</en></p>
     </div>
     <div>
       <h4><zh>资料来源</zh><en>Sources</en></h4>
