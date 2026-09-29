@@ -1,8 +1,9 @@
-/* RNL 介绍页 · 原理图小渲染器
+/* RNL introduction page · small schematic renderer
  *
- * 只为本页演示而写：符号是本页自绘的教科书画法，与原型或 analog-canvas 的符号库无关。
- * 坐标以网格为单位，x 向右、y 向下（与 RNL 草案的约定一致）。
- * 姿态码沿用讨论稿：R0 R90 R180 R270 MX MY MXR90 MYR90。
+ * Written only for this page's demos: the symbols are textbook drawings made for this page and have
+ * nothing to do with the symbol libraries of the prototype or analog-canvas.
+ * Coordinates are in grid units, x to the right and y downward (the RNL draft's convention).
+ * Orientation codes follow the discussion draft: R0 R90 R180 R270 MX MY MXR90 MYR90.
  */
 (function (global) {
   'use strict';
@@ -32,7 +33,7 @@
     return pts.map(function (p) { return r3(p[0]) + ',' + r3(p[1]); }).join(' ');
   }
 
-  /* 姿态：变换 = 平移 · 水平缩放(sx) · 旋转(rot)。R90 把 (x, y) 变成 (−y, x)。 */
+  /* Orientation: transform = translate · horizontal scale (sx) · rotate (rot). R90 maps (x, y) to (−y, x). */
   var ORIENT = {
     R0: { rot: 0, sx: 1 }, R90: { rot: 90, sx: 1 }, R180: { rot: 180, sx: 1 }, R270: { rot: 270, sx: 1 },
     MY: { rot: 0, sx: -1 }, MX: { rot: 180, sx: -1 }, MYR90: { rot: 90, sx: -1 }, MXR90: { rot: 270, sx: -1 }
@@ -53,7 +54,7 @@
     return 'translate(' + r3(st.x) + ' ' + r3(st.y) + ') scale(' + r3(st.sx) + ' 1) rotate(' + r3(st.rot) + ')';
   }
 
-  /* ---------- 符号 ---------- */
+  /* ---------- Symbols ---------- */
 
   var MOS_BODY = [
     ['line', [[-3, 0], [-1.2, 0]]],
@@ -138,7 +139,7 @@
       prims: [['line', [[0, 0], [-1.1, 0]]], ['circle', [-1.5, 0], 0.4]],
       label: [-2.3, 0]
     },
-    /* 子电路 ota5t 的 block symbol：引脚落在三角形的边上（与例子里的 @SYMBOL 定义一致） */
+    /* Block symbol for subcircuit ota5t: the pins sit on the triangle's edges (matching the @SYMBOL definition in the example) */
     block: {
       pins: { inp: [-5, -2], inn: [-5, 2], out: [5, 0], vdd: [-1, -3], vss: [1, 2], vbias: [-3, 4] },
       box: [-5, -5, 5, 5],
@@ -166,7 +167,7 @@
     return 'middle';
   }
 
-  /* ---------- 动画 ---------- */
+  /* ---------- Animation ---------- */
 
   function ease(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
   function lerp(a, b, t) { return a + (b - a) * t; }
@@ -175,7 +176,7 @@
     return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), rot: a.rot + dr * t, sx: lerp(a.sx, b.sx, t) };
   }
 
-  /* 下一帧执行；页面暂不绘制（requestAnimationFrame 被挂起）时用计时器兜底，保证最终状态总能到达 */
+  /* Run on the next frame; when the page is not painting (requestAnimationFrame suspended), a timer takes over so the final state is always reached */
   function nextFrame(fn) {
     var ran = false;
     function run() { if (!ran) { ran = true; fn(); } }
@@ -226,7 +227,7 @@
     }, delay || 0);
   }
 
-  /* ---------- 线段交叉（用于统计交叉点） ---------- */
+  /* ---------- Segment intersections (for counting crossings) ---------- */
 
   function orient(a, b, c) { return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]); }
   function onSeg(a, b, p) {
@@ -244,7 +245,7 @@
     return (o1 > 0) !== (o2 > 0) && (o3 > 0) !== (o4 > 0);
   }
 
-  /* ---------- 视图 ---------- */
+  /* ---------- View ---------- */
 
   function View(svg, opts) {
     opts = opts || {};
@@ -456,7 +457,7 @@
     }
   };
 
-  /* ---------- 批注层 ---------- */
+  /* ---------- Annotation layer ---------- */
 
   function arrowHead(g, a, b, size) {
     var dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1;
@@ -470,9 +471,9 @@
   function textBox(g, x, y, text, anchor, mono) {
     var fs = mono ? 0.95 : 1;
     var w = text.length * fs * (mono ? 0.6 : 0.62) + 0.5;
-    var cjk = /[　-鿿]/.test(text);
+    var cjk = /[\u3000-\u9fff]/.test(text);
     if (cjk) w = 0;
-    for (var i = 0; cjk && i < text.length; i++) w += /[　-鿿＀-￯]/.test(text[i]) ? fs * 1.0 : fs * 0.58;
+    for (var i = 0; cjk && i < text.length; i++) w += /[\u3000-\u9fff\uff00-\uffef]/.test(text[i]) ? fs * 1.0 : fs * 0.58;
     if (cjk) w += 0.5;
     var x0 = anchor === 'end' ? x - w + 0.25 : anchor === 'middle' ? x - w / 2 : x - 0.25;
     el('rect', { class: 'o-bg', x: r3(x0), y: r3(y - 0.72), width: r3(w), height: 1.44, rx: 0.3 }, g);
@@ -507,7 +508,7 @@
       arrowHead(g, sp.pts[n - 2], sp.pts[n - 1], sp.head);
       if (sp.label) textBox(g, sp.labelAt[0], sp.labelAt[1], sp.label, sp.anchor || 'start', sp.mono);
     } else if (k === 'ticks') {
-      /* 等长标记：在两段上各画一道短竖线，旁边写长度 */
+      /* Equal-length marks: a short tick on each of the two segments, with the length beside it */
       var y = sp.y;
       sp.segs.forEach(function (s, i) {
         var m = (s[0] + s[1]) / 2;
@@ -614,7 +615,7 @@
     });
   };
 
-  /* 只重算批注（比如切换了显示模式） */
+  /* Recompute only the annotations (for example after switching the display mode) */
   View.prototype.refresh = function () {
     if (this.scene) this._overlays();
   };
@@ -632,7 +633,7 @@
     var all = [];
     (refs || []).forEach(function (r) {
       all.push(r);
-      /* 器件的批注（如坐标标签）随器件一起高亮 */
+      /* A device's annotations (such as coordinate tags) highlight together with the device */
       if (r.indexOf(':') < 0) all.push('ov:' + r);
     });
     all.forEach(function (r) {

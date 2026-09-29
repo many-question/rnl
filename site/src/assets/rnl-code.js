@@ -1,8 +1,10 @@
-/* RNL 介绍页 · 代码着色与代码面板
+/* RNL introduction page · code highlighting and code panels
  *
- * 只做显示用的着色，不是解析器：宿主网表行、普通注释行、@RNL 记录（可跨行）分别处理。
- * 记录内部按当前讨论稿的记号着色：#实例 &网络 %本层对象 $定义 ?空位 <点>，
- * 关键字 @XX 及其参数，紧跟对象的 (角色)，其余是说明文字。
+ * Display-only highlighting, not a parser: host netlist lines, ordinary comment lines and @RNL
+ * records (which may span lines) are handled separately.
+ * Inside a record, tokens are colored by the current draft's notation: #instance &net %local-object
+ * $definition ?slot <point>, keywords @XX and their parameters, a (role) right after an object;
+ * everything else is free text.
  */
 (function (global) {
   'use strict';
@@ -12,7 +14,7 @@
   }
   function span(cls, s) { return '<span class="' + cls + '">' + esc(s) + '</span>'; }
 
-  /* ---------- 宿主网表（SPICE 结构子集） ---------- */
+  /* ---------- Host netlist (a structural subset of SPICE) ---------- */
 
   function hlSpiceRest(rest) {
     return rest.replace(/(\s+)|([A-Za-z_]\w*)=(\{[^}]*\}|\S+)|(\S+)/g, function (all, ws, pn, pv, tok) {
@@ -30,7 +32,7 @@
     return esc(m[1]) + head + hlSpiceRest(m[3]);
   }
 
-  /* ---------- RNL 记录 ---------- */
+  /* ---------- RNL records ---------- */
 
   var RE = {
     ws: /\s+/y,
@@ -128,7 +130,7 @@
       if (c === ';' || c === '|' || c === '=') { out += span('t-punct', c); i++; lastRef = false; continue; }
       if (c === ',') { out += span(inParams ? 't-punct' : 't-free', c); i++; continue; }
       if (/[-+.\d]/.test(c) && (m = at(RE.num, s, i))) {
-        /* 数字后紧跟字母（如 2O）不是合法的数：标出来 */
+        /* A number followed directly by a letter (such as 2O) is not a valid number: flag it */
         var glued = inParams && /[A-Za-z_]/.test(s.charAt(i + m.length));
         out += span(glued ? 't-bad' : inParams ? 't-num' : 't-free', m); i += m.length; lastRef = false; continue;
       }
@@ -149,7 +151,7 @@
     return out;
   }
 
-  /* 整个文件：返回每行的 HTML 与种类 */
+  /* Whole file: returns each line's HTML and kind */
   function hlFile(texts) {
     var st = new State();
     return texts.map(function (text) {
@@ -163,14 +165,14 @@
     });
   }
 
-  /* 记录内部的片段（不带宿主前缀），用于行内示例 */
+  /* A fragment inside a record (without the host prefix), for inline examples */
   function hlSnippet(text) {
     var st = new State();
     st.inRec = true; st.opened = true; st.depth = 1;
     return hlRnl(text, st);
   }
 
-  /* ---------- 代码面板 ---------- */
+  /* ---------- Code panels ---------- */
 
   function render(container, lines, opts) {
     opts = opts || {};
@@ -186,7 +188,7 @@
     return Array.prototype.slice.call(container.querySelectorAll('.cl'));
   }
 
-  /* 代码行与图互相高亮：悬停某行高亮它引用的对象；悬停图里的对象，标出引用它的行 */
+  /* Cross-highlighting between code lines and the drawing: hovering a line highlights the objects it references; hovering an object in the drawing marks the lines that reference it */
   function link(container, lines, view, opts) {
     opts = opts || {};
     var current = -1;
@@ -222,7 +224,7 @@
     return {
       setLine: setLine,
       setLines: function (ls) { lines = ls; current = -1; },
-      /* 图里悬停对象 → 标出引用它的行 */
+      /* Hovering an object in the drawing → mark the lines that reference it */
       markRef: function (ref) {
         rows().forEach(function (r) {
           var refs = (r.getAttribute('data-refs') || '').split(/\s+/);

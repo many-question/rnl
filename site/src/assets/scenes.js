@@ -1,7 +1,8 @@
-/* RNL 介绍页 · 场景与示例数据
+/* RNL introduction page · scenes and example data
  *
- * 电路取自 RNL 语言讨论中用过的例子（5T OTA、RC/RLC、补位例子）。坐标、走线是本页为演示手工排的，
- * 不是求解器的实际输出；RNL 写法按当前讨论稿（1.16 方案，2026-09-29）示意。
+ * The circuits come from examples used in the RNL language discussion (5T OTA, RC/RLC, the fill-in
+ * example). Coordinates and wiring are placed by hand for this page, not real solver output; the RNL
+ * follows the current discussion draft (scheme 1.16, 2026-09-29) for illustration.
  */
 (function (global) {
   'use strict';
@@ -13,7 +14,7 @@
     return o;
   }
 
-  /* ================= 五管 OTA ================= */
+  /* ================= Five-transistor OTA ================= */
 
   var OTA_VB = [-4, 0, 47, 38.6];
 
@@ -65,7 +66,7 @@
     VDD1: [10, 3, 'R0'], VDD2: [30, 3, 'R0'], GND: [20, 35, 'R0']
   };
 
-  /* 只有连接：每个网络从第一个端子向其余端子拉直线（飞线） */
+  /* Connectivity only: each net draws straight lines (airwires) from its first terminal to the others */
   var AIR_NETS = [
     ['inp', ['P_inp.p', 'M1.g']], ['inn', ['P_inn.p', 'M2.g']], ['out', ['P_out.p', 'M2.d', 'M4.d']],
     ['vdd', ['P_vdd.p', 'M3.s', 'M4.s']], ['vss', ['P_vss.p', 'M5.s']], ['vbias', ['P_vb.p', 'M5.g']],
@@ -138,9 +139,9 @@
 
   function boxes() {
     return [
-      { id: 'dp1', kind: 'box', layer: 'back', ids: ['M1', 'M2'], pad: 1, label: '%dp1 · 差分对', labelAt: [0.5, 1], anchor: 'middle' },
-      { id: 'cm1', kind: 'box', layer: 'back', ids: ['M3', 'M4'], pad: 1, label: '%cm1 · 电流镜', labelAt: [0.5, 0], anchor: 'middle' },
-      { id: 'stage1', kind: 'box', layer: 'back', ids: ['M1', 'M2', 'M5'], pad: 2.4, label: '%stage1 · 输入级', labelAt: [0.03, 1], anchor: 'start' }
+      { id: 'dp1', kind: 'box', layer: 'back', ids: ['M1', 'M2'], pad: 1, label: '<zh>%dp1 · 差分对</zh><en>%dp1 · diff pair</en>', labelAt: [0.5, 1], anchor: 'middle' },
+      { id: 'cm1', kind: 'box', layer: 'back', ids: ['M3', 'M4'], pad: 1, label: '<zh>%cm1 · 电流镜</zh><en>%cm1 · current mirror</en>', labelAt: [0.5, 0], anchor: 'middle' },
+      { id: 'stage1', kind: 'box', layer: 'back', ids: ['M1', 'M2', 'M5'], pad: 2.4, label: '<zh>%stage1 · 输入级</zh><en>%stage1 · input stage</en>', labelAt: [0.03, 1], anchor: 'start' }
     ];
   }
 
@@ -155,7 +156,7 @@
       id: 'c1', kind: 'ticks', y: yt, segs: [[a[0], m[0]], [m[0], b[0]]], labels: [String(l1), String(l2)],
       tone: eq ? undefined : 'err', mid: eq ? null : [m[0], yt - 1.25], midText: '≠'
     });
-    L.push({ id: 'flow', kind: 'arrow', pts: [[3, 37.3], [12.5, 37.3]], label: '@FLOW 左→右', labelAt: [3, 36], anchor: 'start' });
+    L.push({ id: 'flow', kind: 'arrow', pts: [[3, 37.3], [12.5, 37.3]], label: '<zh>@FLOW 左→右</zh><en>@FLOW left→right</en>', labelAt: [3, 36], anchor: 'start' });
     var d5 = P('M5.d'), s5 = P('M5.s');
     L.push({ id: 'cur', kind: 'arrow', pts: [[d5[0] + 1.3, d5[1] + 0.7], [s5[0] + 1.3, s5[1] - 0.7]], label: 'I', labelAt: [d5[0] + 2, (d5[1] + s5[1]) / 2], anchor: 'start', mono: true, head: 0.42 });
     return L;
@@ -188,7 +189,7 @@
     };
   }
 
-  /* 逐步细化：每一步的完整文件 */
+  /* Step-by-step refinement: the full file at each step */
   function otaCode(stage) {
     var L = [];
     function add(id, t, r, extra) {
@@ -227,7 +228,7 @@
       add('s2', '*   #M3 @AT(' + (s5 ? 10 : 12) + ', 8) | @ORIENT("MY");  #M4 @AT(' + (s5 ? 30 : 28) + ', 8);', 'M3 M4');
       add('s3', '*   #M5 @AT(20, 30);  %g0 = &vss @VIRTUAL $GND | @AT(20, 35);', 'M5 GND');
       add('s4', '*   &x @WIRE {#M3:d #M1:d};  &x @WIRE {#M3:g #M4:g};', 'net:x');
-      add('s5', '*   /* 另有 11 条导线、2 个电源符号和 4 个端口，这里从略 */');
+      add('s5', '<zh>*   /* 另有 11 条导线、2 个电源符号和 4 个端口，这里从略 */</zh><en>*   /* 11 more wires, 2 supply symbols and 4 ports omitted here */</en>');
       add('s6', '* }');
     }
     if (stage >= 4) {
@@ -239,7 +240,7 @@
     return L;
   }
 
-  /* §1 的"谁管什么"：同一张图，按模式显示不同的批注 */
+  /* "Who owns what" in section 01: one drawing, different annotations per mode */
   function ownerScene() {
     return {
       rk: 'sym',
@@ -254,7 +255,7 @@
     };
   }
 
-  /* 修改与容错的例子：M2 被手动右移，没有 %sym34 */
+  /* The edits-and-errors example: M2 moved right by hand, no %sym34 */
   function e5Scene() {
     return {
       rk: 'sym',
@@ -296,14 +297,14 @@
   ];
 
   var E5_DIAG = [
-    { k: 'err', id: 'm9', icon: 'cross', html: '<code>{#M1 #M2 #M9} @ALIGN(axis="y")</code>：宿主里没有 M9。ALIGN 对输入是严格的，整句失效，不会退化成“只对齐 M1、M2”。', refs: [] },
-    { k: 'err', id: 'bad', icon: 'cross', html: '<code>#M4 @AT(2O, 8)</code>：“2O” 里是字母 O，不是合法的数。只丢掉这一句，M4 保留求解器给的 (28, 8)。', refs: ['M4'] },
-    { k: 'warn', id: 'conflict', icon: 'warn', html: '<code>#M2 @AT(x=30)</code> 让两个源极的中点不再对准 M5：按“新的优先”，保留新坐标，丢弃 <code>%c1</code> 展开出的匀布约束。', refs: ['M2', 'M5', 'ov:c1'] },
-    { k: 'info', id: 'fp', icon: 'info', html: '输入指纹与求解时不符：求解之后语义改过了，查看器建议重新求解。旧结果照常显示。', refs: [] },
-    { k: 'ok', id: 'ok', icon: 'check', html: '其余照常生效：差分对，对称（对称轴是自由点，跟着移到 x = 21），其他坐标。', refs: ['M1', 'M2', 'ov:ax'] }
+    { k: 'err', id: 'm9', icon: 'cross', html: '<zh><code>{#M1 #M2 #M9} @ALIGN(axis="y")</code>：宿主里没有 M9。ALIGN 对输入是严格的，整句失效，不会退化成“只对齐 M1、M2”。</zh><en><code>{#M1 #M2 #M9} @ALIGN(axis="y")</code>: the host has no M9. ALIGN is strict about its inputs, so the whole statement fails; it does not fall back to “align only M1 and M2”.</en>', refs: [] },
+    { k: 'err', id: 'bad', icon: 'cross', html: '<zh><code>#M4 @AT(2O, 8)</code>：“2O” 里是字母 O，不是合法的数。只丢掉这一句，M4 保留求解器给的 (28, 8)。</zh><en><code>#M4 @AT(2O, 8)</code>: “2O” contains the letter O, so it is not a valid number. Only this statement is dropped; M4 keeps the solver’s (28, 8).</en>', refs: ['M4'] },
+    { k: 'warn', id: 'conflict', icon: 'warn', html: '<zh><code>#M2 @AT(x=30)</code> 让两个源极的中点不再对准 M5：按“新的优先”，保留新坐标，丢弃 <code>%c1</code> 展开出的匀布约束。</zh><en><code>#M2 @AT(x=30)</code> moves the midpoint of the two sources off M5. Newer wins, so the new coordinate is kept and the distribute constraint expanded from <code>%c1</code> is dropped.</en>', refs: ['M2', 'M5', 'ov:c1'] },
+    { k: 'info', id: 'fp', icon: 'info', html: '<zh>输入指纹与求解时不符：求解之后语义改过了，查看器建议重新求解。旧结果照常显示。</zh><en>The input fingerprint does not match the one used for solving: the semantics changed after solving, so the viewer suggests solving again. The old result still displays.</en>', refs: [] },
+    { k: 'ok', id: 'ok', icon: 'check', html: '<zh>其余照常生效：差分对，对称（对称轴是自由点，跟着移到 x = 21），其他坐标。</zh><en>Everything else takes effect: the differential pair, the symmetry (the axis is a free point and moves to x = 21), the other coordinates.</en>', refs: ['M1', 'M2', 'ov:ax'] }
   ];
 
-  /* ================= 首屏：RC 低通 ================= */
+  /* ================= Hero: RC low-pass ================= */
 
   var RC = {
     rk: 'rc',
@@ -333,20 +334,20 @@
   };
 
   var HERO_LINES = [
-    { t: '* RC low-pass filter', sim: 'title', view: 'skip', note: '第一行是标题。SPICE 把文件第一行当作标题，不属于电路。' },
-    { t: 'V1 in 0 AC 1', r: 'V1', sim: 'use', view: 'draw', note: '<b>网表</b>：信号源 V1 接在 in 与地之间，交流幅度 1 V。' },
-    { t: 'R1 in out 10k', r: 'R1', sim: 'use', view: 'draw', note: '<b>网表</b>：10 kΩ 电阻，从 in 接到 out。' },
-    { t: 'C1 out 0 10n', r: 'C1', sim: 'use', view: 'draw', note: '<b>网表</b>：10 nF 电容，从 out 接到地。' },
-    { t: '.ac dec 20 10 1meg', cls: 'is-analysis', sim: 'use', view: 'skip', plot: true, note: '<b>仿真指令</b>：从 10 Hz 扫到 1 MHz。查看器画图用不到它。' },
-    { t: '* @RNL {', sim: 'skip', view: 'meta', note: '<b>RNL 记录开始</b>。仿真器眼里，这只是一行以 * 开头的注释。' },
-    { t: '*   Source to load, #V1 #R1 #C1 @AS $CHAIN;', r: 'V1 R1 C1 ov:chain', mode: 'chain', sim: 'skip', view: 'draw', note: '<b>RNL</b>：V1、R1、C1 是一条从源到负载的链。于是源放左边、负载放右边，两端竖放。“Source to load,” 只是给人看的说明。' },
-    { t: '*   %g = &0 @VIRTUAL $GND;', r: 'G', sim: 'skip', view: 'draw', note: '<b>RNL</b>：给地网络 0 画一个地符号。它只为显示而存在，电路里并没有这个元件。' },
-    { t: '*   &out @LABEL', r: 'net:out', sim: 'skip', view: 'draw', note: '<b>RNL</b>：在图上标出网络名 out。' },
-    { t: '* }', sim: 'skip', view: 'meta', note: '<b>RNL 记录结束</b>。' },
-    { t: '.end', sim: 'use', view: 'skip', note: '网表结束。' }
+    { t: '* RC low-pass filter', sim: 'title', view: 'skip', note: '<zh>第一行是标题。SPICE 把文件第一行当作标题，不属于电路。</zh><en>The first line is the title. SPICE treats a file’s first line as its title, not as part of the circuit.</en>' },
+    { t: 'V1 in 0 AC 1', r: 'V1', sim: 'use', view: 'draw', note: '<zh><b>网表</b>：信号源 V1 接在 in 与地之间，交流幅度 1 V。</zh><en><b>Netlist</b>: source V1 between in and ground, AC amplitude 1 V.</en>' },
+    { t: 'R1 in out 10k', r: 'R1', sim: 'use', view: 'draw', note: '<zh><b>网表</b>：10 kΩ 电阻，从 in 接到 out。</zh><en><b>Netlist</b>: a 10 kΩ resistor from in to out.</en>' },
+    { t: 'C1 out 0 10n', r: 'C1', sim: 'use', view: 'draw', note: '<zh><b>网表</b>：10 nF 电容，从 out 接到地。</zh><en><b>Netlist</b>: a 10 nF capacitor from out to ground.</en>' },
+    { t: '.ac dec 20 10 1meg', cls: 'is-analysis', sim: 'use', view: 'skip', plot: true, note: '<zh><b>仿真指令</b>：从 10 Hz 扫到 1 MHz。查看器画图用不到它。</zh><en><b>Simulation command</b>: sweep from 10 Hz to 1 MHz. The viewer does not need it to draw.</en>' },
+    { t: '* @RNL {', sim: 'skip', view: 'meta', note: '<zh><b>RNL 记录开始</b>。仿真器眼里，这只是一行以 * 开头的注释。</zh><en><b>Start of an RNL record</b>. To the simulator, this is just a comment line starting with *.</en>' },
+    { t: '*   Source to load, #V1 #R1 #C1 @AS $CHAIN;', r: 'V1 R1 C1 ov:chain', mode: 'chain', sim: 'skip', view: 'draw', note: '<zh><b>RNL</b>：V1、R1、C1 是一条从源到负载的链。于是源放左边、负载放右边，两端竖放。“Source to load,” 只是给人看的说明。</zh><en><b>RNL</b>: V1, R1 and C1 form a chain from source to load. So the source goes on the left, the load on the right, both ends upright. “Source to load,” is only a note for people.</en>' },
+    { t: '*   %g = &0 @VIRTUAL $GND;', r: 'G', sim: 'skip', view: 'draw', note: '<zh><b>RNL</b>：给地网络 0 画一个地符号。它只为显示而存在，电路里并没有这个元件。</zh><en><b>RNL</b>: draw a ground symbol for ground net 0. It exists only for display; there is no such element in the circuit.</en>' },
+    { t: '*   &out @LABEL', r: 'net:out', sim: 'skip', view: 'draw', note: '<zh><b>RNL</b>：在图上标出网络名 out。</zh><en><b>RNL</b>: label net out in the drawing.</en>' },
+    { t: '* }', sim: 'skip', view: 'meta', note: '<zh><b>RNL 记录结束</b>。</zh><en><b>End of the RNL record</b>.</en>' },
+    { t: '.end', sim: 'use', view: 'skip', note: '<zh>网表结束。</zh><en>End of the netlist.</en>' }
   ];
 
-  /* ================= 例 1：RLC，一句语义 ================= */
+  /* ================= Example 1: RLC, one statement ================= */
 
   function rlcScene(style) {
     var dev = {
@@ -402,7 +403,7 @@
     { t: '.end' }
   ];
 
-  /* ================= 例 2：测试平台与 block symbol ================= */
+  /* ================= Example 2: testbench and block symbol ================= */
 
   var TB = {
     rk: 'tb',
@@ -452,7 +453,7 @@
   var E2_LINES = [
     { t: '* 5T OTA testbench' },
     { t: '.subckt ota5t inp inn out vdd vss vbias' },
-    { t: '* (M1 ... M5 与前面相同，从略)' },
+    { t: '<zh>* (M1 ... M5 与前面相同，从略)</zh><en>* (M1 ... M5 as before, omitted)</en>' },
     { t: '* @RNL {', r: 'XU1' },
     { t: '*   %ota5t = @SYMBOL(export="block", box=[-5, -5, 5, 5]) {', r: 'XU1' },
     { t: '*     <-5, -2> @PIN(term="inp");  <-5, 2> @PIN(term="inn");', r: 'XU1 net:inp net:inn' },
@@ -476,7 +477,7 @@
     { t: '.end' }
   ];
 
-  /* ================= 例 3：自定义符号 ================= */
+  /* ================= Example 3: custom symbol ================= */
 
   var E3_LINES = [
     { t: '* @RNL {' },
@@ -497,22 +498,22 @@
   ];
 
   var E3_NOTES = {
-    box: '<b>@SYMBOL</b> 把大括号里的图元收成一个定义。<code>box</code> 是选择框，也是求解时的防重叠轮廓。',
-    'pin-d': '<b>引脚</b>是带端子绑定的点：<code>term="d"</code> 对应网表里 MOS 的漏极，<code>dir="N"</code> 是出线方向，<code>name</code> 只用于显示。',
-    'pin-g': '栅极引脚，出线朝西（左）。',
-    'pin-s': '源极引脚，出线朝南（下）。衬底不想画，就不写它的引脚。',
-    l1: '<b>@LINE</b> 收一组点：两个点是线段，更多是折线。这里从栅极引脚 %g 画到栅极板。',
-    l2: '线宽写成<b>角色</b> <code>emphasis</code>，具体多粗由样式决定，换主题不用改符号。',
-    l3: '沟道，同样是加粗的角色线。',
-    l4: '漏极的连线，终点是引脚 %d。',
-    l5: '源极的连线。',
-    poly: '<b>@POLYGON</b> 自动闭合；<code>fill="foreground"</code> 表示用前景色填充：这是 NMOS 的箭头。',
-    text: '<b>@TEXT</b> 是文字槽：显示器件名（field="name"）。',
-    rule: '一条<b>规则</b>：所有模型为 nch 的器件都用这个符号。写在哪一层，就管那一层及其下层。',
-    idle: '把鼠标放到左边任意一行上，看它对应符号里的哪一笔。'
+    box: '<zh><b>@SYMBOL</b> 把大括号里的图元收成一个定义。<code>box</code> 是选择框，也是求解时的防重叠轮廓。</zh><en><b>@SYMBOL</b> gathers the primitives in braces into one definition. <code>box</code> is the selection box, and also the outline the solver keeps other objects out of.</en>',
+    'pin-d': '<zh><b>引脚</b>是带端子绑定的点：<code>term="d"</code> 对应网表里 MOS 的漏极，<code>dir="N"</code> 是出线方向，<code>name</code> 只用于显示。</zh><en>A <b>pin</b> is a point bound to a terminal: <code>term="d"</code> maps to the MOS drain in the netlist, <code>dir="N"</code> is the direction wires leave in, and <code>name</code> is for display only.</en>',
+    'pin-g': '<zh>栅极引脚，出线朝西（左）。</zh><en>Gate pin; wires leave to the west (left).</en>',
+    'pin-s': '<zh>源极引脚，出线朝南（下）。衬底不想画，就不写它的引脚。</zh><en>Source pin; wires leave to the south (down). To leave the bulk undrawn, just give it no pin.</en>',
+    l1: '<zh><b>@LINE</b> 收一组点：两个点是线段，更多是折线。这里从栅极引脚 %g 画到栅极板。</zh><en><b>@LINE</b> takes a list of points: two make a segment, more make a polyline. This one runs from gate pin %g to the gate plate.</en>',
+    l2: '<zh>线宽写成<b>角色</b> <code>emphasis</code>，具体多粗由样式决定，换主题不用改符号。</zh><en>The line weight is written as a <b>role</b>, <code>emphasis</code>; the style decides how thick it is, so a new theme needs no symbol changes.</en>',
+    l3: '<zh>沟道，同样是加粗的角色线。</zh><en>The channel, another emphasized role line.</en>',
+    l4: '<zh>漏极的连线，终点是引脚 %d。</zh><en>The drain lead, ending at pin %d.</en>',
+    l5: '<zh>源极的连线。</zh><en>The source lead.</en>',
+    poly: '<zh><b>@POLYGON</b> 自动闭合；<code>fill="foreground"</code> 表示用前景色填充：这是 NMOS 的箭头。</zh><en><b>@POLYGON</b> closes itself; <code>fill="foreground"</code> fills it with the foreground color: this is the NMOS arrow.</en>',
+    text: '<zh><b>@TEXT</b> 是文字槽：显示器件名（field="name"）。</zh><en><b>@TEXT</b> is a text slot: it shows the device name (field="name").</en>',
+    rule: '<zh>一条<b>规则</b>：所有模型为 nch 的器件都用这个符号。写在哪一层，就管那一层及其下层。</zh><en>A <b>rule</b>: every device whose model is nch uses this symbol. It applies to the level it is written on and every level below.</en>',
+    idle: '<zh>把鼠标放到左边任意一行上，看它对应符号里的哪一笔。</zh><en>Hover over any line on the left to see which stroke of the symbol it draws.</en>'
   };
 
-  /* ================= 例 4：规则与补位 ================= */
+  /* ================= Example 4: rules and fill-ins ================= */
 
   function fillScene(n) {
     var dev = {
@@ -542,13 +543,13 @@
         return { wires: w, dots: [[10, 10, 'out']], labels: [{ text: 'vdd', at: [5, 1.2], net: 'vdd' }, { text: 'out', at: [14, 9.2], net: 'out' }] };
       },
       overlays: function () {
-        return [{ id: 'skip', kind: 'text', at: [0, 19.8], text: '已手动接地', anchor: 'middle', tone: 'mute' }];
+        return [{ id: 'skip', kind: 'text', at: [0, 19.8], text: '<zh>已手动接地</zh><en>hand-placed</en>', anchor: 'middle', tone: 'mute' }];
       }
     };
   }
 
   var E4_LINES = [
-    { t: '* 补位：给没接导线的端子逐个补上地和端口' },
+    { t: '<zh>* 补位：给没接导线的端子逐个补上地和端口</zh><en>* Fill-ins: add a ground or a port to each unwired terminal</en>' },
     { t: 'V1 vdd 0 1.8', r: 'V1' },
     { t: 'R1 vdd out 10k', r: 'R1' },
     { t: 'M1 out in 0 0 nch', r: 'M1' },

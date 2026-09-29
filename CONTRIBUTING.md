@@ -26,3 +26,5 @@ Do not copy material that cannot be licensed this way. This includes code or tex
 ## Checks
 
 When you add files or change licensing, run [`reuse lint`](https://reuse.software/) from the repository root; it must report the project as compliant. Keep relative Markdown links working.
+
+When you change the introduction page, edit `site/src/` and write every text in both languages, as described in [`site/README.md`](site/README.md); `python site/build.py --check` must pass.
