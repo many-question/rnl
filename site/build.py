@@ -33,7 +33,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SRC = HERE / "src"
 DEFAULT_OUT = HERE / "dist"
-SITE_URL = "https://many-question.github.io/rnl/"
+SITE_URL = "https://rich-netlist.github.io/rnl/"
 
 # (language code, output directory); the first language sits at the site root.
 LANGS = [("zh", ""), ("en", "en/")]

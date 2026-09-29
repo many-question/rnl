@@ -12,3 +12,4 @@ Decisions made before this log started, including those from the first architect
 | [0002](0002-licenses.md) | MIT for code, CC-BY-4.0 for specification and documentation, CC0-1.0 for data | accepted |
 | [0003](0003-npm-scope.md) | npm packages use the `@rich-netlist` scope | accepted |
 | [0004](0004-contribution-terms.md) | Contributions are licensed under the path's license, without sign-off or CLA | accepted |
+| [0005](0005-github-organization.md) | The repository lives in the `rich-netlist` GitHub organization | accepted |
