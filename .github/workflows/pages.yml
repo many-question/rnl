@@ -28,13 +28,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Publish only the page itself, plus the portable package as downloads;
-      # site/README.md and site/package.py stay in the repository.
+      # Publish only the page itself, plus the single-file page as a download;
+      # site/README.md, site/package.py and the zip package stay out of the site.
       - name: Assemble the site
         run: |
           mkdir -p _site
           cp -r site/index.html site/assets _site/
-          python3 site/package.py _site
+          python3 site/package.py site/dist
+          cp site/dist/rnl-intro-standalone.html _site/
 
       - uses: actions/configure-pages@v6
 

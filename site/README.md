@@ -7,7 +7,7 @@ A static introduction page (in Chinese) for circuit designers who have not worke
 ## Viewing and publishing
 
 - Open `index.html` in a browser; there is no build step and no dependency. Fonts load from Google Fonts and fall back to system fonts offline.
-- [`pages.yml`](../.github/workflows/pages.yml) publishes the page to GitHub Pages whenever `site/` changes on `main`, together with the single-file page and the zip package as downloads. Any other static host can serve `index.html` and `assets/` as they are.
+- [`pages.yml`](../.github/workflows/pages.yml) publishes the page to GitHub Pages whenever `site/` changes on `main`, together with the single-file page as a download. Any other static host can serve `index.html` and `assets/` as they are.
 - `python site/package.py` (standard library only) writes a portable package to `site/dist/` (ignored by Git): `rnl-intro-standalone.html` with the CSS and scripts inlined, and `rnl-intro.zip` with the site folder, the single-file build, and usage notes.
 
 ## Files
