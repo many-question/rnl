@@ -12,6 +12,7 @@ This is the central TODO list. A checked box means work present in this reposito
 - [x] Reserve the npm organization scope `@rich-netlist` ([decision 0003](decisions/0003-npm-scope.md)).
 - [x] Decide the contribution terms ([decision 0004](decisions/0004-contribution-terms.md), [CONTRIBUTING.md](../CONTRIBUTING.md)).
 - [x] Add a Chinese introduction page for circuit designers ([`site/`](../site/README.md)). Its RNL snippets follow the ongoing 1.16 language discussion, which is not yet in `spec/`.
+- [x] Add the English version of the introduction page, built with the Chinese one from a single source that pairs every text in both languages; CI fails on an unpaired text.
 - [ ] Replace the Analog Canvas copies with pointers once this repository is public; until then they are marked migrated and frozen.
 
 ## Toolchain foundation

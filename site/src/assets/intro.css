@@ -1,4 +1,4 @@
-/* RNL 介绍页样式。配色：图纸底色 + 墨线（网表 = 电气事实）+ 橙色批注（RNL = 理解与呈现）+ 蓝色（交互与高亮）。 */
+/* RNL introduction page styles. Palette: drawing-paper background + ink (netlist = electrical facts) + orange annotations (RNL = understanding and presentation) + blue (interaction and highlighting). */
 
 :root {
   --paper: #f3f5f7;
@@ -43,6 +43,12 @@
   --f-disp: "IBM Plex Sans Condensed", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
   --f-mono: "IBM Plex Mono", "Cascadia Mono", "SFMono-Regular", Consolas, "Noto Sans SC", monospace;
   color-scheme: light;
+}
+/* Latin pages: IBM Plex Sans for body text, no CJK fallbacks */
+html[lang="en"] {
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-disp: "IBM Plex Sans Condensed", "IBM Plex Sans", "Arial Narrow", sans-serif;
+  --f-mono: "IBM Plex Mono", "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -129,7 +135,7 @@
   color-scheme: dark;
 }
 
-/* ---------- 基础 ---------- */
+/* ---------- Base ---------- */
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -188,7 +194,7 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible, summary:focus-v
 .sig { color: var(--signal); }
 .muted { color: var(--ink-3); }
 
-/* ---------- 顶栏 ---------- */
+/* ---------- Top bar ---------- */
 
 .topbar {
   position: sticky;
@@ -215,6 +221,12 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible, summary:focus-v
   border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); cursor: pointer;
 }
 .icon-btn:hover { color: var(--ink); border-color: var(--line-2); }
+.lang-link {
+  display: inline-grid; place-items: center; min-width: 36px; height: 36px; padding: 0 9px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); text-decoration: none;
+  font: 600 12.5px/1 var(--f-body); letter-spacing: .04em; white-space: nowrap;
+}
+.lang-link:hover { color: var(--ink); border-color: var(--line-2); }
 .toc-btn { display: none; }
 .progress { height: 2px; background: transparent; }
 .progress span { display: block; height: 100%; width: 0; background: var(--markup); transition: width .1s linear; }
@@ -230,7 +242,7 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible, summary:focus-v
   .toc-btn { display: inline-grid; margin-left: auto; }
 }
 
-/* ---------- 通用组件 ---------- */
+/* ---------- Shared components ---------- */
 
 .btn {
   display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 18px;
@@ -291,7 +303,7 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible, summary:focus-v
 .tabs button:hover { color: var(--ink); }
 .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--markup); font-weight: 600; }
 
-/* ---------- 章节 ---------- */
+/* ---------- Sections ---------- */
 
 section[id] { scroll-margin-top: 72px; }
 
@@ -307,7 +319,7 @@ section[id] { scroll-margin-top: 72px; }
 .sub-h { margin: 56px 0 8px; font: 700 22px/1.4 var(--f-body); }
 .sub-lead { color: var(--ink-2); max-width: 46em; margin-bottom: 22px; }
 
-/* ---------- 首屏 ---------- */
+/* ---------- Hero ---------- */
 
 .hero { padding-block: 48px 72px; }
 .hero-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr); gap: 48px; align-items: end; }
@@ -331,7 +343,7 @@ section[id] { scroll-margin-top: 72px; }
 .titleblock .tb-main dd { font: 700 17px/1.5 var(--f-disp); letter-spacing: .02em; }
 .titleblock dd .mono { font-size: 13px; }
 
-/* 首屏演示：同一个文件的两位读者 */
+/* Hero demo: one file, two readers */
 .hero-demo {
   margin-top: 48px; display: grid; align-items: stretch; gap: 0;
   grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1.18fr) 64px minmax(0, 1fr);
@@ -372,7 +384,7 @@ section[id] { scroll-margin-top: 72px; }
   .hero-demo { grid-template-columns: 1fr; }
 }
 
-/* ---------- 代码面板 ---------- */
+/* ---------- Code panels ---------- */
 
 .code {
   font: 12.5px/1.72 var(--f-mono); padding: 8px 0 10px; overflow: auto; tab-size: 4; color: var(--ink);
@@ -414,7 +426,7 @@ section[id] { scroll-margin-top: 72px; }
 .t-hval { color: var(--t-num); }
 .t-bad { color: var(--err); font-weight: 600; text-decoration: underline wavy var(--err); text-underline-offset: 3px; }
 
-/* ---------- 原理图（SVG） ---------- */
+/* ---------- Schematics (SVG) ---------- */
 
 .sc { display: block; width: 100%; height: auto; overflow: visible; user-select: none; }
 .sc-griddot { fill: var(--sc-dot); }
@@ -481,7 +493,7 @@ section[id] { scroll-margin-top: 72px; }
 .ov.tone-mute { color: var(--ink-3); }
 .ov.is-hl .o-dash, .ov.is-hl .o-line { stroke-width: .2; }
 
-/* ---------- 速览 ---------- */
+/* ---------- Overview ---------- */
 
 .brief { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow); }
 .brief li { padding: 22px 22px 20px; display: grid; gap: 10px; align-content: start; border-left: 1px solid var(--line); }
@@ -502,7 +514,7 @@ section[id] { scroll-margin-top: 72px; }
   .brief li + li { border-top: 1px solid var(--line); }
 }
 
-/* ---------- 01 是什么 ---------- */
+/* ---------- 01 What ---------- */
 
 .motto {
   margin: 0 0 40px; padding: 20px 26px; border-left: 3px solid var(--markup); background: var(--panel);
@@ -556,7 +568,7 @@ section[id] { scroll-margin-top: 72px; }
 .isnot li { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; border: 1px dashed var(--line-2); font-size: 14px; color: var(--ink-2); background: var(--panel); }
 .isnot li .ico { width: 14px; height: 14px; color: var(--err); }
 
-/* ---------- 02 为什么 ---------- */
+/* ---------- 02 Why ---------- */
 
 .matrix-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow); }
 .matrix { width: 100%; border-collapse: collapse; min-width: 620px; font-size: 15px; }
@@ -591,7 +603,7 @@ section[id] { scroll-margin-top: 72px; }
 }
 .pivot .ico { color: var(--markup); width: 24px; height: 24px; }
 
-/* ---------- 03 愿景 ---------- */
+/* ---------- 03 Vision ---------- */
 
 .hub { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .9fr) minmax(0, 1fr); gap: 26px 64px; align-items: center; }
 .hub-col { display: grid; gap: 18px; }
@@ -621,7 +633,7 @@ section[id] { scroll-margin-top: 72px; }
 }
 @media (max-width: 520px) { .hub { grid-template-columns: 1fr; } }
 
-/* 逐步细化演示 */
+/* Step-by-step refinement demo */
 .journey { margin-top: 18px; }
 .jr-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; margin-bottom: 18px; counter-reset: step; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); overflow: hidden; }
 .jr-steps button {
@@ -648,6 +660,7 @@ section[id] { scroll-margin-top: 72px; }
 .jr-notice.warn { background: var(--warn-2); color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); }
 .jr-notice.ok { background: var(--ok-2); color: var(--ok); border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent); }
 .jr-notice .ico { width: 16px; height: 16px; margin-top: 2px; }
+@media (max-width: 640px) { .jr-notice { position: static; max-width: none; margin-top: 8px; } }
 .jr-cap { padding: 12px 16px 6px; font-size: 15px; line-height: 1.7; color: var(--ink-2); min-height: 90px; border-top: 1px dashed var(--line); }
 .jr-cap b { color: var(--ink); }
 .jr-ctrl { display: flex; gap: 8px; padding: 8px 16px 16px; flex-wrap: wrap; align-items: center; }
@@ -670,7 +683,7 @@ section[id] { scroll-margin-top: 72px; }
   .jr-steps button .t { font-size: 14px; }
 }
 
-/* ---------- 04 场景 ---------- */
+/* ---------- 04 Scenarios ---------- */
 
 .vs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
 .vs-side { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); display: flex; flex-direction: column; overflow: hidden; }
@@ -716,7 +729,7 @@ section[id] { scroll-margin-top: 72px; }
 .two-hosts .minicode { position: relative; }
 .two-hosts .host-tag { position: absolute; right: 8px; top: 7px; font: 11px var(--f-body); color: var(--ink-3); }
 
-/* ---------- 05 工具链 ---------- */
+/* ---------- 05 Toolchain ---------- */
 
 .flows { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 14px; }
 .flow-cap { font-size: 15px; color: var(--ink-2); min-height: 26px; }
@@ -730,7 +743,8 @@ section[id] { scroll-margin-top: 72px; }
 }
 .tmod .ico { width: 20px; height: 20px; color: var(--ink-2); }
 .tmod .nm { font: 700 14.5px/1.3 var(--f-body); }
-.tmod .en { font: 500 11px var(--f-mono); color: var(--ink-3); letter-spacing: .02em; }
+.tmod .sub { font: 500 11px var(--f-mono); color: var(--ink-3); letter-spacing: .02em; }
+.tmod .sub:empty { display: none; }
 .tmod::before, .tmod::after { content: ""; position: absolute; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--panel); border: 1.5px solid var(--ink); }
 .tmod::before { left: -4.5px; }
 .tmod::after { right: -4.5px; }
@@ -773,7 +787,7 @@ section[id] { scroll-margin-top: 72px; }
   .protos { grid-template-columns: 1fr; }
 }
 
-/* ---------- 06 原则 ---------- */
+/* ---------- 06 Principles ---------- */
 
 .pgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .pc { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); display: flex; flex-direction: column; overflow: hidden; }
@@ -793,7 +807,7 @@ section[id] { scroll-margin-top: 72px; }
 .p-scan { position: absolute; top: 12px; bottom: 12px; width: 2px; background: var(--signal); left: 10%; opacity: .7; animation: scan 4s ease-in-out infinite; }
 @keyframes scan { 0% { left: 8%; } 50% { left: 90%; } 100% { left: 8%; } }
 
-/* ---------- 07 语言 ---------- */
+/* ---------- 07 Language ---------- */
 
 .anatomy { padding: 26px 24px 20px; }
 .an-line { font: 15px/2.2 var(--f-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -808,7 +822,7 @@ section[id] { scroll-margin-top: 72px; }
 .an-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 
 .sigils { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.sg { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; align-items: baseline; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.sg { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; align-items: baseline; align-content: start; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
 .sg code { grid-row: span 2; font-size: 16px; font-weight: 600; min-width: 5.4em; }
 .sg b { font-size: 15px; }
 .sg span { font-size: 13.5px; color: var(--ink-3); line-height: 1.5; }
@@ -827,6 +841,7 @@ section[id] { scroll-margin-top: 72px; }
 .fams { display: grid; gap: 12px; }
 .fam { display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: start; }
 .fam > span { font: 700 14px/30px var(--f-body); color: var(--ink-2); }
+html[lang="en"] .fam { grid-template-columns: 108px 1fr; }
 .fam div { display: flex; flex-wrap: wrap; gap: 6px; }
 .kw {
   height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); cursor: pointer;
@@ -868,7 +883,7 @@ section[id] { scroll-margin-top: 72px; }
 .pipe-cap { margin-top: 14px; padding: 12px 16px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 15px; color: var(--ink-2); min-height: 52px; }
 .pipe-cap b { color: var(--ink); }
 
-/* ---------- 08 例子 ---------- */
+/* ---------- 08 Examples ---------- */
 
 .ex { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 .ex .code { max-height: 540px; font-size: 12px; }
@@ -889,7 +904,7 @@ section[id] { scroll-margin-top: 72px; }
 .diag li code { font-size: 12.5px; color: var(--ink); }
 @media (max-width: 980px) { .ex { grid-template-columns: 1fr; } .ex-fig { order: -1; } }
 
-/* ---------- 09 现状 ---------- */
+/* ---------- 09 Status ---------- */
 
 .status-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 36px; align-items: start; }
 .tl { list-style: none; margin: 0; padding: 0 0 0 26px; position: relative; display: grid; gap: 18px; }
@@ -914,7 +929,7 @@ section[id] { scroll-margin-top: 72px; }
 .faq h3 { margin: 0 0 6px; font: 700 20px var(--f-body); }
 @media (max-width: 900px) { .status-grid { grid-template-columns: 1fr; } }
 
-/* ---------- 页脚 ---------- */
+/* ---------- Footer ---------- */
 
 .foot { border-top: 1px solid var(--line); padding-block: 40px 56px; font-size: 14px; color: var(--ink-2); }
 .foot-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 32px; }
@@ -924,7 +939,7 @@ section[id] { scroll-margin-top: 72px; }
 .foot .brand-mark { font-size: 26px; }
 @media (max-width: 760px) { .foot-grid { grid-template-columns: 1fr; } }
 
-/* ---------- 补充：代码面板定位、行内代码 ---------- */
+/* ---------- Additions: code panel positioning, inline code ---------- */
 
 .code { position: relative; }
 .jr-cap code, .ex-cap code, .own-cap code, .tdetail code, .kw-card code {
@@ -934,7 +949,7 @@ section[id] { scroll-margin-top: 72px; }
 .own button[aria-pressed="true"] { border-color: var(--ink); }
 .own-rnl button[aria-pressed="true"] { border-color: var(--markup); }
 
-/* ---------- 首屏：幅频曲线 ---------- */
+/* ---------- Hero: magnitude plot ---------- */
 
 .bode { width: 100%; height: auto; display: block; }
 .bode .bd-grid { stroke: var(--line); stroke-width: 1; }
@@ -946,7 +961,7 @@ section[id] { scroll-margin-top: 72px; }
 .bode .bd-lab { font: 600 11px var(--f-mono); fill: var(--ink); }
 .bode.is-hot .bd-curve { stroke-width: 3.4; }
 
-/* ---------- 02 补救办法插图 ---------- */
+/* ---------- 02 Workaround illustrations ---------- */
 
 .fix-fig svg { overflow: visible; }
 .fx-card { fill: var(--panel); stroke: var(--line-2); stroke-width: 1.5; }
@@ -966,7 +981,7 @@ section[id] { scroll-margin-top: 72px; }
 .fx-lbl { font: 500 12px var(--f-mono); fill: var(--ink); }
 #fix-air { width: 100%; height: 116px; overflow: hidden; }
 
-/* ---------- 04 场景插图 ---------- */
+/* ---------- 04 Scenario illustrations ---------- */
 
 .flowline.alt { margin-top: 16px; }
 .flowline .plus { color: var(--ink-3); font-weight: 700; }
@@ -996,12 +1011,12 @@ section[id] { scroll-margin-top: 72px; }
 .cd-big { font: 700 14px var(--f-body); fill: var(--markup); }
 @keyframes ring { 0%, 100% { transform: scale(.85); opacity: .5; } 50% { transform: scale(1.15); opacity: 1; } }
 
-/* ---------- 03 中心文件的连线 ---------- */
+/* ---------- 03 Links from the central file ---------- */
 
 .hub-lines > div { overflow: hidden; text-overflow: ellipsis; white-space: pre; }
 .hub-wires circle.end { fill: var(--panel); stroke: var(--line-2); stroke-width: 1.5; }
 
-/* ---------- 05 工具链 ---------- */
+/* ---------- 05 Toolchain ---------- */
 
 @media (min-width: 761px) {
   .tm-file { grid-area: 1 / 1; }
@@ -1018,7 +1033,7 @@ section[id] { scroll-margin-top: 72px; }
 .twires .tm-on { fill: var(--markup); }
 .tdetail .chip { font-family: var(--f-body); }
 
-/* ---------- 06 原则卡片 ---------- */
+/* ---------- 06 Principle cards ---------- */
 
 .pc-fig.p1, .pc-fig.p5, .pc-fig.p6, .pc-fig.p7 { display: flex; flex-direction: column; justify-content: center; align-items: stretch; gap: 8px; padding: 12px 14px; overflow: hidden; }
 .pc-fig .minicode { font-size: 11.5px; padding: 6px 10px; }
@@ -1081,7 +1096,7 @@ section[id] { scroll-margin-top: 72px; }
 .p8-flow { fill: none; stroke: var(--markup); stroke-width: 2; stroke-dasharray: 4 3; animation: dash-right 1s linear infinite; }
 .p8-head { fill: var(--markup); }
 
-/* ---------- 07 布局原子动画 ---------- */
+/* ---------- 07 Layout atom animations ---------- */
 
 .at-guide { opacity: 0; animation: fade-mid 5s ease-in-out infinite; }
 .al-a { animation: al-a 5s ease-in-out infinite; }
@@ -1114,7 +1129,7 @@ section[id] { scroll-margin-top: 72px; }
 .ds-dims { opacity: 0; animation: fade-mid 5s ease-in-out infinite; }
 @keyframes ds-b { 0%, 14% { transform: translate(84px, 58px); } 42%, 84% { transform: translate(140px, 58px); } 100% { transform: translate(84px, 58px); } }
 
-/* ---------- 08 例子：符号分解图 ---------- */
+/* ---------- 08 Examples: exploded symbol drawing ---------- */
 
 .e3 { max-height: 440px; }
 .e3 .e3-axis { stroke: var(--line-2); stroke-width: .04; }

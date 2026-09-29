@@ -1,10 +1,15 @@
-# Publishes the introduction page in site/ to GitHub Pages.
+# Builds the introduction page in site/ and publishes it to GitHub Pages.
+# Pull requests only run the build, which fails when a text is missing one of its languages.
 # Requires Settings -> Pages -> Build and deployment -> Source: "GitHub Actions".
 name: Pages
 
 on:
   push:
     branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+  pull_request:
     paths:
       - "site/**"
       - ".github/workflows/pages.yml"
@@ -15,33 +20,35 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Writes site/dist/: the Chinese page at the root and the English page under en/.
+      # site/README.md, site/build.py and site/src/ stay out of the published site.
+      - name: Build the site
+        run: python3 site/build.py
+
+      - if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v6
+
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site/dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v7
-
-      # Publish only the page itself, plus the single-file page as a download;
-      # site/README.md, site/package.py and the zip package stay out of the site.
-      - name: Assemble the site
-        run: |
-          mkdir -p _site
-          cp -r site/index.html site/assets _site/
-          python3 site/package.py site/dist
-          cp site/dist/rnl-intro-standalone.html _site/
-
-      - uses: actions/configure-pages@v6
-
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: _site
-
       - id: deployment
         uses: actions/deploy-pages@v5
