@@ -10,6 +10,7 @@ This is the central TODO list. A checked box means work present in this reposito
 - [x] Confirm that the migrated documents belong to the maintainer's personal project and can be relicensed here.
 - [x] Decide the licenses for code, specification text, and data ([decision 0002](decisions/0002-licenses.md)).
 - [x] Reserve the npm organization scope `@rich-netlist` ([decision 0003](decisions/0003-npm-scope.md)).
+- [x] Move the repository into the `rich-netlist` GitHub organization ([decision 0005](decisions/0005-github-organization.md)).
 - [x] Decide the contribution terms ([decision 0004](decisions/0004-contribution-terms.md), [CONTRIBUTING.md](../CONTRIBUTING.md)).
 - [x] Add a Chinese introduction page for circuit designers ([`site/`](../site/README.md)). Its RNL snippets follow the ongoing 1.16 language discussion, which is not yet in `spec/`.
 - [x] Add the English version of the introduction page, built with the Chinese one from a single source that pairs every text in both languages; CI fails on an unpaired text.
