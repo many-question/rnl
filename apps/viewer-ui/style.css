@@ -20,6 +20,7 @@
   --select: #e8590c;
   --select-text: rgba(232, 89, 12, 0.22);
   --select-line: rgba(232, 89, 12, 0.08);
+  --out-of-scope: #ececee; /* the lines outside the subcircuit drawn */
   --select-fill: rgba(232, 89, 12, 0.07);
   /* the selection when it is a subcircuit instance, which can be opened */
   --sub: #c2255c;
@@ -63,6 +64,7 @@
     --hint: #74a7e8;
     --select-text: rgba(255, 140, 70, 0.3);
     --select-line: rgba(255, 140, 70, 0.1);
+    --out-of-scope: #1a1a1d;
     --sub-text: rgba(240, 101, 149, 0.28);
     --sub-line: rgba(240, 101, 149, 0.1);
     --flash: rgba(116, 167, 232, 0.28);
@@ -414,6 +416,9 @@ button.crumb:hover:not(:disabled) { color: var(--fg); }
 .ln.hl-line { background: var(--select-line); }
 .ln.flash { animation: flash 1.4s ease-out; }
 @keyframes flash { from { background: var(--flash); } to { background: transparent; } }
+/* while a subcircuit is drawn, the text outside its definition (text.js, scopeSource) */
+.source.scoped .ln:not(.in-scope) { background: var(--out-of-scope); }
+.source.scoped .ln:not(.in-scope) > * { opacity: 0.45; }
 
 .s-comment { color: var(--syn-comment); font-style: italic; }
 .s-marker { color: var(--syn-marker); }
@@ -757,6 +762,7 @@ body.menubar-shown { grid-template-rows: auto minmax(0, 1fr) auto; }
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
 }
 .dialog[open] { display: flex; flex-direction: column; }
+.dialog.wide { width: min(760px, calc(100vw - 32px)); }
 .dialog::backdrop { background: rgba(0, 0, 0, 0.25); }
 .dialog-title { margin: 0; padding: 14px 16px 6px; font-size: 14px; font-weight: 600; }
 .dialog-body {
@@ -795,6 +801,23 @@ body.menubar-shown { grid-template-rows: auto minmax(0, 1fr) auto; }
 .dialog-option:hover { background: var(--hover); }
 .dialog-option[aria-selected="true"] { background: var(--hover); box-shadow: inset 3px 0 0 var(--accent); }
 .dialog-note { color: var(--muted); font-size: 12px; }
+.dialog-warning { padding-left: 8px; border-left: 3px solid var(--warning); }
+/* the clipboard's text before it is loaded (open.js) */
+.clip-preview {
+  min-height: 3em;
+  max-height: min(320px, 40vh);
+  margin: 0;
+  padding: 6px 8px;
+  overflow: auto;
+  font: 12px/1.45 ui-monospace, "Cascadia Mono", Consolas, "Microsoft YaHei UI", monospace;
+  white-space: pre;
+  overflow-wrap: normal;
+  tab-size: 8;
+  background: var(--tab);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.clip-preview:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 /* a form of several values, such as the grid's settings */
 .dialog-form { display: flex; flex-direction: column; gap: 10px; }
 .dialog-form fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
