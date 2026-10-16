@@ -48,7 +48,7 @@ fn every_op_into_a_spice_subcircuit() {
         out,
         r#"
 * @RNL(type="header") {
-*   @VERSION("0.2");
+*   @VERSION("0.3");
 *   @USE-PACKAGE(name="rnl-std", version="0.3");
 *   @USE-PACKAGE(name="rnl-std-no-labels", version="0.3")
 * }
@@ -82,7 +82,7 @@ fn spectre_with_its_carrier_and_a_short_header() {
     let out = write(&request("spectre", net, ops)).unwrap();
     assert_eq!(
         out,
-        "simulator lang=spectre\n// @RNL(type=\"header\") { @VERSION(\"0.2\"); @USE-PACKAGE(name=\"rnl-std\", version=\"0.3\")}\n\nsubckt top (a b)\nR1 (a b) resistor r=1k\n// @RNL(author=\"test\") {\n//   #R1 @SET-SYMBOL $RES => @PLACE(0, 0)\n// }\nends top\n"
+        "simulator lang=spectre\n// @RNL(type=\"header\") { @VERSION(\"0.3\"); @USE-PACKAGE(name=\"rnl-std\", version=\"0.3\")}\n\nsubckt top (a b)\nR1 (a b) resistor r=1k\n// @RNL(author=\"test\") {\n//   #R1 @SET-SYMBOL $RES => @PLACE(0, 0)\n// }\nends top\n"
     );
     // Spectre names are case-sensitive
     let wrong = json!([{"level": "subckt:TOP", "op": "set", "object": "#R1", "at": [0, 0]}]);
@@ -96,7 +96,7 @@ fn the_file_level_line_endings_and_a_missing_last_newline() {
     let out = write(&request("spice", net, ops)).unwrap();
     assert_eq!(
         out,
-        "* title\r\n* @RNL(type=\"header\") { @VERSION(\"0.2\")}\r\nR1 a 0 1k\r\n* @RNL(author=\"test\") {\r\n*   #R1 @PLACE(1, 2)\r\n* }\r\n.end"
+        "* title\r\n* @RNL(type=\"header\") { @VERSION(\"0.3\")}\r\nR1 a 0 1k\r\n* @RNL(author=\"test\") {\r\n*   #R1 @PLACE(1, 2)\r\n* }\r\n.end"
     );
     // without .end the record goes at the end of the file
     let out = write(&request(
@@ -105,19 +105,19 @@ fn the_file_level_line_endings_and_a_missing_last_newline() {
         json!([{"level": "file:x", "op": "set", "object": "#R1", "at": [0, 0]}]),
     ))
     .unwrap();
-    assert_eq!(out, "* title\n* @RNL(type=\"header\") { @VERSION(\"0.2\")}\nR1 a 0 1k\n* @RNL(author=\"test\") {\n*   #R1 @PLACE(0, 0)\n* }\n");
+    assert_eq!(out, "* title\n* @RNL(type=\"header\") { @VERSION(\"0.3\")}\nR1 a 0 1k\n* @RNL(author=\"test\") {\n*   #R1 @PLACE(0, 0)\n* }\n");
 }
 
 #[test]
 fn the_header_goes_after_what_continues_line_one() {
     let out = write(&request("spice", "title\n+ more of it\nR1 a 0 1k\n", json!([]))).unwrap();
-    assert_eq!(out, "title\n+ more of it\n* @RNL(type=\"header\") { @VERSION(\"0.2\")}\nR1 a 0 1k\n");
+    assert_eq!(out, "title\n+ more of it\n* @RNL(type=\"header\") { @VERSION(\"0.3\")}\nR1 a 0 1k\n");
     let out =
         write(&request("spectre", "simulator lang=spectre \\\n  insensitive=no\nR1 (a b) resistor r=1k\n", json!([])))
             .unwrap();
-    assert_eq!(out, "simulator lang=spectre \\\n  insensitive=no\n// @RNL(type=\"header\") { @VERSION(\"0.2\")}\nR1 (a b) resistor r=1k\n");
+    assert_eq!(out, "simulator lang=spectre \\\n  insensitive=no\n// @RNL(type=\"header\") { @VERSION(\"0.3\")}\nR1 (a b) resistor r=1k\n");
     // an empty netlist still keeps line 1 for the title
-    assert_eq!(write(&request("spice", "", json!([]))).unwrap(), "\n* @RNL(type=\"header\") { @VERSION(\"0.2\")}\n");
+    assert_eq!(write(&request("spice", "", json!([]))).unwrap(), "\n* @RNL(type=\"header\") { @VERSION(\"0.3\")}\n");
 }
 
 #[test]
@@ -240,7 +240,7 @@ fn in_a_spice_section_of_a_spectre_netlist_a_record_is_carried_by_a_star() {
     let out = write(&request("spectre", net, ops)).unwrap();
     assert_eq!(
         out,
-        "// t\n// @RNL(type=\"header\") { @VERSION(\"0.2\")}\nsimulator lang=spice\n.subckt cell a b\nR1 a b 1k\n\
+        "// t\n// @RNL(type=\"header\") { @VERSION(\"0.3\")}\nsimulator lang=spice\n.subckt cell a b\nR1 a b 1k\n\
          * @RNL(author=\"test\") {\n*   #R1 @PLACE(0, 0)\n* }\n.ends cell\nsimulator lang=spectre\nX1 (n1 n2) cell\n\
          // @RNL(author=\"test\") {\n//   #X1 @PLACE(0, 0)\n// }\n"
     );
@@ -295,9 +295,9 @@ fn what_it_writes_interprets_without_errors() {
     let net = "\n.subckt amp in out VSS\nR1 in out 10k\nC1 out VSS 1p\n.ends amp\n";
     let level = "subckt:amp";
     let ops = json!([
-        {"level": level, "op": "set", "object": "#R1", "symbol": "$RES", "at": [4, 0], "orient": "R90"},
+        {"level": level, "op": "set", "object": "#R1", "symbol": "$RESISTOR", "at": [4, 0], "orient": "R90"},
         {"level": level, "op": "set", "object": "#C1", "at": [8, -4]},
-        {"level": level, "op": "add-usage", "name": "%gnd1", "definition": "$GND", "attach": {"p": "&VSS"}, "at": [8, -8]},
+        {"level": level, "op": "add-usage", "name": "%gnd1", "definition": "$GROUND", "attach": {"p": "&VSS"}, "at": [8, -8]},
         {"level": level, "op": "remove-from", "items": ["&VSS"], "set": "$PORT_FILL_SET"},
         {"level": level, "op": "add-wire", "nets": ["&out"], "mode": "straight", "via": [{"terminal": "#R1:2"}, {"at": [8, 0]}, {"terminal": "#C1:1"}]},
         {"level": level, "op": "add-wire", "nets": ["&VSS"], "mode": "straight", "via": [{"terminal": "#C1:2"}, {"usage": "%gnd1", "role": "p"}]},
@@ -352,7 +352,7 @@ fn graphics_and_a_symbol_in_the_file_level() {
     assert_eq!(
         out,
         r##"
-* @RNL(type="header") { @VERSION("0.2")}
+* @RNL(type="header") { @VERSION("0.3")}
 .subckt top a b
 X1 a b blk
 * @RNL(author="test") {
