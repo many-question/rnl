@@ -633,9 +633,11 @@ fn level_model(doc: &HostDocument, lv: &LevelView) -> LevelModel {
         .iter()
         .map(|p| PointView { id: p.id.clone(), at: Slot::of(p.at.map(xy)), junction: p.junction })
         .collect();
+    // a wire some of whose points have no position is drawn in runs; it has not all its vertices
     let wires = lv
         .wires
         .iter()
+        .filter(|w| w.whole)
         .map(|w| WireView {
             id: w.object_id.clone(),
             nets: w.nets.iter().map(|n| net_id(n)).collect(),
@@ -885,5 +887,31 @@ R2 a vdd! 2k
         let s = snap(Parts { drawing: false, host: true, model: false });
         assert!(s.get("drawing").is_none() && s["levels"][0].get("model").is_none());
         assert!(s["levels"][0]["host"].is_object());
+    }
+
+    #[test]
+    fn a_wire_through_a_point_without_a_position_is_drawn_in_runs_but_not_given() {
+        // the free point has no position: the drawing has the run from R1:2 to (4, 0) and a
+        // flyline from there to R2:1, the snapshot only the wire that has all its vertices
+        let netlist = "* runs
+R1 a b 1k
+R2 b c 1k
+* @RNL {
+*   #R1 @PLACE(0, 0); #R2 @PLACE(10, 0);
+*   &b @WIRE {#R1:2 (4, 0) (_, _) #R2:1};
+*   &a @WIRE {#R1:1 (-4, 0)}
+* }
+.end
+";
+        let files = MemoryProvider::new().with("/w/r.sp", netlist);
+        let r = crate::interpret("/w/r.sp", Some("spice"), &files, &rnl_runtime::Options::default()).unwrap();
+        let runs: Vec<&str> = r.model.levels[0].wires.iter().map(|w| w.nets[0].as_str()).collect();
+        assert_eq!(runs, ["b", "a"], "the run of &b is drawn");
+        let parts = Parts { drawing: false, host: false, model: true };
+        let s = crate::snapshot("/w/r.sp", &files, &BuildOptions::default(), parts).unwrap();
+        let s = serde_json::to_value(s).unwrap();
+        let given = s["levels"][0]["model"]["wires"].as_array().unwrap();
+        assert_eq!(given.len(), 1, "{given:?}");
+        assert_eq!(given[0]["nets"], json!(["&a"]));
     }
 }

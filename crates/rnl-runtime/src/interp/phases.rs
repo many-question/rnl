@@ -6,14 +6,54 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::diag::{Loc, Severity};
-use crate::geom::{fmt_num, route, Orient, Pt, TOL};
+use crate::geom::{fmt_num, route, Orient, Pt};
 
 use super::obj::*;
-use super::scene::{Fact, FactData};
+use super::scene::{Fact, FactData, WireShape};
 use super::Interp;
 
 fn level(p: Priority) -> u8 {
     p as u8
+}
+
+/// Why a wire cannot reach a terminal of its list (9.2.4, 11.8, 12.1), by the label of the usage,
+/// the terminal or the instance at fault.
+enum Fault {
+    NoSymbol(String),
+    NoPin(String),
+    InBundle(String),
+}
+
+impl Fault {
+    /// The error of a wire whose list fails so: the wire fails.
+    fn for_wire(&self) -> String {
+        match self {
+            Fault::NoSymbol(l) => format!("{l} has no symbol: a wire to its terminal fails (12.1)"),
+            Fault::NoPin(l) => format!("{l} has no pin in its symbol: the wire fails (9.2.4)"),
+            Fault::InBundle(l) => format!("{l} is in a bundle; wires go to the terminals of the bundle (11.8)"),
+        }
+    }
+
+    /// The error of a rewrite of `wire` whose list fails so (the draft 0.3, 13.1): it has no
+    /// effect, its style parameters included, and the wire does not fail.
+    fn for_rewrite(&self, wire: &str) -> String {
+        let (cause, section) = match self {
+            Fault::NoSymbol(l) => (format!("{l} has no symbol"), "12.1"),
+            Fault::NoPin(l) => (format!("{l} has no pin in its symbol"), "9.2.4"),
+            Fault::InBundle(l) => (format!("{l} is in a bundle, and wires go to the terminals of the bundle"), "11.8"),
+        };
+        format!("{cause}: this rewrite of {wire} fails and has no effect, its style parameters included; the wire keeps the list and mode of the latest rewrite that holds, or those it was made with ({section}, 5.8, 13.1)")
+    }
+}
+
+/// A priority said of a fact by a PRIORITY statement or a usage's own priority (14.8).
+struct Said<'a> {
+    /// What ranks it: the depth of its target, from outside, a statement rather than a
+    /// parameter, and where it is written.
+    rank: (usize, bool, bool, Option<&'a Pos>),
+    /// The depth it is written at.
+    at: usize,
+    value: Priority,
 }
 
 /// The style facts of a scene by target, each list in the order of the facts (8.3).
@@ -384,8 +424,30 @@ impl Interp<'_> {
 
     // ---- priorities (14.8)
 
-    /// From low to high: header default < own parameter < PRIORITY statements < the priority of the
-    /// enclosing usages (outermost that has one) < PRIORITY written on the local from outside.
+    /// The effective priority of a fact (14.8, in the order the draft 0.3 makes clear in its 7.3,
+    /// which holds in every version). `priority` is the fact's own parameter or its record head's
+    /// default, `chain` the usages whose expansion made it, outermost first, and `own` its own
+    /// object, a constraint or a set with GROUP, when PRIORITY can name it.
+    ///
+    /// A PRIORITY statement on `own` or on a usage of the chain has two depths. Its target's is i
+    /// for `chain[i]` and n, the length of the chain, for `own`. It is written at 0 outside every
+    /// usage of the chain, and at j + 1 in the body of `chain[j]`, or of a usage in its expansion
+    /// that is not in the chain, outside `chain[j + 1]`. Written at a depth lower than its
+    /// target's, it comes from outside; otherwise it is the target's own. Only a statement that
+    /// names its target, through `::`, comes from outside (14.8): one that a selection reaches
+    /// (`Fact::direct` false) is an ordinary statement on its target, one of the target's own,
+    /// wherever it is written. A usage's own statements, else its `priority=`, are its own
+    /// priority, written at the usage's depth; the own statements on `own` are written at n,
+    /// inside every usage.
+    ///
+    /// The priority of a usage goes down: from the outermost inward, a usage governs when its own
+    /// priority, or a statement from outside on it, is written no deeper than a bound, which then
+    /// comes down to the usage's depth; whatever is written deeper than the bound is blocked. So a
+    /// statement in the body of an enclosing definition stays under the enclosing usage, and one
+    /// from outside on a local usage makes it the outermost usage with a priority for its
+    /// expansion. Of what is not blocked, the innermost target wins; on one target, a statement
+    /// from outside beats the target's own, a statement beats a parameter, and the later beats the
+    /// earlier. When nothing is left, the fact's own parameter decides, else it is "normal".
     pub(crate) fn eff_priority(
         &self,
         s: SceneId,
@@ -393,61 +455,59 @@ impl Interp<'_> {
         chain: &[ObjId],
         own: Option<ObjId>,
     ) -> Priority {
-        let sc = &self.scenes[s];
-        let mut p = priority;
-        let mut inner: Vec<&Fact> = Vec::new();
-        let mut outer: Vec<&Fact> = Vec::new();
-        if let Some(own) = own {
-            for g in &sc.prioritys {
-                if g.target == own {
-                    if self.reaches_from_outside(g, chain) {
-                        outer.push(g);
-                    } else {
-                        inner.push(g);
-                    }
+        let n = chain.len();
+        let mut said: Vec<Said> = Vec::new();
+        for (t, target) in chain.iter().copied().chain(own).enumerate() {
+            // the target's own statement written last
+            let mut latest: Option<(&Pos, Priority)> = None;
+            for g in self.scenes[s].prioritys.iter().filter(|g| g.target == target) {
+                let FactData::Priority(value) = g.data else { continue };
+                let at = if g.direct { self.written_depth(g, chain) } else { t };
+                if at < t {
+                    said.push(Said { rank: (t, true, true, Some(&g.pos)), at, value });
+                } else if latest.is_none_or(|(q, _)| *q <= g.pos) {
+                    latest = Some((&g.pos, value));
                 }
             }
-        }
-        let best = |v: &[&Fact]| -> Option<Priority> {
-            v.iter().max_by(|a, b| a.pos.cmp(&b.pos)).and_then(|g| match g.data {
-                FactData::Priority(p) => Some(p),
-                _ => None,
-            })
-        };
-        if !inner.is_empty() {
-            p = best(&inner);
-        }
-        for &a in chain {
-            let mods: Vec<&Fact> = sc.prioritys.iter().filter(|g| g.target == a).collect();
-            if !mods.is_empty() {
-                p = best(&mods);
-                break;
-            }
-            if let Some(ap) = self.usage(a).priority {
-                p = Some(ap);
-                break;
+            match latest {
+                Some((q, value)) => said.push(Said { rank: (t, false, true, Some(q)), at: t, value }),
+                None if t < n => {
+                    if let Some(value) = self.usage(target).priority {
+                        said.push(Said { rank: (t, false, false, None), at: t, value });
+                    }
+                }
+                None => {}
             }
         }
-        if !outer.is_empty() {
-            p = best(&outer);
+        let mut bound = n;
+        for j in 0..n {
+            if said.iter().any(|x| x.rank.0 == j && x.at <= bound) {
+                bound = bound.min(j);
+            }
         }
-        p.unwrap_or(Priority::Normal)
+        said.iter()
+            .filter(|x| x.at <= bound)
+            .max_by(|a, b| a.rank.cmp(&b.rank))
+            .map(|x| x.value)
+            .or(priority)
+            .unwrap_or(Priority::Normal)
     }
 
-    /// A PRIORITY reaches a definition's local from outside when it is not written in that usage's body.
-    fn reaches_from_outside(&self, g: &Fact, chain: &[ObjId]) -> bool {
-        let Some(last) = chain.last() else { return false };
-        let mut inside = g.ctx.as_ref().and_then(|c| c.frame_usage());
-        while let Some(u) = inside {
-            if u == *last {
-                return false;
+    /// The depth a PRIORITY statement is written at, for a fact made through `chain` (14.8): 0
+    /// outside every usage of the chain, j + 1 in the body of `chain[j]`, or of a usage in its
+    /// expansion that is not in the chain, outside `chain[j + 1]`.
+    fn written_depth(&self, g: &Fact, chain: &[ObjId]) -> usize {
+        let mut at = g.ctx.as_ref().and_then(|c| c.frame_usage());
+        while let Some(u) = at {
+            if let Some(j) = chain.iter().position(|c| *c == u) {
+                return j + 1;
             }
-            inside = self.usage(u).parent;
+            at = self.usage(u).parent;
         }
-        true
+        0
     }
 
-    fn fact_priority(&self, s: SceneId, f: &Fact) -> Priority {
+    pub(crate) fn fact_priority(&self, s: SceneId, f: &Fact) -> Priority {
         self.eff_priority(s, f.priority, &f.chain, None)
     }
 
@@ -469,7 +529,10 @@ impl Interp<'_> {
                 live_or.push(k);
             }
         }
+        self.scenes[s].at_live = live_at.clone();
+        self.scenes[s].orient_live = live_or.clone();
         // 2. coordinates: per object and axis the fact with the highest priority (8.5)
+        let tol = self.tol;
         let mut best: HashMap<(ObjId, char), (Priority, Pos, usize)> = HashMap::new();
         let mut best_order: Vec<(ObjId, char)> = Vec::new();
         for k in live_at {
@@ -488,11 +551,11 @@ impl Interp<'_> {
                 Some(cur) => {
                     let FactData::Coord(_, cv) = at[cur.2].data else { continue };
                     if (level(p), &f.pos) > (level(cur.0), &cur.1) {
-                        if (cv - v).abs() > TOL {
+                        if (cv - v).abs() > tol {
                             self.drop_fact(s, &at[cur.2], f);
                         }
                         best.insert(key, (p, f.pos.clone(), k));
-                    } else if (cv - v).abs() > TOL {
+                    } else if (cv - v).abs() > tol {
                         self.drop_fact(s, f, &at[cur.2]);
                     }
                 }
@@ -580,9 +643,14 @@ impl Interp<'_> {
         }
         // 4. check constraints against the positions (no solver)
         self.check_constraints(s);
-        // 5. failures that need symbols: wires to pinless terminals, labels on symbol-less usages
+        // 5. failures that need symbols: wires to pinless terminals, labels on symbol-less usages.
+        // A rewrite of the draft 0.3 that fails so is an error and has no effect, its style
+        // parameters included: the wire keeps the list and mode of the latest rewrite that holds,
+        // or those it was made with, and is warned about and checked by them, there (5.8, 13.1)
+        self.check_rewrites(s);
         for w in self.scenes[s].wires.clone() {
-            let ObjData::Wire { nets, points, generated, site, off, .. } = self.o(w).clone() else { continue };
+            let ObjData::Wire { nets, .. } = self.o(w).clone() else { continue };
+            let Some(WireShape { points, generated, site, off, .. }) = self.wire_shape(s, w) else { continue };
             if site.is_none() || generated {
                 continue;
             }
@@ -609,21 +677,20 @@ impl Interp<'_> {
             }
         }
         for w in self.scenes[s].wires.clone() {
-            let ObjData::Wire { points, site, off, .. } = self.o(w).clone() else { continue };
-            for q in &points {
-                let ObjData::Term { owner, .. } = self.o(*q).clone() else { continue };
-                if !self.term_drawable(s, *q, &site, off, "wire") {
-                    self.set_failed(w);
-                    break;
+            let mut rewrites = self.scenes[s].rewrites.get(&w).cloned().unwrap_or_default();
+            rewrites.sort_by(|a, b| (&a.pos, a.seq).cmp(&(&b.pos, b.seq)));
+            for r in &rewrites {
+                if let Some(msg) = &r.fault {
+                    self.diag_site(Severity::Error, &Some(r.site.clone()), r.off, msg.clone());
                 }
-                if self.bundle_field(owner).is_some() {
-                    let l = self.label(owner);
-                    self.diag_site(
-                        Severity::Error,
-                        &site,
-                        off,
-                        format!("{l} is in a bundle; wires go to the terminals of the bundle (11.8)"),
-                    );
+            }
+            if rewrites.iter().any(|r| r.fault.is_none()) {
+                continue; // drawn by a rewrite that holds
+            }
+            let Some(WireShape { points, site, off, .. }) = self.wire_shape(s, w) else { continue };
+            for q in &points {
+                if let Some(fault) = self.term_fault(s, *q) {
+                    self.diag_site(Severity::Error, &site, off, fault.for_wire());
                     self.set_failed(w);
                     break;
                 }
@@ -895,36 +962,44 @@ impl Interp<'_> {
         }
     }
 
-    fn term_drawable(
-        &mut self,
-        s: SceneId,
-        t: ObjId,
-        site: &Option<std::rc::Rc<super::ctx::Ctx>>,
-        off: usize,
-        what: &str,
-    ) -> bool {
-        let ObjData::Term { owner, .. } = self.o(t).clone() else { return true };
+    /// Why a wire cannot reach a point of its list, once the symbols are known: a terminal of a
+    /// usage without a symbol (12.1), a terminal without a pin (9.2.4), or a terminal of an
+    /// instance in a bundle (11.8). None for a terminal it reaches, and for a point.
+    fn term_fault(&mut self, s: SceneId, t: ObjId) -> Option<Fault> {
+        let ObjData::Term { owner, .. } = self.o(t).clone() else { return None };
         if matches!(self.o(owner), ObjData::Usage(_)) && !self.scenes[s].symbol.contains_key(&owner) {
-            let l = self.label(owner);
-            self.diag_site(
-                Severity::Error,
-                site,
-                off,
-                format!("{l} has no symbol: a {what} to its terminal fails (12.1)"),
-            );
-            return false;
+            return Some(Fault::NoSymbol(self.label(owner)));
         }
         if !self.has_pin(s, t) {
-            let l = self.label(t);
-            self.diag_site(
-                Severity::Error,
-                site,
-                off,
-                format!("{l} has no pin in its symbol: the {what} fails (9.2.4)"),
-            );
-            return false;
+            return Some(Fault::NoPin(self.label(t)));
         }
-        true
+        if self.bundle_field(owner).is_some() {
+            return Some(Fault::InBundle(self.label(owner)));
+        }
+        None
+    }
+
+    /// Find which rewrites of the wires of scene `s` fail (the draft 0.3, 13.1): those whose list
+    /// has a point that a wire cannot reach. Such a rewrite has no effect: its list and its mode
+    /// do not replace the wire's (`wire_shape`), and its style parameters are taken back here, in
+    /// step 7, before the style queue of step 8 reads them (8.2). Its error is given with the other
+    /// failures of the wire.
+    fn check_rewrites(&mut self, s: SceneId) {
+        let mut wires: Vec<ObjId> = self.scenes[s].rewrites.keys().copied().collect();
+        wires.sort();
+        for w in wires {
+            let wire = self.label(w);
+            for k in 0..self.scenes[s].rewrites[&w].len() {
+                let points = self.scenes[s].rewrites[&w][k].points.clone();
+                let fault = points.iter().find_map(|q| self.term_fault(s, *q)).map(|f| f.for_rewrite(&wire));
+                let Some(r) = self.scenes[s].rewrites.get_mut(&w).map(|r| &mut r[k]) else { continue };
+                let style = r.style.filter(|_| fault.is_some());
+                r.fault = fault;
+                if let Some(f) = style.and_then(|j| self.scenes[s].styles.get_mut(j)) {
+                    f.data = FactData::OwnStyle(StyleMap::new());
+                }
+            }
+        }
     }
 
     // positions of things
@@ -992,7 +1067,7 @@ impl Interp<'_> {
     }
 
     /// Where the text's `dx` or `dy` was last written (13.3).
-    fn offset_pos(&self, s: SceneId, t: ObjId, dx: bool) -> Pos {
+    pub(crate) fn offset_pos(&self, s: SceneId, t: ObjId, dx: bool) -> Pos {
         let mut p = self.scenes[s].created.get(&t).cloned().unwrap_or_else(|| pos(&[0]));
         if let ObjData::KeyText { layers, .. } = self.o(t) {
             let mut ls: Vec<&(Pos, TextItems, StyleMap)> = layers.iter().collect();
@@ -1099,6 +1174,79 @@ impl Interp<'_> {
         }
     }
 
+    /// Where a viewer that does not solve draws a text (13.3; the draft 0.3, section 9): at its
+    /// anchor, or, when the anchor leaves it without a position while what it is attached to is
+    /// drawn, beside that by this implementation's default rule. That is a wire drawn only in part
+    /// or as a flyline, a net none of whose wires has all its points placed, and a graphic. The axes
+    /// that a PLACE fixes keep their values. This place is the viewer's only: constraints and the
+    /// solver's view still see such a text without a position.
+    pub(crate) fn text_drawn_at(&mut self, s: SceneId, t: ObjId) -> Option<Pt> {
+        if let Some(at) = self.text_anchor(s, t) {
+            return Some(at);
+        }
+        let att = self.text_attach(t);
+        let xy = self.scenes[s].pos.get(&t).copied().unwrap_or([None, None]);
+        let free = self.drawn_default_place(s, att)?;
+        Some((xy[0].unwrap_or(free.0), xy[1].unwrap_or(free.1)))
+    }
+
+    /// The default place of a text whose attached object is drawn although `text_default_place`
+    /// finds no place for it: above the middle of what is drawn of a wire, flylines included; at
+    /// the start of the first wire of a net that is drawn at all, else at the first pin on the net
+    /// that is drawn (13.3: next to one of its wires or terminals); beside the first point of a
+    /// graphic, as beside the origin of an object. None when nothing of it is drawn.
+    fn drawn_default_place(&mut self, s: SceneId, att: ObjId) -> Option<Pt> {
+        match self.o(att).clone() {
+            ObjData::Wire { .. } => {
+                let pts = self.wire_path(s, att);
+                if pts.len() < 2 {
+                    return None;
+                }
+                let k = pts.len() / 2;
+                let (a, b) = (pts[k - 1], pts[k]);
+                Some(((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0 + 0.6))
+            }
+            ObjData::Net { .. } => {
+                for w in self.scenes[s].wires_by_net.get(&att).cloned().unwrap_or_default() {
+                    if !matches!(self.o(w), ObjData::Wire { failed: false, .. }) {
+                        continue;
+                    }
+                    let pts = self.wire_path(s, w);
+                    if pts.len() >= 2 {
+                        return pts.first().copied();
+                    }
+                }
+                let terms = self.route_terms(s);
+                for &(_, t, _) in terms.get(&att).into_iter().flatten() {
+                    if self.has_pin(s, t) {
+                        if let Some(p) = self.point_of(s, t) {
+                            return Some(p);
+                        }
+                    }
+                }
+                None
+            }
+            ObjData::Prim { points, .. } => {
+                // a graphic is drawn when all its points have a position (13.4)
+                let mut first = None;
+                for q in points {
+                    let p = self.point_of(s, q)?;
+                    first.get_or_insert(p);
+                }
+                first.map(|p| (p.0 + 1.2, p.1 + 1.2))
+            }
+            _ => None,
+        }
+    }
+
+    /// What is drawn of a wire, as one line: its runs of points that have a position after its
+    /// mode, joined by its flylines ([`Interp::wire_runs`]); the vertices of the wire when all its
+    /// points have a position.
+    fn wire_path(&mut self, s: SceneId, w: ObjId) -> Vec<Pt> {
+        let Some((runs, mode)) = self.wire_runs(s, w) else { return Vec::new() };
+        runs.iter().flat_map(|run| if run.len() >= 2 { route(run, &mode) } else { run.clone() }).collect()
+    }
+
     pub(crate) fn text_items(&self, t: ObjId) -> TextItems {
         match self.o(t) {
             ObjData::KeyText { layers, .. } => {
@@ -1179,8 +1327,10 @@ impl Interp<'_> {
         }
         let ws = self.scenes[s].wires_by_net.get(&net).cloned().unwrap_or_default();
         for w in ws {
-            let ObjData::Wire { points, failed: false, .. } = self.o(w) else { continue };
-            let points = points.clone();
+            if !matches!(self.o(w), ObjData::Wire { failed: false, .. }) {
+                continue;
+            }
+            let Some(WireShape { points, .. }) = self.wire_shape(s, w) else { continue };
             let mut keys = Vec::new();
             for q in points {
                 let k = match self.o(q).clone() {
@@ -1228,13 +1378,47 @@ impl Interp<'_> {
         out
     }
 
+    /// The vertices of a wire after its routing mode (13.1), as it is drawn: rewritten, by the
+    /// rewrite that takes effect (the draft 0.3). None while one of its points has no position.
     pub(crate) fn wire_points(&mut self, s: SceneId, w: ObjId) -> Option<Vec<Pt>> {
-        let ObjData::Wire { points, mode, .. } = self.o(w).clone() else { return None };
+        let WireShape { points, mode, .. } = self.wire_shape(s, w)?;
         let mut pts = Vec::new();
         for q in points {
             pts.push(self.point_of(s, q)?);
         }
         Some(route(&pts, &mode))
+    }
+
+    /// What a viewer that does not solve draws of a wire some of whose points have no position yet,
+    /// such as a free point `(_, _)` or the pin of an instance not placed (13.1; the draft 0.3,
+    /// section 9): the runs of consecutive points that have one, each of two or more drawn as the
+    /// wire after its mode, and a flyline from the end of each run to the start of the next, over
+    /// the points that have none. Each run is its points as written, and the mode is the wire's;
+    /// a wire whose points all have a position is one run.
+    pub(crate) fn wire_runs(&mut self, s: SceneId, w: ObjId) -> Option<(Vec<Vec<Pt>>, String)> {
+        let WireShape { points, mode, .. } = self.wire_shape(s, w)?;
+        let mut runs: Vec<Vec<Pt>> = Vec::new();
+        let mut gap = true;
+        for q in points {
+            match self.point_of(s, q) {
+                Some(xy) if gap => {
+                    runs.push(vec![xy]);
+                    gap = false;
+                }
+                Some(xy) => runs.last_mut().unwrap().push(xy),
+                None => gap = true,
+            }
+        }
+        Some((runs, mode))
+    }
+
+    /// A wire as a viewer that does not solve draws it ([`Interp::wire_runs`]): its runs of two
+    /// points or more after its mode, and its flylines.
+    pub(crate) fn wire_drawing(&mut self, s: SceneId, w: ObjId) -> (Vec<Vec<Pt>>, Vec<(Pt, Pt)>) {
+        let Some((runs, mode)) = self.wire_runs(s, w) else { return (Vec::new(), Vec::new()) };
+        let flylines = runs.windows(2).map(|pair| (pair[0][pair[0].len() - 1], pair[1][0])).collect();
+        let drawn = runs.iter().filter(|run| run.len() >= 2).map(|run| route(run, &mode)).collect();
+        (drawn, flylines)
     }
 
     // ---- constraints (14)
@@ -1358,7 +1542,7 @@ impl Interp<'_> {
         }
     }
 
-    fn leaves(&mut self, s: SceneId, members: &[ObjId]) -> Vec<ObjId> {
+    pub(crate) fn leaves(&mut self, s: SceneId, members: &[ObjId]) -> Vec<ObjId> {
         let mut out = Vec::new();
         for &m in members {
             if self.is_set(m) {
@@ -1433,6 +1617,7 @@ impl Interp<'_> {
 
     fn satisfied(&mut self, s: SceneId, c: ObjId, members: &[ObjId]) -> Option<bool> {
         let ObjData::Constraint(cd) = self.o(c).clone() else { return Some(true) };
+        let tol = self.tol;
         if cd.kind == ConstraintKind::OrientRelation {
             // each side shares one orientation; `to` is `from` turned by the relation in the drawing's frame (14.9)
             let mut sides = Vec::new();
@@ -1470,8 +1655,8 @@ impl Interp<'_> {
                 Some("decreasing") => ra.0 - rb.1,
                 _ => (rb.0 - ra.1).max(ra.0 - rb.1),
             };
-            let lo_ok = cd.params.min.is_none_or(|lo| d >= lo - TOL);
-            let hi_ok = cd.params.max.is_none_or(|hi| d <= hi + TOL);
+            let lo_ok = cd.params.min.is_none_or(|lo| d >= lo - tol);
+            let hi_ok = cd.params.max.is_none_or(|hi| d <= hi + tol);
             return Some(lo_ok && hi_ok);
         }
         let mut vals = Vec::new();
@@ -1479,13 +1664,13 @@ impl Interp<'_> {
             vals.push(self.coord_of(s, m, axis)?);
         }
         match cd.kind {
-            ConstraintKind::Align => Some(vals.len() < 2 || vals.iter().all(|v| (v - vals[0]).abs() <= TOL)),
+            ConstraintKind::Align => Some(vals.len() < 2 || vals.iter().all(|v| (v - vals[0]).abs() <= tol)),
             ConstraintKind::Order => {
                 if vals.len() < 2 {
                     return Some(true);
                 }
-                let inc = vals.windows(2).all(|w| w[1] - w[0] >= 1.0 - TOL);
-                let dec = vals.windows(2).all(|w| w[0] - w[1] >= 1.0 - TOL);
+                let inc = vals.windows(2).all(|w| w[1] - w[0] >= 1.0 - tol);
+                let dec = vals.windows(2).all(|w| w[0] - w[1] >= 1.0 - tol);
                 Some(match cd.params.sense {
                     Some("increasing") => inc,
                     Some("decreasing") => dec,
@@ -1497,7 +1682,7 @@ impl Interp<'_> {
                     return Some(true);
                 }
                 let d0 = vals[1] - vals[0];
-                Some(vals.windows(2).all(|w| ((w[1] - w[0]) - d0).abs() <= TOL))
+                Some(vals.windows(2).all(|w| ((w[1] - w[0]) - d0).abs() <= tol))
             }
             _ => Some(true),
         }

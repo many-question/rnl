@@ -9,7 +9,9 @@ pub mod attrs;
 pub mod ctx;
 pub mod cycles;
 pub mod eval;
+mod export;
 pub mod kw;
+mod numbers;
 pub mod obj;
 mod output;
 pub mod phases;
@@ -20,15 +22,18 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::diag::{DiagId, Sink};
-use crate::host::{HostDocument, Level, LevelKind, Record};
+use crate::host::{HostDocument, Level, LevelId, LevelKind, Record};
 use crate::model::{FailedSpan, HostRef, Model};
+use crate::numbering::LevelNumbering;
+use crate::previous::RecordResult;
 use crate::source::Provider;
 use crate::syntax::RecordAst;
 
 use eval::{Bound, Stop, R};
+use numbers::{AuthoredCount, Birth, Counted, LevelNumbers, NumberRun};
 use obj::*;
 use scene::Scene;
-use unit::{Unit, UnitKind};
+use unit::{Header, Unit, UnitKind};
 
 /// The memoised value of a member in a scene.
 #[derive(Clone, Debug)]
@@ -45,11 +50,32 @@ pub(crate) type RuleMembers = ((usize, usize), Rc<Vec<unit::UnitMember>>);
 pub struct Options {
     /// Use the standard package implicitly at the root (16.3).
     pub std: bool,
+    /// Read the records with `type="generated"`, the solver's results. A solver interprets a level
+    /// without them (2.8, 14.8): every file of the document is read as if they were not written.
+    pub generated: bool,
+    /// Build the solver's view of each drawing level, [`Interpretation::problems`].
+    pub problems: bool,
+    /// Two coordinates closer than this are equal when constraints are checked against the
+    /// written coordinates and conflicting coordinates are found (11.7). The standard leaves the
+    /// tolerance to the tool; a viewer that does not solve uses [`crate::geom::TOL`].
+    pub tolerance: f64,
+    /// For development only: read the files that declare the draft 0.3 as well
+    /// ([`unit::DRAFT_VERSION`]). The rules the draft changes apply only to those files, so a file
+    /// of 0.2 reads the same with this on or off.
+    pub draft: bool,
 }
 
 impl Default for Options {
     fn default() -> Options {
-        Options { std: true }
+        Options { std: true, generated: true, problems: false, tolerance: crate::geom::TOL, draft: false }
+    }
+}
+
+impl Options {
+    /// What a solver reads (2.8, 14.8, 17): the levels without the records with
+    /// `type="generated"`, and the problem of each.
+    pub fn solver() -> Options {
+        Options { generated: false, problems: true, ..Options::default() }
     }
 }
 
@@ -67,6 +93,27 @@ pub struct Interpretation {
     pub refs: Vec<HostRef>,
     /// The statements, or parts of them, that do not take effect: failed or dropped in a conflict.
     pub failed: Vec<FailedSpan>,
+    /// What a solver needs of each drawing level, in the order of `model.levels`; empty unless
+    /// [`Options::problems`] is set. Built without the generated records ([`Options::solver`]),
+    /// it is the solver's input (2.8, 17).
+    pub problems: Vec<crate::problem::LevelProblem>,
+    /// The numbers of the objects without a name of each drawing level, with their checks (the
+    /// draft 0.3, 5.9); empty unless [`Options::draft`] is set. See [`crate::numbering`].
+    pub numbering: Vec<LevelNumbering>,
+    /// The records of the solver to read again, differently (5.9).
+    pub(crate) recheck: NumberRun,
+    /// In a reading without the records of the solver that counts for another, the objects of the
+    /// authored records of each level (5.9).
+    pub(crate) counted: HashMap<LevelId, AuthoredCount>,
+    /// The records' own objects of the records of the solver, when a reading after this one needs
+    /// them: a number was used before the member that makes its object, or this reading resolved
+    /// such numbers with the counts of the one before (5.9).
+    pub(crate) own: HashMap<RecId, Vec<Counted>>,
+    /// A number was used before the member that makes its object, while that member was read.
+    pub(crate) forward: bool,
+    /// What the last record of the solver of each level gives, read with the records of the solver
+    /// and with [`Options::problems`] (see [`crate::previous::previous`]).
+    pub(crate) results: Vec<RecordResult>,
 }
 
 impl Interpretation {
@@ -86,6 +133,8 @@ pub struct Interp<'p> {
     pub(crate) level_scene: Vec<Option<SceneId>>,
     pub(crate) unit_recs: Vec<Vec<RecId>>,
     pub(crate) recs: Vec<Record>,
+    /// The unit whose text each record is in.
+    pub(crate) rec_unit: Vec<UnitId>,
     pub(crate) asts: Vec<Option<Rc<RecordAst>>>,
     /// The characters of each record's text, collected when an offset into it is first read.
     pub(crate) rec_chars: Vec<Option<Rc<[char]>>>,
@@ -118,6 +167,14 @@ pub struct Interp<'p> {
     /// evaluated: the run stops, and the interpretation is run again with it in `closing`.
     pub(crate) restart: Option<(cycles::StmtKey, String)>,
     pub(crate) std_enabled: bool,
+    /// Read the records with `type="generated"` (`Options::generated`).
+    pub(crate) read_generated: bool,
+    /// Build the problems (`Options::problems`).
+    pub(crate) want_problems: bool,
+    /// The tolerance of the checks against written coordinates (`Options::tolerance`, 11.7).
+    pub(crate) tol: f64,
+    /// Read the files that declare the draft 0.3 (`Options::draft`).
+    pub(crate) draft: bool,
     pub(crate) std_cache: Option<Option<UnitId>>,
     pub(crate) scoped_memo: HashMap<(UnitId, ObjId), Vec<(String, String)>>,
     pub(crate) body_errors: HashMap<usize, DiagId>,
@@ -131,10 +188,45 @@ pub struct Interp<'p> {
     /// The statements found not to take effect so far, each once.
     pub(crate) failed_spans: Vec<FailedSpan>,
     pub(crate) failed_seen: HashSet<FailedSpan>,
+    /// The header of each record read, other than the header record (2.8).
+    pub(crate) rec_header: HashMap<RecId, Rc<Header>>,
+    /// The objects that may be numbered, as they were made, and each one's index there (5.9).
+    pub(crate) births: Vec<Birth>,
+    pub(crate) birth_of: HashMap<ObjId, usize>,
+    /// The objects that the member making them binds to a name: not numbered (5.9).
+    pub(crate) named: HashSet<ObjId>,
+    /// The evaluations of members under way, innermost last, and the last one begun.
+    pub(crate) evals: Vec<u64>,
+    pub(crate) next_eval: u64,
+    /// The numbered objects by (scene, record of the solver, before its member), with the number of
+    /// births and of names they were computed with.
+    #[allow(clippy::type_complexity)]
+    pub(crate) numbered_memo: HashMap<(SceneId, Option<RecId>, Option<usize>), ((usize, usize), Rc<Vec<ObjId>>)>,
+    /// The numbered objects of each scene, with the number of births and of names they were
+    /// computed with.
+    pub(crate) level_numbers_memo: HashMap<SceneId, ((usize, usize), Rc<LevelNumbers>)>,
+    /// The births by the member of a record whose evaluation made them, in each scene.
+    pub(crate) births_by_root: HashMap<(SceneId, MemberKey), Vec<usize>>,
+    /// How many objects one token made for one member of a set so far, by scene, usage whose body
+    /// it is in, record, token and member.
+    #[allow(clippy::type_complexity)]
+    pub(crate) each_seen: HashMap<(SceneId, Option<ObjId>, Option<RecId>, usize, ObjId), usize>,
+    /// How each object was made, as another reading compares it (5.9).
+    pub(crate) identities: HashMap<ObjId, Rc<str>>,
+    /// A number was used before the member that makes its object, while that member was read.
+    pub(crate) forward: bool,
+    /// What this run takes from the readings before it (5.9).
+    pub(crate) numbers: NumberRun,
 }
 
 impl<'p> Interp<'p> {
-    fn blank(doc: HostDocument, provider: &'p dyn Provider, options: &Options, sink: Sink) -> Interp<'p> {
+    fn blank(
+        doc: HostDocument,
+        provider: &'p dyn Provider,
+        options: &Options,
+        sink: Sink,
+        numbers: NumberRun,
+    ) -> Interp<'p> {
         let nlevels = doc.levels.len();
         let mut it = Interp {
             doc,
@@ -146,6 +238,7 @@ impl<'p> Interp<'p> {
             level_scene: vec![None; nlevels],
             unit_recs: Vec::new(),
             recs: Vec::new(),
+            rec_unit: Vec::new(),
             asts: Vec::new(),
             rec_chars: Vec::new(),
             pkg_levels: Vec::new(),
@@ -169,6 +262,10 @@ impl<'p> Interp<'p> {
             closing: HashMap::new(),
             restart: None,
             std_enabled: options.std,
+            read_generated: options.generated,
+            want_problems: options.problems,
+            tol: options.tolerance,
+            draft: options.draft,
             std_cache: None,
             scoped_memo: HashMap::new(),
             body_errors: HashMap::new(),
@@ -179,6 +276,19 @@ impl<'p> Interp<'p> {
             failed_seen: HashSet::new(),
             package_main: None,
             checking_path: None,
+            rec_header: HashMap::new(),
+            births: Vec::new(),
+            birth_of: HashMap::new(),
+            named: HashSet::new(),
+            evals: Vec::new(),
+            next_eval: 0,
+            numbered_memo: HashMap::new(),
+            level_numbers_memo: HashMap::new(),
+            births_by_root: HashMap::new(),
+            each_seen: HashMap::new(),
+            identities: HashMap::new(),
+            forward: false,
+            numbers,
         };
         for _ in 0..3 {
             it.objs.push(Obj { data: ObjData::Marker, name: String::new() }); // LEVEL, OWNER, NOTHING
@@ -189,20 +299,33 @@ impl<'p> Interp<'p> {
     /// Prepare the interpretation of a host document: read every level's records and headers.
     /// `sink` may already hold the host adapter's diagnostics.
     pub fn new(doc: HostDocument, provider: &'p dyn Provider, options: &Options, sink: Sink) -> Interp<'p> {
-        let mut it = Interp::blank(doc, provider, options, sink);
+        Interp::new_run(doc, provider, options, sink, NumberRun::default())
+    }
+
+    /// The same, with the records of the solver that this run reads differently (5.9).
+    fn new_run(
+        doc: HostDocument,
+        provider: &'p dyn Provider,
+        options: &Options,
+        sink: Sink,
+        numbers: NumberRun,
+    ) -> Interp<'p> {
+        let mut it = Interp::blank(doc, provider, options, sink, numbers);
         for lv in 0..it.doc.levels.len() {
             let mut u = Unit::new(UnitKind::Level, &it.doc.levels[lv].title());
             u.level = Some(lv);
-            it.level_unit[lv] = it.units.len();
+            let unit = it.units.len();
+            it.level_unit[lv] = unit;
             it.units.push(u);
             let recs = it.doc.levels[lv].records.clone();
-            let ids: Vec<RecId> = recs.into_iter().map(|r| it.add_record(r)).collect();
+            let ids: Vec<RecId> = recs.into_iter().map(|r| it.add_record(r, unit)).collect();
             it.unit_recs.push(ids);
         }
         for lv in 0..it.doc.levels.len() {
             let u = it.level_unit[lv];
             it.read_unit(u);
         }
+        it.publish_scope_names();
         it
     }
 
@@ -214,7 +337,7 @@ impl<'p> Interp<'p> {
             main,
             crate::host::Dialect { name: "none".into(), case_sensitive: false, ground_aliases: Vec::new() },
         );
-        let mut it = Interp::blank(doc, provider, options, Sink::new());
+        let mut it = Interp::blank(doc, provider, options, Sink::new(), NumberRun::default());
         let mut u = Unit::new(UnitKind::Level, &name);
         u.level = Some(0);
         u.ok = false;
@@ -305,13 +428,11 @@ impl<'p> Interp<'p> {
         struct Work {
             u: UnitId,
             m: unit::UnitMember,
-            pos: Option<Pos>,
-            scope_in: bool,
         }
         let mut work: Vec<Work> = Vec::new();
         for e in self.effective_packages(lv) {
             for m in self.rule_members(e.unit).iter() {
-                work.push(Work { u: e.unit, m: m.clone(), pos: None, scope_in: false });
+                work.push(Work { u: e.unit, m: m.clone() });
             }
         }
         let mut anc = self.doc.ancestors(lv);
@@ -322,39 +443,16 @@ impl<'p> Interp<'p> {
             }
             let au = self.level_unit[*a];
             for m in self.rule_members(au).iter() {
-                work.push(Work { u: au, m: m.clone(), pos: None, scope_in: false });
+                work.push(Work { u: au, m: m.clone() });
             }
         }
-        for m in self.units[unit].members.clone() {
-            work.push(Work { u: unit, m, pos: None, scope_in: false });
-        }
-        // records written above with scope= this subcircuit (2.6)
-        let anc_up = self.doc.ancestors(lv);
-        let lvl = &self.doc.levels[lv];
-        let key = if lvl.kind == LevelKind::Subckt { Some(self.doc.key(&lvl.name)) } else { None };
-        for (depth, a) in anc_up.iter().enumerate() {
-            let au = self.level_unit[*a];
-            let Some(ks) = key.as_ref().and_then(|k| self.units[au].scope_index.get(k)) else { continue };
-            for i in ks.clone() {
-                let (rec, ast, header) = self.units[au].scope_records[i].clone();
-                for (k, m) in ast.body.as_ref().unwrap().members.iter().enumerate() {
-                    if m.error.is_some() {
-                        continue;
-                    }
-                    let p = pos(&[4, -((anc_up.len() - depth) as i64), rec as i64, k as i64]);
-                    let um =
-                        unit::UnitMember { rec: Some(rec), k, embedded: false, m: m.clone(), header: header.clone() };
-                    work.push(Work { u: unit, m: um, pos: Some(p), scope_in: true });
-                }
-            }
-        }
+        // its own text, then the records written above with scope= this subcircuit (2.6), whose
+        // members are its own as well, evaluated in its unit
+        let own = self.units[unit].members.iter().chain(&self.units[unit].scope_members);
+        work.extend(own.map(|m| Work { u: unit, m: m.clone() }));
         for w in work {
             if self.restart.is_some() {
                 return;
-            }
-            if w.scope_in {
-                self.eval_scope_in(w.u, &w.m, w.pos.unwrap(), s);
-                continue;
             }
             let r =
                 self.eval_member_at(w.u, w.m.rec, w.m.k, w.m.embedded, &w.m.m, Some(s), w.m.header.clone(), None, "");
@@ -404,8 +502,9 @@ impl<'p> Interp<'p> {
         self.run_scene(s);
     }
 
-    /// The members of a unit that are rules, in order. They are taken again only when the unit
-    /// has new members or new rules, so that a level does not go through every member above it.
+    /// The members of a unit that are rules, in order, those of the records written into it with
+    /// scope= after its own. They are taken again only when the unit has new members or new rules,
+    /// so that a level does not go through every member above it.
     fn rule_members(&mut self, u: UnitId) -> Rc<Vec<unit::UnitMember>> {
         let counts = (self.units[u].members.len(), self.rules.count(u));
         if let Some((c, ms)) = self.rule_members.get(&u) {
@@ -413,8 +512,11 @@ impl<'p> Interp<'p> {
                 return ms.clone();
             }
         }
-        let ms: Vec<unit::UnitMember> =
-            self.units[u].members.iter().filter(|m| self.rules.contains(&m.key(u))).cloned().collect();
+        // a subcircuit's own rules, then those of the records written into it with scope=, which
+        // act as if written there: in the levels below it too, after its own text (2.6, 10.4)
+        let unit = &self.units[u];
+        let all = unit.members.iter().chain(&unit.scope_members);
+        let ms: Vec<unit::UnitMember> = all.filter(|m| self.rules.contains(&m.key(u))).cloned().collect();
         let ms = Rc::new(ms);
         self.rule_members.insert(u, (counts, ms.clone()));
         ms
@@ -429,31 +531,6 @@ impl<'p> Interp<'p> {
         let scope: Vec<&crate::syntax::Arg> =
             seg.args.iter().filter(|a| !matches!(&a.obj, crate::syntax::ObjExpr::Ref(r) if r.prefix == '$')).collect();
         !scope.is_empty() && scope.iter().all(|a| matches!(&a.obj, crate::syntax::ObjExpr::Ref(r) if (r.prefix == '#' || r.prefix == '&') && r.name.is_some()))
-    }
-
-    fn eval_scope_in(&mut self, u: UnitId, m: &unit::UnitMember, p: Pos, s: SceneId) {
-        let key = (MemberKey::Scope { rec: m.rec.unwrap_or(0), k: m.k }, Some(s));
-        if self.memo.contains_key(&key) {
-            return;
-        }
-        let c = ctx::Ctx {
-            scene: Some(s),
-            unit: u,
-            rec: m.rec,
-            header: m.header.clone(),
-            pos: p,
-            frame: None,
-            origin: Rc::from(""),
-            nested: None,
-            member_key: key.0.clone(),
-            selected: false,
-            defining: None,
-            def_unit: None,
-            scope_in: true,
-        };
-        if let (Ok(v), _) = self.eval_member(&m.m, &c) {
-            self.memo.insert(key, Memo::Val(v));
-        }
     }
 
     fn check_scopes(&mut self) {
@@ -594,6 +671,24 @@ impl<'p> Interp<'p> {
     /// Build the output.
     pub fn finish(mut self) -> Interpretation {
         let model = self.build_model();
+        let (problems, results) =
+            if self.want_problems && self.package_main.is_none() { self.build_problems() } else { Default::default() };
+        // the numbers and their checks, read with the draft only (5.9); a reading that counts the
+        // objects of the authored records for another gives those alone
+        let counting = self.numbers.count;
+        let counted: HashMap<LevelId, AuthoredCount> = if counting {
+            (0..self.scenes.len()).map(|s| (self.scenes[s].level, self.counted_authored(s))).collect()
+        } else {
+            HashMap::new()
+        };
+        let numbering: Vec<LevelNumbering> = if self.draft && !counting && self.package_main.is_none() {
+            (0..self.scenes.len()).map(|s| self.level_numbering(s)).collect()
+        } else {
+            Vec::new()
+        };
+        let recheck = self.number_recheck(&numbering);
+        let own = if self.forward || self.numbers.own.is_some() { self.counted_own() } else { HashMap::new() };
+        let forward = self.forward;
         let checking = self.package_main.map(|p| self.units[p].pkg_name.clone()).unwrap_or_default();
         let mut sources = self.doc.sources.clone();
         sources.extend(self.pkg_sources.clone());
@@ -604,16 +699,83 @@ impl<'p> Interp<'p> {
             sources,
             refs: std::mem::take(&mut self.refs),
             failed: std::mem::take(&mut self.failed_spans),
+            problems,
+            numbering,
+            recheck,
+            counted,
+            own,
+            forward,
+            results,
             doc: self.doc,
         }
+    }
+
+    /// Does this reading count the objects of the authored records for another (5.9)?
+    fn counts_first(&self) -> bool {
+        self.numbers.authored.is_none() && self.needs_count()
     }
 }
 
 /// Interpret a host document: the effective model and the diagnostics. `sink` holds what the
 /// host adapter reported, if anything.
+///
+/// The numbers of the draft 0.3 take more than one reading of the document (5.9), only when a file
+/// of the draft is read with its records of the solver:
+///
+/// - the objects of the authored records are counted as the level reads without its records of
+///   the solver, so that reading comes first (`NumberRun::authored`);
+/// - a number used before the member that makes its object, while that member is being read, is
+///   resolved by reading again with the record's own objects that the reading counted, until they
+///   stay the same (`NumberRun::own`);
+/// - a record of the solver whose numbers fail or are out of date is known only once every level is
+///   read: the document is then read again, with that record's numbers errors (it has no
+///   `numbering`) or its statements that use a number left out (its `numbering` does not match).
+///   The checks given are those of the reading before, where every number is read: the text as
+///   written.
 pub fn interpret(doc: HostDocument, provider: &dyn Provider, options: &Options, sink: Sink) -> Interpretation {
     let host = sink.clone();
-    Interp::new(doc, provider, options, sink).run_settled(|it| Interp::new(it.doc, provider, options, host.clone()))
+    let mut run = NumberRun::default();
+    let mut out = read(doc, provider, options, sink, &host, &mut run);
+    for _ in 0..3 {
+        let same = run.own.as_ref().is_some_and(|own| **own == out.own);
+        if !out.forward && (run.own.is_none() || same) {
+            break;
+        }
+        run.own = Some(Rc::new(std::mem::take(&mut out.own)));
+        out = read(out.doc, provider, options, host.clone(), &host, &mut run);
+    }
+    if !out.recheck.is_empty() {
+        let recheck = std::mem::take(&mut out.recheck);
+        let numbering = std::mem::take(&mut out.numbering);
+        let mut again = NumberRun { refuse: recheck.refuse, stale: recheck.stale, ..run };
+        out = read(out.doc, provider, options, host.clone(), &host, &mut again);
+        out.numbering = numbering;
+        out.recheck = NumberRun::default();
+    }
+    out
+}
+
+/// One reading of a document; first the reading without the records of the solver that counts the
+/// objects of the authored records, when this one needs it and `run` does not have it yet (5.9).
+fn read(
+    doc: HostDocument,
+    provider: &dyn Provider,
+    options: &Options,
+    sink: Sink,
+    host: &Sink,
+    run: &mut NumberRun,
+) -> Interpretation {
+    let mut it = Interp::new_run(doc, provider, options, sink, run.clone());
+    if it.counts_first() {
+        let without = Options { generated: false, problems: false, ..options.clone() };
+        let counting = NumberRun { count: true, ..NumberRun::default() };
+        let first = Interp::new_run(it.doc.clone(), provider, &without, host.clone(), counting.clone())
+            .run_settled(|x| Interp::new_run(x.doc, provider, &without, host.clone(), counting.clone()));
+        run.authored = Some(Rc::new(first.counted));
+        it.numbers.authored = run.authored.clone();
+    }
+    let again = run.clone();
+    it.run_settled(|x| Interp::new_run(x.doc, provider, options, host.clone(), again.clone()))
 }
 
 /// Check a package file on its own (2.7).

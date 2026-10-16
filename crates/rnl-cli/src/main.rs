@@ -13,6 +13,7 @@ const USAGE: &str = "usage:
   rnl render FILE -o DIR [options]  write one SVG per drawing level
   rnl dump FILE [options]           print the effective model and diagnostics as JSON
   rnl view FILE [options]           print the Document a viewer shows, as JSON
+  rnl problem FILE [options]        print what a solver reads of each level, with its hash, as JSON
   rnl snapshot FILE [options]       print the editor interface's snapshot, as JSON
   rnl strip-generated FILE -o OUT   write FILE without its type=\"generated\" records
   rnl write REQUEST.json -o OUT     write an edit transaction's ops into its netlist
@@ -21,10 +22,17 @@ FILE is a SPICE netlist, a Spectre netlist (.scs) or a package file (.rnl).
 options:
   --package-dir DIR   look for packages in DIR as well (16.2); repeatable
   --no-std            do not use the standard package at the root (16.3)
+  --no-generated      read the netlist without its type=\"generated\" records, as a solver does (2.8)
   --dialect NAME      spice or spectre, instead of guessing from the file
+  --draft             for development only: read the files that declare the draft 0.3 as well
 view options:
   --primitives        give each level's primitives, in scene units with y up
   --no-svg            leave out each level's SVG
+  --status            give each level its solve status: fixed, unsolved, solved or stale
+problem options (the levels are read without their type=\"generated\" records):
+  --level TITLE       only the level with this title: a subcircuit name, or the file name
+  --solver-options S  the solver's options the hash covers (default: tolerance=0.000001)
+  --previous          give each level what its type=\"generated\" record decided, as hints
 snapshot options:
   --parts LIST        the parts to give, of drawing, host and model; host,model by default
 write:
@@ -37,9 +45,15 @@ struct Args {
     out: Option<PathBuf>,
     package_dirs: Vec<PathBuf>,
     std: bool,
+    generated: bool,
     dialect: Option<String>,
+    draft: bool,
     svg: bool,
     primitives: bool,
+    status: bool,
+    level: Option<String>,
+    solver_options: String,
+    previous: bool,
     author: Option<String>,
     parts: Option<String>,
 }
@@ -54,8 +68,13 @@ fn parse_args() -> Result<Args, String> {
     let mut out = None;
     let mut package_dirs = Vec::new();
     let mut std = true;
+    let mut generated = true;
     let mut dialect = None;
-    let (mut svg, mut primitives) = (true, false);
+    let mut draft = false;
+    let (mut svg, mut primitives, mut status) = (true, false, false);
+    let mut level = None;
+    let mut previous = false;
+    let mut solver_options = format!("tolerance={}", rnl_runtime::geom::fmt_num(rnl_runtime::geom::TOL));
     let mut author = None;
     let mut parts = None;
     while let Some(a) = it.next() {
@@ -63,9 +82,15 @@ fn parse_args() -> Result<Args, String> {
             "-o" | "--out" => out = Some(PathBuf::from(it.next().ok_or("-o needs a path")?)),
             "--package-dir" => package_dirs.push(PathBuf::from(it.next().ok_or("--package-dir needs a directory")?)),
             "--no-std" => std = false,
+            "--no-generated" => generated = false,
             "--dialect" => dialect = Some(it.next().ok_or("--dialect needs spice or spectre")?),
+            "--draft" => draft = true,
             "--no-svg" => svg = false,
             "--primitives" => primitives = true,
+            "--status" => status = true,
+            "--previous" => previous = true,
+            "--level" => level = Some(it.next().ok_or("--level needs a title")?),
+            "--solver-options" => solver_options = it.next().ok_or("--solver-options needs a text")?,
             "--author" => author = Some(it.next().ok_or("--author needs a name")?),
             "--parts" => parts = Some(it.next().ok_or("--parts needs a list, such as host,model")?),
             _ if a.starts_with('-') => return Err(format!("unknown option {a}\n{USAGE}")),
@@ -73,7 +98,24 @@ fn parse_args() -> Result<Args, String> {
         }
     }
     let file = file.ok_or(USAGE)?;
-    Ok(Args { command, file, out, package_dirs, std, dialect, svg, primitives, author, parts })
+    Ok(Args {
+        command,
+        file,
+        out,
+        package_dirs,
+        std,
+        generated,
+        dialect,
+        draft,
+        svg,
+        primitives,
+        status,
+        level,
+        solver_options,
+        previous,
+        author,
+        parts,
+    })
 }
 
 fn main() -> ExitCode {
@@ -93,8 +135,13 @@ fn main() -> ExitCode {
     }
 }
 
+/// The runtime's options the command line gives.
+fn options(args: &Args) -> Options {
+    Options { std: args.std, generated: args.generated, draft: args.draft, ..Options::default() }
+}
+
 fn interpret(args: &Args, provider: &FsProvider) -> Result<Interpretation, String> {
-    rnl_cli::interpret_file(&args.file, args.dialect.as_deref(), provider, &Options { std: args.std })
+    rnl_cli::interpret_file(&args.file, args.dialect.as_deref(), provider, &options(args))
 }
 
 fn run(args: &Args) -> Result<ExitCode, String> {
@@ -119,12 +166,42 @@ fn run(args: &Args) -> Result<ExitCode, String> {
             println!("{}", serde_json::to_string_pretty(&dump::interpretation(&r)).unwrap());
             Ok(ExitCode::SUCCESS)
         }
+        "problem" => {
+            let options = Options { std: args.std, draft: args.draft, ..Options::solver() };
+            let (r, previous) = if args.previous {
+                rnl_view::read_previous(&args.file.to_string_lossy(), args.dialect.as_deref(), &provider, &options)?
+            } else {
+                (rnl_cli::interpret_file(&args.file, args.dialect.as_deref(), &provider, &options)?, Vec::new())
+            };
+            let levels: Vec<_> = r
+                .problems
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| args.level.as_ref().is_none_or(|t| *t == p.title))
+                .map(|(k, p)| {
+                    let mut level = rnl_cli::problem::level(p, &args.solver_options);
+                    if args.previous {
+                        let hints = rnl_cli::problem::previous(previous.get(k).and_then(Option::as_ref));
+                        level.as_object_mut().unwrap().insert("previous".into(), hints);
+                    }
+                    level
+                })
+                .collect();
+            if levels.is_empty() {
+                if let Some(t) = &args.level {
+                    return Err(format!("no drawing level is titled {t}"));
+                }
+            }
+            println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "levels": levels })).unwrap());
+            Ok(ExitCode::SUCCESS)
+        }
         "view" => {
             let options = BuildOptions {
                 dialect: args.dialect.clone(),
-                runtime: Options { std: args.std },
+                runtime: options(args),
                 svg: args.svg,
                 primitives: args.primitives,
+                status: args.status,
             };
             let doc = rnl_view::build(&args.file.to_string_lossy(), &provider, &options)?;
             println!("{}", serde_json::to_string_pretty(&doc).unwrap());
@@ -143,9 +220,10 @@ fn run(args: &Args) -> Result<ExitCode, String> {
             }
             let options = BuildOptions {
                 dialect: args.dialect.clone(),
-                runtime: Options { std: args.std },
+                runtime: options(args),
                 svg: args.svg,
                 primitives: args.primitives,
+                status: args.status,
             };
             let snapshot = rnl_view::snapshot(&args.file.to_string_lossy(), &provider, &options, parts)?;
             println!("{}", serde_json::to_string_pretty(&snapshot).unwrap());

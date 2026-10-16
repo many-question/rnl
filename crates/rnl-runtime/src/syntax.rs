@@ -135,7 +135,7 @@ pub struct Ref {
     pub id: NodeId,
     /// `#`, `&`, `%`, `$` or `?`.
     pub prefix: char,
-    /// None: a bare `#` (this level) or a bare `?` (the symbol's owner).
+    /// None: a bare `#` (this level) or a bare `?` (the symbol's owner), or a number.
     pub name: Option<String>,
     pub quoted: bool,
     pub sub: Option<Sub>,
@@ -144,6 +144,9 @@ pub struct Ref {
     pub end: Off,
     /// The spelling as written when a `$` alias was read as its original (16.5).
     pub written: Option<String>,
+    /// `%#` and a number, such as `%#3`: an object without a name, which the record of the solver
+    /// refers to by its number (the draft 0.3, 5.9). Read only in a file of the draft.
+    pub number: Option<u64>,
 }
 
 impl Ref {
@@ -152,6 +155,9 @@ impl Ref {
         s.push(self.prefix);
         if let Some(n) = &self.name {
             s.push_str(n);
+        }
+        if let Some(k) = self.number {
+            s.push_str(&format!("#{k}"));
         }
         if self.sub.is_some() {
             s.push_str("<…>");
@@ -328,11 +334,14 @@ struct Parser {
     i: usize,
     notes: Vec<Note>,
     next_id: NodeId,
+    /// Read `%#` and a number as a reference, as a file of the draft 0.3 does (5.9); otherwise `%#`
+    /// is a lexical error, as in 0.2.
+    numbers: bool,
 }
 
 impl Parser {
-    fn new(text: &str) -> Parser {
-        Parser { t: text.chars().collect(), i: 0, notes: Vec::new(), next_id: 0 }
+    fn new(text: &str, numbers: bool) -> Parser {
+        Parser { t: text.chars().collect(), i: 0, notes: Vec::new(), next_id: 0, numbers }
     }
 
     fn id(&mut self) -> NodeId {
@@ -818,12 +827,14 @@ impl Parser {
         let mut name = None;
         let mut quoted = false;
         let mut sub = None;
+        let mut number = None;
         match self.peek() {
             Some('"') => {
                 name = Some(self.string()?);
                 quoted = true;
             }
             Some(c) if is_ascii_word(c) => name = self.ascii_name(),
+            Some('#') if prefix == '%' && self.numbers => number = Some(self.object_number()?),
             _ if prefix == '#' || prefix == '?' => {}
             _ => return self.err(format!("write a name after `{prefix}`")),
         }
@@ -887,7 +898,28 @@ impl Parser {
         if expansions > 1 {
             return self.err_at("only one subscript in a reference may expand to a group (6.11)", start);
         }
-        Ok(Ref { id, prefix, name, quoted, sub, path, start, end: self.i, written: None })
+        Ok(Ref { id, prefix, name, quoted, sub, path, start, end: self.i, written: None, number })
+    }
+
+    /// The number of `%#3`, at the `#` (the draft 0.3, 5.9): digits, which take no subscript and
+    /// no letters after them.
+    fn object_number(&mut self) -> PResult<u64> {
+        self.i += 1;
+        let j0 = self.i;
+        while self.i < self.n() && self.t[self.i].is_ascii_digit() {
+            self.i += 1;
+        }
+        if self.i == j0 || matches!(self.peek(), Some(c) if is_word_char(c)) {
+            return self.err("write the number of an object after `%#`, in digits only, such as %#3 (5.9)");
+        }
+        if self.peek_in("<[") {
+            return self.err("a number takes no subscript (6.11); a point is written `(x, y)`");
+        }
+        let digits: String = self.t[j0..self.i].iter().collect();
+        match digits.parse() {
+            Ok(k) => Ok(k),
+            Err(_) => self.err_at("this number is larger than this implementation can hold (3.7)", j0),
+        }
     }
 
     fn number_u64(&mut self) -> Option<u64> {
@@ -1290,7 +1322,218 @@ fn check_member(m: &Member) -> PResult<()> {
 
 /// Parse one record; `text` starts with `@RNL` and ends with the matching `}`.
 pub fn parse_record(text: &str) -> RecordAst {
-    Parser::new(text).record()
+    parse_record_with(text, false)
+}
+
+/// Parse one record, with `numbers` reading `%#` and a number as a reference, as a file of the
+/// draft 0.3 does (5.9); without, `%#` is a lexical error, as in 0.2.
+pub fn parse_record_with(text: &str, numbers: bool) -> RecordAst {
+    Parser::new(text, numbers).record()
+}
+
+/// Does a member use a number, such as `%#3`, anywhere in it, definition bodies included (the
+/// draft 0.3, 5.9)?
+pub fn uses_number(m: &Member) -> bool {
+    fn obj(o: &ObjExpr) -> bool {
+        match o {
+            ObjExpr::Ref(r) => r.number.is_some(),
+            ObjExpr::Point(_) => false,
+            ObjExpr::Set(s) => s.members.iter().any(|m| uses_number(m)),
+        }
+    }
+    m.segments.iter().any(|sg| sg.args.iter().any(|a| obj(&a.obj)))
+}
+
+/// The formal tokens of the characters `start..end` of a record (3.2), each as written, without
+/// free text and comments (3.3, 3.4): what a line of the check of the numbers is made of (the
+/// draft 0.3, 5.9). The text is a member that the parser read without an error.
+///
+/// - A keyword is a token; a reference is one token with its path, `#M1:1` or `%dp::mid`, and with
+///   its subscript, the white space and comments in it left out, as in `&D<7:0>`.
+/// - `{`, `}`, `;`, `=>` and `=` are tokens.
+/// - In the brackets of a point, of parameters and of a role, and in arrays, each bracket, `,` and
+///   `=` is a token, and so is each string (in its quotes, a `"` doubled as written), number,
+///   name, `_` and placeholder, so the point `(_, _)` is `( _ , _ )`.
+pub fn statement_tokens(t: &[char], start: usize, end: usize) -> Vec<String> {
+    let end = end.min(t.len());
+    let at = |j: usize| if j < end { Some(t[j]) } else { None };
+    let text = |a: usize, b: usize| -> String { t[a..b].iter().collect() };
+    let mut out = Vec::new();
+    let mut i = start.min(end);
+    // inside the brackets of a point, of parameters or of a role, where nothing is free text
+    let mut depth = 0usize;
+    while i < end {
+        let c = t[i];
+        if matches!(c, ' ' | '\t' | '\n' | '\r') {
+            i += 1;
+            continue;
+        }
+        if c == '/' && at(i + 1) == Some('*') {
+            i = (i + 2..end.saturating_sub(1)).find(|&j| t[j] == '*' && t[j + 1] == '/').map_or(end, |j| j + 2);
+            continue;
+        }
+        if c == '"' {
+            let j = string_end(t, i, end);
+            out.push(text(i, j));
+            i = j;
+            continue;
+        }
+        if depth > 0 {
+            let j = match c {
+                '(' | ')' | '[' | ']' | ',' | '=' => {
+                    if c == '(' {
+                        depth += 1;
+                    } else if c == ')' {
+                        depth -= 1;
+                    }
+                    i + 1
+                }
+                '?' => match at(i + 1) {
+                    Some('"') => string_end(t, i + 1, end),
+                    _ => word_end(t, i + 1, end),
+                },
+                // a number, a name, `_`
+                _ => (i..end)
+                    .find(|&j| {
+                        matches!(t[j], ' ' | '\t' | '\n' | '\r' | '(' | ')' | '[' | ']' | ',' | '=' | '"' | '?')
+                            || (t[j] == '/' && at(j + 1) == Some('*'))
+                    })
+                    .unwrap_or(end)
+                    .max(i + 1),
+            };
+            out.push(text(i, j));
+            i = j;
+            continue;
+        }
+        match c {
+            '(' => {
+                depth = 1;
+                out.push("(".into());
+                i += 1;
+            }
+            '{' | '}' | ';' => {
+                out.push(c.to_string());
+                i += 1;
+            }
+            '=' => {
+                let j = if at(i + 1) == Some('>') { i + 2 } else { i + 1 };
+                out.push(text(i, j));
+                i = j;
+            }
+            '@' => {
+                // a `-` belongs to the name of a keyword only between letters (3.3)
+                let mut j = i + 1;
+                while j < end
+                    && (is_word_char(t[j]) || (t[j] == '-' && j > i + 1 && at(j + 1).is_some_and(is_word_char)))
+                {
+                    j += 1;
+                }
+                out.push(text(i, j));
+                i = j;
+            }
+            '#' | '&' | '%' | '$' | '?' => {
+                let (j, token) = reference_token(t, i, end);
+                out.push(token);
+                i = j;
+            }
+            // free text
+            _ => i += 1,
+        }
+    }
+    out
+}
+
+/// After a string that starts at `i`: its closing quote, a `""` inside it being one `"` (3.7).
+fn string_end(t: &[char], i: usize, end: usize) -> usize {
+    let mut j = i + 1;
+    while j < end {
+        if t[j] == '"' {
+            if j + 1 < end && t[j + 1] == '"' {
+                j += 2;
+                continue;
+            }
+            return j + 1;
+        }
+        j += 1;
+    }
+    end
+}
+
+/// After the unquoted ASCII name that starts at `i` (3.6).
+fn word_end(t: &[char], i: usize, end: usize) -> usize {
+    (i..end).find(|&j| !is_ascii_word(t[j])).unwrap_or(end)
+}
+
+/// A reference that starts at `i`, read as the parser reads it (`Parser::reference`): its end,
+/// and its text as written, the white space and comments in a subscript left out.
+fn reference_token(t: &[char], i: usize, end: usize) -> (usize, String) {
+    let at = |j: usize| if j < end { Some(t[j]) } else { None };
+    let prefix = t[i];
+    let mut s = String::from(prefix);
+    // a quoted or an unquoted name, written as it is
+    let name = |j: usize, s: &mut String| -> Option<usize> {
+        let k = match at(j)? {
+            '"' => string_end(t, j, end),
+            c if is_ascii_word(c) => word_end(t, j, end),
+            _ => return None,
+        };
+        s.extend(&t[j..k]);
+        Some(k)
+    };
+    // a subscript, without the white space and comments in it
+    let subscript = |j: usize, s: &mut String| -> usize {
+        let close = if t[j] == '<' { '>' } else { ']' };
+        let mut k = j;
+        while k < end {
+            if t[k] == '/' && at(k + 1) == Some('*') {
+                k = (k + 2..end.saturating_sub(1)).find(|&m| t[m] == '*' && t[m + 1] == '/').map_or(end, |m| m + 2);
+                continue;
+            }
+            if !matches!(t[k], ' ' | '\t' | '\n' | '\r') {
+                s.push(t[k]);
+            }
+            k += 1;
+            if t[k - 1] == close {
+                break;
+            }
+        }
+        k
+    };
+    let mut j = i + 1;
+    let mut named = false;
+    if prefix == '%' && at(j) == Some('#') {
+        s.push('#');
+        j = (j + 1..end).find(|&k| !t[k].is_ascii_digit()).unwrap_or(end);
+        s.extend(&t[i + 2..j]);
+    } else if let Some(k) = name(j, &mut s) {
+        j = k;
+        named = true;
+    }
+    if named && (prefix == '#' || prefix == '&') && matches!(at(j), Some('<' | '[')) {
+        j = subscript(j, &mut s);
+    }
+    loop {
+        if at(j) == Some(':') && at(j + 1) == Some(':') {
+            let mut item = String::from("::");
+            let Some(k) = name(j + 2, &mut item) else { break };
+            s.push_str(&item);
+            j = k;
+            continue;
+        }
+        if at(j) == Some(':') {
+            // a `:` with no name after it is free text (3.3)
+            let mut item = String::from(":");
+            let Some(k) = name(j + 1, &mut item) else { break };
+            s.push_str(&item);
+            j = k;
+            if prefix == '#' && matches!(at(j), Some('<' | '[')) {
+                j = subscript(j, &mut s);
+            }
+            continue;
+        }
+        break;
+    }
+    (j, s)
 }
 
 /// Every reference in a member, its segments and nested sets, except inside definition bodies.
@@ -1424,5 +1667,56 @@ mod tests {
     fn unclosed_record_body() {
         let r = parse_record("@RNL {#M1 @PLACE(1, 2)");
         assert!(r.error.is_some());
+    }
+
+    #[test]
+    fn numbers_are_read_only_when_asked() {
+        let text = "@RNL {%#3 @PLACE(1, 2); %#5:p %#5::mid @ALIGN(\"x\"); %#2a; %# @PLACE(1, 2); #M1}";
+        // as in 0.2, `%#` is a lexical error: the member fails, the others are read
+        let b = body(text);
+        assert!(b.members[0].error.as_ref().unwrap().contains("write a name after `%`"));
+        assert!(b.members[4].error.is_none());
+        let r = parse_record_with(text, true);
+        let b = r.body.unwrap();
+        let ObjExpr::Ref(r0) = &b.members[0].segments[0].args[0].obj else { panic!() };
+        assert_eq!((r0.prefix, r0.number, r0.name.as_ref()), ('%', Some(3), None));
+        assert_eq!(r0.text(), "%#3");
+        let ObjExpr::Ref(r1) = &b.members[1].segments[0].args[1].obj else { panic!() };
+        assert_eq!((r1.number, r1.path[0].sep, r1.path[0].name.as_str()), (Some(5), Sep::Sub, "mid"));
+        assert!(uses_number(&b.members[1]) && !uses_number(&b.members[4]));
+        // digits only, and some of them
+        assert!(b.members[2].error.as_ref().unwrap().contains("digits only"));
+        assert!(b.members[3].error.as_ref().unwrap().contains("digits only"));
+    }
+
+    #[test]
+    fn the_tokens_of_a_statement_are_as_written() {
+        let tokens = |text: &str| {
+            let chars: Vec<char> = text.chars().collect();
+            statement_tokens(&chars, 0, chars.len()).join(" ")
+        };
+        assert_eq!(tokens("&out @WIRE {#M1:1 (_, _) #R1:2}"), "&out @WIRE { #M1:1 ( _ , _ ) #R1:2 }");
+        assert_eq!(tokens("{#M1 #R1} @TEXT(\"${name}\")"), "{ #M1 #R1 } @TEXT ( \"${name}\" )");
+        // free text and comments are left out; strings and numbers stay as written
+        assert_eq!(
+            tokens("the pair: /* M1, M2 */ #M1(in_p) #M2:d @PLACE(x=-2.5E1, priority=\"say \"\"hi\"\"\") => %p"),
+            "#M1 ( in_p ) #M2:d @PLACE ( x = -2.5E1 , priority = \"say \"\"hi\"\"\" ) => %p"
+        );
+        // a subscript is part of its reference, without its white space; a placeholder and an array
+        assert_eq!(
+            tokens("&D<7: 0> @WIRE {#XI0:D<1 /* b */, 2> %\"a b\"::c}"),
+            "&D<7:0> @WIRE { #XI0:D<1,2> %\"a b\"::c }"
+        );
+        assert_eq!(
+            tokens("%g:p ?t @DISTANCE(\"bottom-to-top\", min=?gap)"),
+            "%g:p ?t @DISTANCE ( \"bottom-to-top\" , min = ?gap )"
+        );
+        assert_eq!(
+            tokens("%x = @DEFINE(roles=[[\"t\", \"terminal\"]]) {}"),
+            "%x = @DEFINE ( roles = [ [ \"t\" , \"terminal\" ] ] ) { }"
+        );
+        // a `:` without a name, and a `-` that ends a keyword, are free text
+        assert_eq!(tokens("#M1: the left one {#M1 #M2} @GROUP- the pair"), "#M1 { #M1 #M2 } @GROUP");
+        assert_eq!(tokens("%#2 @WIRE {%#3::mid (12, 2)}"), "%#2 @WIRE { %#3::mid ( 12 , 2 ) }");
     }
 }

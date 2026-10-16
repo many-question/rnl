@@ -17,6 +17,8 @@ use super::obj::{Lit, MemberKey, Priority, RecId, UnitId};
 use super::Interp;
 
 pub const SUPPORTED_VERSION: &str = "0.2";
+/// The draft read as well when `Options::draft` is set, for development only.
+pub const DRAFT_VERSION: &str = "0.3";
 const HEADER_KW: [&str; 5] = ["VERSION", "PACKAGE", "ALIAS", "DEVICE", "USE-ALIASES"];
 
 /// The fields of a record header that affect interpretation (2.8).
@@ -25,11 +27,14 @@ pub struct Header {
     pub type_: String,
     pub priority: Option<Priority>,
     pub scope: Option<String>,
+    /// The check of the numbers that the record of the solver uses, as written: a field of the
+    /// draft 0.3, only with `type="generated"` (5.9).
+    pub numbering: Option<String>,
 }
 
 impl Default for Header {
     fn default() -> Header {
-        Header { type_: "authored".into(), priority: None, scope: None }
+        Header { type_: "authored".into(), priority: None, scope: None, numbering: None }
     }
 }
 
@@ -147,6 +152,11 @@ pub struct Unit {
     pub scope_records: Vec<(RecId, Rc<RecordAst>, Rc<Header>)>,
     /// The indexes in `scope_records` by the key of the subcircuit named in scope=, in order.
     pub scope_index: HashMap<String, Vec<usize>>,
+    /// In a subcircuit's unit, the members of the records written above with scope= it, in the
+    /// order they take effect after its own text (2.6). The names they bind are its own (6.7).
+    pub scope_members: Vec<UnitMember>,
+    /// Where each of those records takes effect: the outer ones later (2.6).
+    pub scope_places: HashMap<RecId, i64>,
     pub classified: bool,
     /// An embedded package reads with the aliases of the file it is written in (16.5).
     pub alias_from: Option<UnitId>,
@@ -182,6 +192,8 @@ impl Unit {
             ok: true,
             scope_records: Vec::new(),
             scope_index: HashMap::new(),
+            scope_members: Vec::new(),
+            scope_places: HashMap::new(),
             classified: false,
             alias_from: None,
             embedded: false,
@@ -314,6 +326,11 @@ pub fn scan_package_decl(text: &str) -> Option<(String, String)> {
     Some((field("name")?, field("version")?))
 }
 
+/// A record whose head writes `type="generated"`: the solver's result (2.8).
+pub fn is_generated_record(ast: &RecordAst) -> bool {
+    ast.header.as_ref().and_then(|h| h.get("type")).is_some_and(|v| *v == Value::Str("generated".into()))
+}
+
 /// An alias package: a package file whose header has only VERSION, PACKAGE and ALIAS, and no other
 /// record (16.5).
 pub fn is_alias_package(u: &Unit) -> bool {
@@ -343,18 +360,22 @@ impl Interp<'_> {
         self.sink.add(sev, msg, loc, Extra { in_package: pkg.to_string(), ..Extra::default() })
     }
 
-    /// Parse a record once.
+    /// Parse a record once. In a file of the draft 0.3, `%#3` is a number (5.9); in 0.2 it stays a
+    /// lexical error.
     pub(crate) fn parse(&mut self, rec: RecId) -> Rc<RecordAst> {
         if let Some(a) = &self.asts[rec] {
             return a.clone();
         }
-        let a = Rc::new(syntax::parse_record(&self.recs[rec].text));
+        let numbers = self.follows_0_3(self.rec_unit[rec]);
+        let a = Rc::new(syntax::parse_record_with(&self.recs[rec].text, numbers));
         self.asts[rec] = Some(a.clone());
         a
     }
 
-    pub(crate) fn add_record(&mut self, r: crate::host::Record) -> RecId {
+    /// Add a record written in the text of unit `u`.
+    pub(crate) fn add_record(&mut self, r: crate::host::Record, u: UnitId) -> RecId {
         self.recs.push(r);
+        self.rec_unit.push(u);
         self.asts.push(None);
         self.rec_chars.push(None);
         self.recs.len() - 1
@@ -383,6 +404,10 @@ impl Interp<'_> {
         let pkg = self.units[u].pkg().to_string();
         for (index, rec) in self.unit_records(u).into_iter().enumerate() {
             let ast = self.parse(rec);
+            if !self.read_generated && self.units[u].kind == UnitKind::Level && is_generated_record(&ast) {
+                // a solver does not read the solver's records, nor what they would report (2.8, 14.8)
+                continue;
+            }
             for note in &ast.notes {
                 if let Some(kw) = &note.kw {
                     let k = self.kw(kw, u);
@@ -402,6 +427,19 @@ impl Interp<'_> {
                 continue;
             }
             let header = Rc::new(self.read_header_fields(&ast, rec, u));
+            self.rec_header.insert(rec, header.clone());
+            // the record of the solver whose numbering does not match the level: its statements
+            // that use a number are left out, as if they were not written, with one hint (5.9)
+            let stale = self.numbers.stale.contains(&rec);
+            if stale {
+                let off = ast
+                    .header
+                    .as_ref()
+                    .and_then(|h| h.named.iter().find(|n| n.name == "numbering"))
+                    .map_or(0, |n| n.off);
+                let loc = self.recs[rec].loc(off);
+                self.diag_in(Severity::Hint, super::numbers::STALE_HINT, Some(loc), &pkg);
+            }
             if header.type_ == "header" {
                 if !is_file_level || index != 0 || self.units[u].header_record.is_some() {
                     let loc = self.recs[rec].loc(0);
@@ -438,6 +476,13 @@ impl Interp<'_> {
                 }
             }
             if let Some(target) = &header.scope {
+                // a syntax error fails its member, as in the target's own records, and is reported
+                // at its place in this file (7.4); the other members go to the target
+                for m in ast_body.members.iter().filter(|m| m.error.is_some()) {
+                    let loc = self.recs[rec].loc(m.error_pos);
+                    self.diag_in(Severity::Error, m.error.clone().unwrap(), Some(loc), &pkg);
+                    self.note_failed(Some(rec), m.start, m.end, false);
+                }
                 let a = self.asts[rec].clone().unwrap();
                 let key = self.doc.key(target);
                 let unit = &mut self.units[u];
@@ -450,6 +495,9 @@ impl Interp<'_> {
                     let loc = self.recs[rec].loc(m.error_pos);
                     self.diag_in(Severity::Error, err.clone(), Some(loc), &pkg);
                     self.note_failed(Some(rec), m.start, m.end, false);
+                    continue;
+                }
+                if stale && syntax::uses_number(m) {
                     continue;
                 }
                 self.units[u].members.push(UnitMember {
@@ -548,10 +596,15 @@ impl Interp<'_> {
                 &pkg,
             );
         }
+        // `numbering` is a field of the draft 0.3 only (2.8, 5.9)
+        let draft: &[crate::words::HeaderField] =
+            if self.follows_0_3(u) { crate::words::draft_header_fields() } else { &[] };
+        let (mut numbering_at, mut scope_at) = (None, None);
         for n in &params.named {
             let loc = self.recs[rec].loc(n.off);
-            let Some(spec) = words().header_field(&n.name) else {
-                let close = closest(&n.name, words().header_fields.iter().map(|f| f.name.as_str()));
+            let fields = || words().header_fields.iter().chain(draft);
+            let Some(spec) = fields().find(|f| f.name == n.name) else {
+                let close = closest(&n.name, fields().map(|f| f.name.as_str()));
                 let hint = close.map(|c| format!(", did you mean {c}?")).unwrap_or_default();
                 self.diag_in(
                     Severity::Warning,
@@ -584,9 +637,48 @@ impl Interp<'_> {
             match n.name.as_str() {
                 "type" => h.type_ = v.clone(),
                 "priority" => h.priority = Priority::parse(v),
-                "scope" => h.scope = Some(v.clone()),
+                "scope" => {
+                    h.scope = Some(v.clone());
+                    scope_at = Some(loc);
+                }
+                "numbering" => {
+                    if v.chars().count() != 16 || !v.chars().all(|c| c.is_ascii_hexdigit()) {
+                        self.diag_in(
+                            Severity::Error,
+                            format!("record header field numbering holds a check of 16 hexadecimal digits (5.9), not {v:?}; treated as not written (2.8)"),
+                            Some(loc),
+                            &pkg,
+                        );
+                        continue;
+                    }
+                    h.numbering = Some(v.clone());
+                    numbering_at = Some(loc);
+                }
                 _ => {}
             }
+        }
+        // the RNL of a subcircuit covers only itself: scope written inside one is an error, and the
+        // record is read as one of the subcircuit's own (2.6, 2.8)
+        if let (Some(loc), Some(LevelKind::Subckt)) = (scope_at, self.unit_level_kind(u)) {
+            self.diag_in(
+                Severity::Error,
+                "scope= is not written in a record inside a subcircuit, whose RNL covers only itself; treated as not written, so the record is the subcircuit's own (2.6, 2.8)",
+                Some(loc),
+                &pkg,
+            );
+            h.scope = None;
+        }
+        // numbering is written only in the record of the solver, which is in the level's own text
+        let wrong = if h.type_ != "generated" {
+            Some("record header field numbering is written only with type=\"generated\", in the record of the solver; treated as not written (2.8, 5.9)")
+        } else if h.scope.is_some() {
+            Some("record header field numbering is not written in a record with scope=: the record of the solver is in the level's own text; treated as not written (2.6, 2.8, 5.9)")
+        } else {
+            None
+        };
+        if let (Some(loc), Some(msg)) = (numbering_at, wrong) {
+            self.diag_in(Severity::Error, msg, Some(loc), &pkg);
+            h.numbering = None;
         }
         if self.units[u].kind == UnitKind::Package && (h.scope.is_some() || h.type_ == "generated") {
             let loc = self.recs[rec].loc(0);
@@ -650,10 +742,16 @@ impl Interp<'_> {
                         continue;
                     };
                     self.units[u].version = v.clone();
-                    if version_key(v).0 < 0 || v != SUPPORTED_VERSION {
+                    let read = v == SUPPORTED_VERSION || (self.draft && v == DRAFT_VERSION);
+                    if version_key(v).0 < 0 || !read {
+                        let reads = if self.draft {
+                            format!("{SUPPORTED_VERSION}, and the draft {DRAFT_VERSION}")
+                        } else {
+                            SUPPORTED_VERSION.to_string()
+                        };
                         self.diag_in(
                             Severity::Error,
-                            format!("unsupported version {v}: no RNL of this file is interpreted (16.1; this implementation reads {SUPPORTED_VERSION})"),
+                            format!("unsupported version {v}: no RNL of this file is interpreted (16.1; this implementation reads {reads})"),
                             Some(loc),
                             &pkg,
                         );
@@ -1124,6 +1222,20 @@ impl Interp<'_> {
         }
     }
 
+    /// Does a unit follow the draft 0.3? Only when the draft is read (`Options::draft`) and the
+    /// file the unit's text is in declares it: every rule the draft changes applies only there, so
+    /// a file of 0.2 reads the same with the switch on or off.
+    pub fn follows_0_3(&self, u: UnitId) -> bool {
+        self.draft && self.version_of(Some(u)) == DRAFT_VERSION
+    }
+
+    /// Does the text a statement is written in follow the draft 0.3? That is the file of its
+    /// record: for a record written into a subcircuit with scope=, the file that writes it (2.6);
+    /// for a statement of a definition body, the file of the definition (6.9).
+    pub fn statement_follows_0_3(&self, ctx: &super::ctx::Ctx) -> bool {
+        self.follows_0_3(ctx.rec.map_or(ctx.unit, |r| self.rec_unit[r]))
+    }
+
     fn use_decl(&mut self, u: UnitId, rec: Option<RecId>, k: usize, seg: &syntax::Segment, in_header: bool) {
         let call = seg.call.as_ref().unwrap();
         let loc = self.rec_loc(rec, call.start).unwrap();
@@ -1296,7 +1408,7 @@ impl Interp<'_> {
         u.pkg_level = Some(pl);
         let id = self.units.len();
         self.units.push(u);
-        let rec_ids: Vec<RecId> = recs.into_iter().map(|r| self.add_record(r)).collect();
+        let rec_ids: Vec<RecId> = recs.into_iter().map(|r| self.add_record(r, id)).collect();
         self.unit_recs.push(rec_ids);
         self.read_unit(id);
         if self.units[id].header_record.is_none() || self.units[id].pkg_name.is_empty() {
@@ -1450,6 +1562,41 @@ impl Interp<'_> {
     }
 
     // ------------------------------------------------------------------ names (6.6)
+
+    /// The records written above a subcircuit with scope= commit their statements to it, and the
+    /// names they bind are published there, in one name space with its own (2.6, 6.7, as the
+    /// draft 0.3 makes clear in its 7.4). They come after its own text, the nearest level's
+    /// first, as they take effect; a name bound again is the 6.6 error of the subcircuit's level,
+    /// and the earlier binding is kept. Called once every level is read.
+    pub(crate) fn publish_scope_names(&mut self) {
+        for lv in 0..self.doc.levels.len() {
+            let level = &self.doc.levels[lv];
+            if level.kind != LevelKind::Subckt {
+                continue;
+            }
+            let key = self.doc.key(&level.name);
+            let unit = self.level_unit[lv];
+            let above = self.doc.ancestors(lv);
+            for (depth, a) in above.iter().enumerate() {
+                let au = self.level_unit[*a];
+                let Some(ks) = self.units[au].scope_index.get(&key).cloned() else { continue };
+                let place = -((above.len() - depth) as i64);
+                for i in ks {
+                    let (rec, ast, header) = self.units[au].scope_records[i].clone();
+                    self.units[unit].scope_places.insert(rec, place);
+                    for (k, m) in ast.body.as_ref().unwrap().members.iter().enumerate() {
+                        if m.error.is_some() {
+                            continue;
+                        }
+                        let member =
+                            UnitMember { rec: Some(rec), k, embedded: false, m: m.clone(), header: header.clone() };
+                        self.units[unit].scope_members.push(member);
+                        self.declare(unit, Some(rec), k, false, m, &header);
+                    }
+                }
+            }
+        }
+    }
 
     pub(crate) fn declare(
         &mut self,

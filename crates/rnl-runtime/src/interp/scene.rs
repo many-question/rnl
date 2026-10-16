@@ -18,7 +18,9 @@ use super::Interp;
 /// A statement whose input is a selection, run at its phase (8.2, 10.4).
 pub type Task = Rc<dyn Fn(&mut Interp, SceneId, usize)>;
 
-/// What a statement adds to each object of its single-object position.
+/// What a statement adds to each object of its single-object position. The `spread` of PRIORITY
+/// holds the sets among several objects written for the slot, which are spread into their members
+/// like any other set (5.2.1), a set with GROUP too.
 #[derive(Clone, Debug)]
 pub enum TargetOp {
     Place { x: Option<f64>, y: Option<f64>, priority: Option<Priority>, off: usize },
@@ -27,7 +29,7 @@ pub enum TargetOp {
     Symbol { symbol: ObjId, off: usize },
     Style { style: ObjId, off: usize },
     Current { direction: String, off: usize },
-    Priority { priority: Priority, off: usize },
+    Priority { priority: Priority, off: usize, spread: Vec<ObjId> },
     Route { mode: String, style: StyleMap, off: usize },
 }
 
@@ -57,6 +59,42 @@ pub struct Fact {
     pub chain: Vec<ObjId>,
 }
 
+/// A WIRE given a wire in a statement of the draft 0.3, which rewrites the wire (its 13.1): the
+/// list of points and the mode that replace the wire's, read as a new WIRE's are, with where the
+/// statement is written. It has a key, the wire: of several, the one written last by position
+/// takes effect, and among those at one position (the segments of a pipe) the one read last
+/// (5.8, 8.4). One that fails once the symbols are known, such as one that lists a terminal
+/// without a pin, has no effect, its style parameters included: the wire keeps the list and the
+/// mode of the latest rewrite that holds, or those it was made with.
+#[derive(Clone, Debug)]
+pub struct Rewrite {
+    pub pos: Pos,
+    /// The order in which the rewrites of the scene were read.
+    pub seq: usize,
+    pub points: Vec<ObjId>,
+    pub mode: String,
+    /// Written in the body of a usage that a rule made (10.5).
+    pub generated: bool,
+    pub site: Rc<Ctx>,
+    pub off: usize,
+    /// Why it fails, found in the geometry phase (9.2.4, 11.8, 12.1): the error it gives.
+    pub fault: Option<String>,
+    /// Its style parameters, as the fact in `Scene::styles` that makes them direct style of the
+    /// wire (8.3), which a rewrite that fails takes back before the style queue (8.2).
+    pub style: Option<usize>,
+}
+
+/// What a wire is drawn by (13.1): its points and its mode, with the statement that gives them,
+/// the WIRE that made the wire or the rewrite that takes effect.
+#[derive(Clone, Debug)]
+pub struct WireShape {
+    pub points: Vec<ObjId>,
+    pub mode: String,
+    pub generated: bool,
+    pub site: Option<Rc<Ctx>>,
+    pub off: usize,
+}
+
 pub struct Scene {
     pub level: LevelId,
     pub levelobj: ObjId,
@@ -75,6 +113,9 @@ pub struct Scene {
     pub wires: Vec<ObjId>,
     /// The wires on each net, in the order of `wires`; `scene_add_wire` keeps it.
     pub wires_by_net: HashMap<ObjId, Vec<ObjId>>,
+    /// The rewrites of each wire, in the order they were read (the draft 0.3, 13.1).
+    pub rewrites: HashMap<ObjId, Vec<Rewrite>>,
+    pub rewrite_count: usize,
     pub bundles: Vec<ObjId>,
     pub constraints: Vec<ObjId>,
     pub routes: Vec<ObjId>,
@@ -88,7 +129,9 @@ pub struct Scene {
     pub layers: Vec<Fact>,
     pub prioritys: Vec<Fact>,
     pub currents: Vec<(Pos, ObjId, String)>,
-    pub groups: Vec<(Pos, ObjId)>,
+    /// The sets given GROUP (11.5), each with where it is written and the usages whose expansion
+    /// wrote it, outermost first (14.8).
+    pub groups: Vec<(Pos, ObjId, Vec<ObjId>)>,
     pub tasks: Vec<Vec<(Pos, Task)>>,
     pub created: HashMap<ObjId, Pos>,
     pub items_cache: HashMap<(ObjId, usize), Vec<ObjId>>,
@@ -107,6 +150,10 @@ pub struct Scene {
     /// The fact kept per (object, axis) and per object's orientation: (priority, position, index).
     pub at_best: HashMap<(ObjId, char), (Priority, Pos, usize)>,
     pub ori_best: HashMap<ObjId, (Priority, Pos, usize)>,
+    /// The indexes in `at` and `orient` of the facts whose objects PLACE and ORIENT take, as the
+    /// geometry phase finds them (7.1, 12.1, 11.8).
+    pub at_live: Vec<usize>,
+    pub orient_live: Vec<usize>,
     pub devices: Option<Vec<DeviceDecl>>,
     pub busy: HashSet<(ObjId, usize)>,
     pub hinted: HashSet<ObjId>,
@@ -118,6 +165,11 @@ impl Scene {
     pub(crate) fn add_at(&mut self, f: Fact) {
         self.at_by_target.entry(f.target).or_default().push(self.at.len());
         self.at.push(f);
+    }
+
+    /// Whether GROUP marks the set in this level (11.5); complete once generation is done (10.5).
+    pub(crate) fn grouped(&self, set: ObjId) -> bool {
+        self.groups.iter().any(|(_, g, _)| *g == set)
     }
 
     fn new(level: LevelId, levelobj: ObjId) -> Scene {
@@ -137,6 +189,8 @@ impl Scene {
             listed_keytexts: HashSet::new(),
             wires: Vec::new(),
             wires_by_net: HashMap::new(),
+            rewrites: HashMap::new(),
+            rewrite_count: 0,
             bundles: Vec::new(),
             constraints: Vec::new(),
             routes: Vec::new(),
@@ -166,6 +220,8 @@ impl Scene {
             symbol_won: HashSet::new(),
             at_best: HashMap::new(),
             ori_best: HashMap::new(),
+            at_live: Vec::new(),
+            orient_live: Vec::new(),
             devices: None,
             busy: HashSet::new(),
             hinted: HashSet::new(),
@@ -467,12 +523,24 @@ impl Interp<'_> {
         let tail = [rec.map(|r| r as i64).unwrap_or(0), k.map(|k| k as i64).unwrap_or(0)];
         if self.units[u].kind == UnitKind::Level {
             let ul = self.units[u].level;
+            // a record written above with scope= comes after the level's own text (2.6), in the
+            // level and, for its rules, in the levels below it
+            let scope = rec.and_then(|r| self.units[u].scope_places.get(&r).copied());
             if ul == Some(lv) {
+                if let Some(place) = scope {
+                    return pos(&[4, place, tail[0], tail[1]]);
+                }
                 return pos(&[3, 0, tail[0], tail[1]]);
             }
             let anc = self.doc.ancestors(lv);
             if let Some(i) = anc.iter().position(|a| Some(*a) == ul) {
                 let depth = (anc.len() - i) as i64;
+                if let Some(place) = scope {
+                    let mut p = pos(&[2, depth]);
+                    p.push(PosElem::Tag("scope"));
+                    p.extend(pos(&[place, tail[0], tail[1]]));
+                    return p;
+                }
                 return pos(&[2, depth, tail[0], tail[1]]);
             }
             return pos(&[9, 0, tail[0], tail[1]]);
@@ -676,6 +744,77 @@ impl Interp<'_> {
         }
     }
 
+    /// A WIRE given the wire `w` in a statement of the draft 0.3 (its 13.1): its list of points and
+    /// its mode are kept, to replace the wire's when this is the rewrite that takes effect; its
+    /// style parameters are direct style of the wire, as if a SET-STYLE were written for the wire
+    /// at the statement (8.3), unless the rewrite fails (`check_rewrites`).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn scene_rewrite_wire(
+        &mut self,
+        s: SceneId,
+        w: ObjId,
+        points: Vec<ObjId>,
+        mode: String,
+        style: StyleMap,
+        ctx: &Ctx,
+        off: usize,
+    ) {
+        let site = Rc::new(ctx.clone());
+        let sc = &mut self.scenes[s];
+        let seq = sc.rewrite_count;
+        sc.rewrite_count += 1;
+        let generated = ctx.frame_generated();
+        let style = (!style.is_empty()).then(|| {
+            sc.styles.push(Fact {
+                pos: ctx.pos.clone(),
+                target: w,
+                data: FactData::OwnStyle(style),
+                priority: None,
+                ctx: Some(Rc::new(ctx.clone())),
+                off: 0,
+                direct: true,
+                chain: Vec::new(),
+            });
+            sc.styles.len() - 1
+        });
+        let r = Rewrite { pos: ctx.pos.clone(), seq, points, mode, generated, site, off, fault: None, style };
+        sc.rewrites.entry(w).or_default().push(r);
+    }
+
+    /// What a wire of scene `s` is drawn by (13.1): its points and its mode as the rewrite that
+    /// takes effect gives them (the draft 0.3), otherwise as the WIRE that made it. That is the
+    /// latest rewrite by key that holds: one found to fail in the geometry phase takes no effect,
+    /// and the wire keeps its earlier list and mode (5.8).
+    pub(crate) fn wire_shape(&self, s: SceneId, w: ObjId) -> Option<WireShape> {
+        self.wire_shape_of(s, w, true)
+    }
+
+    /// The same, with the rewrites that fail in the geometry phase or without them. The explicit
+    /// wires are fixed in step 3 (8.2), before any rewrite is found to fail: what selections read
+    /// of them, such as `wired=`, is the latest rewrite whether it holds or not.
+    pub(crate) fn wire_shape_of(&self, s: SceneId, w: ObjId, holding: bool) -> Option<WireShape> {
+        let ObjData::Wire { points, mode, generated, site, off, .. } = self.o(w) else { return None };
+        let last = self.scenes[s].rewrites.get(&w).and_then(|rs| {
+            rs.iter().filter(|r| !holding || r.fault.is_none()).max_by(|a, b| (&a.pos, a.seq).cmp(&(&b.pos, b.seq)))
+        });
+        Some(match last {
+            Some(r) => WireShape {
+                points: r.points.clone(),
+                mode: r.mode.clone(),
+                generated: r.generated,
+                site: Some(r.site.clone()),
+                off: r.off,
+            },
+            None => WireShape {
+                points: points.clone(),
+                mode: mode.clone(),
+                generated: *generated,
+                site: site.clone(),
+                off: *off,
+            },
+        })
+    }
+
     pub(crate) fn scene_add_bundle(&mut self, s: SceneId, b: ObjId, at: Pos) {
         self.scenes[s].bundles.push(b);
         self.scenes[s].created.insert(b, at);
@@ -790,12 +929,19 @@ impl Interp<'_> {
                 }
                 self.scenes[s].currents.push((at, obj, direction.clone()));
             }
-            TargetOp::Priority { priority, off } => {
+            TargetOp::Priority { priority, off, spread } => {
                 if !matches!(self.o(obj), ObjData::Constraint(_) | ObjData::Usage(_) | ObjData::Set(_)) {
                     let l = self.label(obj);
+                    // a group among several objects is spread too: it is taken as the group only
+                    // when it is written alone
+                    let hint = if spread.iter().any(|g| self.scenes[s].grouped(*g)) {
+                        "; several objects are spread into their members, so write one PRIORITY for each group (5.2.1)"
+                    } else {
+                        ""
+                    };
                     return self.fail(
                         ctx,
-                        format!("PRIORITY takes constraints, usages and grouped sets only, not {l} (14.8)"),
+                        format!("PRIORITY takes constraints, usages and grouped sets only, not {l} (14.8){hint}"),
                         *off,
                     );
                 }
@@ -1483,12 +1629,17 @@ impl Interp<'_> {
         self.tnets(s, t).contains(&net)
     }
 
-    /// The terminals that explicit wires touch, by owner: what `wired` looks among (10.2).
+    /// The terminals that explicit wires touch, by owner: what `wired` looks among (10.2). A
+    /// rewritten wire touches the points of its latest rewrite (the draft 0.3, 13.1), as fixed in
+    /// step 3, before the geometry phase finds whether it holds (8.2).
     pub(crate) fn wire_ends(&self, s: SceneId) -> HashMap<ObjId, Vec<ObjId>> {
         let mut ends: HashMap<ObjId, Vec<ObjId>> = HashMap::new();
         for &w in &self.scenes[s].wires {
-            let ObjData::Wire { points, generated: false, .. } = self.o(w) else { continue };
-            for &q in points {
+            if !matches!(self.o(w), ObjData::Wire { generated: false, .. }) {
+                continue;
+            }
+            let Some(shape) = self.wire_shape_of(s, w, false) else { continue };
+            for q in shape.points {
                 if let ObjData::Term { owner, .. } = self.o(q) {
                     ends.entry(*owner).or_default().push(q);
                 }

@@ -61,7 +61,7 @@ pub struct SymbolPrim {
     pub rotate: Option<f64>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PinView {
     pub pos: Pt,
     pub label: Option<String>,
@@ -129,6 +129,11 @@ pub struct ItemView {
     pub pin_nets: Vec<Vec<String>>,
 }
 
+/// A wire, or a part of one: a wire some of whose points have no position yet, such as a free
+/// point before the level is solved, is drawn in its runs of consecutive points that have one,
+/// each run of two points or more a WireView with the wire's id, nets, mode and style, and a
+/// flyline over each gap (`LevelView::flylines`). A wire whose points all have a position is one
+/// WireView.
 #[derive(Clone, Debug)]
 pub struct WireView {
     pub id: String,
@@ -145,6 +150,9 @@ pub struct WireView {
     pub own_style: Style,
     pub layer: Layer,
     pub order: Vec<f64>,
+    /// The whole wire, drawn through all its points; false for a run of a wire some of whose
+    /// points have no position, which the editor interface's snapshot leaves out.
+    pub whole: bool,
 }
 
 /// A vertex of a wire as written: a pin, a named point, a role of a usage, or coordinates.
@@ -228,7 +236,10 @@ pub struct LevelView {
     pub wires: Vec<WireView>,
     pub shapes: Vec<ShapeView>,
     pub texts: Vec<TextView>,
-    /// Lines a viewer may draw for nets that a ROUTE asks to wire (13.7); not wires.
+    /// Lines a viewer may draw for connections not drawn as wires, not wires themselves: over the
+    /// gaps of a wire some of whose points have no position yet, from the last point before a gap
+    /// that has one to the first after it, those of the wires first; then for the nets that a ROUTE
+    /// asks to wire (13.7).
     pub flylines: Vec<(Pt, Pt)>,
     pub constraints: Vec<ConstraintView>,
     /// Drawn objects without a position, left to a solver.

@@ -626,28 +626,39 @@ impl Interp<'_> {
         for (info, &o) in objects.iter_mut().zip(&objs) {
             info.symbol_view = self.scenes[s].symbol.get(&o).and_then(|sym| table.get(sym).copied());
         }
+        // a wire some of whose points have no position yet is drawn in its runs of points that
+        // have one, each a WireView of the wire, with flylines over the gaps (the draft 0.3,
+        // section 9); a rewritten wire is drawn by its rewrite (13.1)
         let mut wires = Vec::new();
+        let mut flylines = Vec::new();
         for w in self.scenes[s].wires.clone() {
             if self.is_obj_failed(w) {
                 continue;
             }
-            let Some(points) = self.wire_points(s, w) else { continue };
-            let ObjData::Wire { nets, mode, points: vertices, .. } = self.o(w).clone() else { continue };
-            let via = vertices.iter().filter_map(|v| self.vertex(s, *v, &ids)).collect();
-            wires.push(WireView {
-                id: self.label(w),
-                object_id: self.ref_id(s, w, &ids),
-                nets: nets.iter().map(|n| self.net_display(*n)).collect(),
-                points,
-                via,
-                mode,
-                style: self.style_of(s, w),
-                own_style: self.own_style_of(s, w),
-                layer: self.layer_of(s, w),
-                order: self.key_of(s, w, &last_symbol),
-            });
+            let ObjData::Wire { nets, .. } = self.o(w).clone() else { continue };
+            let Some(shape) = self.wire_shape(s, w) else { continue };
+            // the vertices as written: the rewrite's, when one holds (13.1)
+            let via: Vec<Vertex> = shape.points.iter().filter_map(|v| self.vertex(s, *v, &ids)).collect();
+            // every point of the wire has a position: it is drawn whole, as one run
+            let whole = shape.points.iter().all(|&q| self.point_of(s, q).is_some());
+            let (runs, gaps) = self.wire_drawing(s, w);
+            flylines.extend(gaps);
+            for points in runs {
+                wires.push(WireView {
+                    id: self.label(w),
+                    object_id: self.ref_id(s, w, &ids),
+                    nets: nets.iter().map(|n| self.net_display(*n)).collect(),
+                    points,
+                    via: via.clone(),
+                    mode: shape.mode.clone(),
+                    style: self.style_of(s, w),
+                    own_style: self.own_style_of(s, w),
+                    layer: self.layer_of(s, w),
+                    order: self.key_of(s, w, &last_symbol),
+                    whole,
+                });
+            }
         }
-        let mut flylines = Vec::new();
         let routes = self.scenes[s].routes.clone();
         if !routes.is_empty() {
             let terms = self.route_terms(s);
@@ -688,7 +699,8 @@ impl Interp<'_> {
             if self.is_obj_failed(t) {
                 continue;
             }
-            let Some(anchor) = self.text_anchor(s, t) else { continue };
+            // a text whose attached object is drawn is drawn too (13.3; the draft 0.3, section 9)
+            let Some(anchor) = self.text_drawn_at(s, t) else { continue };
             let it = self.text_items(t);
             let Some(text) = it.text.clone() else { continue };
             let att = self.text_attach(t);

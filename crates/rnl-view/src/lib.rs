@@ -11,11 +11,15 @@ mod snapshot;
 mod types;
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use rnl_runtime::diag::Sink;
 use rnl_runtime::host::{file_name, HostDocument};
 use rnl_runtime::model::LevelView;
+use rnl_runtime::previous::{solve_status, Previous, SolveStatus};
+use rnl_runtime::problem::LevelProblem;
 use rnl_runtime::source::Provider;
+use rnl_runtime::writeback::record_type;
 use rnl_runtime::{Interpretation, Options};
 
 pub use document::{Child, Diagnostic, Document, Hit, Level, Object, SourceFile, Span};
@@ -53,17 +57,22 @@ pub fn bundled() -> MemoryProvider {
 pub struct BuildOptions {
     /// "spice" or "spectre", instead of guessing from the entry.
     pub dialect: Option<String>,
-    /// The runtime's options, such as using the standard package at the root (16.3).
+    /// The runtime's options, such as using the standard package at the root (16.3), or reading
+    /// the levels without their generated records, as a solver does (2.8).
     pub runtime: Options,
     /// Write each level's SVG ([`Level::svg`]); on by default.
     pub svg: bool,
     /// Give each level's primitives ([`Level::primitives`]); off by default.
     pub primitives: bool,
+    /// Give each level its solve status ([`Level::solve`]), what a frontend decides from whether
+    /// to solve it (decision 0008); off by default. It takes the problems of the levels read
+    /// without their records of the solver, so a document that has such records is read once more.
+    pub status: bool,
 }
 
 impl Default for BuildOptions {
     fn default() -> BuildOptions {
-        BuildOptions { dialect: None, runtime: Options::default(), svg: true, primitives: false }
+        BuildOptions { dialect: None, runtime: Options::default(), svg: true, primitives: false, status: false }
     }
 }
 
@@ -79,8 +88,48 @@ pub fn build(entry: &str, files: &dyn Provider, options: &BuildOptions) -> Resul
     if ws.read(&slashed(entry)).is_none() {
         return Err(format!("cannot read {entry}"));
     }
-    let r = interpret_in(entry, options.dialect.as_deref(), &ws, &options.runtime)?;
-    Ok(document::document(entry, &r, ws.missing.into_inner(), options))
+    let dialect = options.dialect.as_deref();
+    // the solve status takes the problems; built in this reading too, they change nothing else
+    let runtime = Options { problems: options.runtime.problems || options.status, ..options.runtime.clone() };
+    let r = interpret_in(entry, dialect, &ws, &runtime)?;
+    let solve = if options.status { solve_statuses(entry, dialect, &ws, &runtime, &r)? } else { HashMap::new() };
+    let mut d = document::document(entry, &r, ws.missing.into_inner(), options);
+    for level in &mut d.levels {
+        level.solve = solve.get(&level.host).map(|s| s.as_str());
+    }
+    Ok(d)
+}
+
+/// The solve status of each drawing level of `r`, by host level ([`solve_status`]): its problem
+/// and model read without the records of the solver, against its record of the solver read with
+/// them. `r` was read with `runtime`, problems included; so a document without records of the
+/// solver, which reads the same with them and without, is not read again.
+fn solve_statuses(
+    entry: &str,
+    dialect: Option<&str>,
+    ws: &Workspace,
+    runtime: &Options,
+    r: &Interpretation,
+) -> Result<HashMap<usize, SolveStatus>, String> {
+    let records = r.doc.levels.iter().any(|l| l.records.iter().any(|rec| record_type(rec) == "generated"));
+    let other;
+    let (with, without) = if !records {
+        (r, r)
+    } else if runtime.generated {
+        other = interpret_in(entry, dialect, ws, &Options { generated: false, ..runtime.clone() })?;
+        (r, &other)
+    } else {
+        other = interpret_in(entry, dialect, ws, &Options { generated: true, problems: false, ..runtime.clone() })?;
+        (&other, r)
+    };
+    let views: HashMap<usize, &LevelView> = without.model.levels.iter().map(|lv| (lv.level, lv)).collect();
+    let mut out = HashMap::new();
+    for p in &without.problems {
+        if let Some(view) = views.get(&p.level) {
+            out.insert(p.level, solve_status(p, view, with));
+        }
+    }
+    Ok(out)
 }
 
 /// The snapshot of `entry` for the editor interface, with the parts `parts` asks for, from the
@@ -148,6 +197,26 @@ pub fn interpret(
     interpret_in(entry, dialect, &Workspace::new(files), options)
 }
 
+/// Both readings of an entry that a solver makes, with the bundled packages under `files`
+/// ([`rnl_runtime::previous::read_previous`]): the interpretation without the records of the
+/// solver, with the problems, and the previous result of each level, from the reading with them,
+/// in the order of the problems. `options` are those of both readings; `generated` and `problems`
+/// are set here. A package file (`.rnl`) has no problems.
+pub fn read_previous(
+    entry: &str,
+    dialect: Option<&str>,
+    files: &dyn Provider,
+    options: &Options,
+) -> Result<(Interpretation, Vec<Option<Previous>>), String> {
+    let ws = Workspace::new(files);
+    if extension(entry).is_some_and(|e| e.eq_ignore_ascii_case("rnl")) {
+        return Ok((rnl_runtime::check_package(&slashed(entry), &ws, options), Vec::new()));
+    }
+    let mut sink = Sink::new();
+    let doc = read_host_in(entry, dialect, &ws, &mut sink)?;
+    Ok(rnl_runtime::previous::read_previous(doc, &ws, options, sink))
+}
+
 /// [`interpret`] in a workspace, which has the bundled packages already.
 fn interpret_in(
     entry: &str,
@@ -161,6 +230,22 @@ fn interpret_in(
     let mut sink = Sink::new();
     let doc = read_host_in(entry, dialect, ws, &mut sink)?;
     Ok(rnl_runtime::interpret(doc, ws, options, sink))
+}
+
+/// The record of the solver of a level, finished, with the bundled packages under `files` as
+/// [`interpret`] reads them: [`rnl_runtime::solution::finish_record`]. `record` is what
+/// [`rnl_runtime::solution::write_record`] gives for `problem`; `doc` is the host document the
+/// problem was read from ([`Interpretation::doc`]), and `files` and `options` are what it was read
+/// with. In a level of a file of the draft 0.3, the record gets `numbering`, the check of its
+/// numbers (5.9), from the document read again with it; otherwise it stays as it is.
+pub fn finish_record(
+    doc: &HostDocument,
+    files: &dyn Provider,
+    options: &Options,
+    problem: &LevelProblem,
+    record: &str,
+) -> String {
+    rnl_runtime::solution::finish_record(doc, &Workspace::new(files), options, problem, record)
 }
 
 /// What a drawing level still lacks without a solver: objects without a position, and the
@@ -473,7 +558,7 @@ R1 p q 1k
     #[test]
     fn the_standard_package_can_be_left_out() {
         let files = MemoryProvider::new().with("a.sp", NETLIST);
-        let options = BuildOptions { runtime: Options { std: false }, ..BuildOptions::default() };
+        let options = BuildOptions { runtime: Options { std: false, ..Options::default() }, ..BuildOptions::default() };
         let without = build("a.sp", &files, &options).unwrap();
         let with = build("a.sp", &files, &BuildOptions::default()).unwrap();
         assert_ne!(without.diagnostics.len(), with.diagnostics.len());
@@ -561,6 +646,12 @@ R1 p q 1k
         assert!(l["primitives"].as_array().is_some_and(|p| p.len() > 2));
         assert_eq!(keys(&level(false, true)), "host title kind lines primitives scale empty status hits children");
         assert_eq!(keys(&level(false, false)), "host title kind lines scale empty status hits children");
+        // the solve status when asked for: the resistor and the capacitor are placed, not turned
+        let options = BuildOptions { svg: false, status: true, ..BuildOptions::default() };
+        let d = serde_json::to_value(build("a.sp", &files, &options).unwrap()).unwrap();
+        let l = d["levels"][0].as_object().unwrap();
+        assert_eq!(keys(l), "host title kind lines scale empty status solve hits children");
+        assert_eq!(l["solve"], "unsolved");
     }
 
     #[test]

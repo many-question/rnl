@@ -54,6 +54,14 @@ pub struct Request {
     /// Give each level's primitives; false when not given.
     #[serde(default)]
     pub primitives: bool,
+    /// For development only: read the files that declare the draft 0.3 as well; false when not
+    /// given.
+    #[serde(default)]
+    pub draft: bool,
+    /// Give each level its solve status, what a frontend decides from whether to solve it
+    /// (decision 0008); false when not given.
+    #[serde(default)]
+    pub status: bool,
     /// The parts of the editor interface's snapshot to give: with them, the answer is a
     /// [`rnl_view::Snapshot`] instead of a Document.
     pub parts: Option<PartsRequest>,
@@ -99,6 +107,10 @@ pub struct WriteRequest {
     pub svg: bool,
     #[serde(default)]
     pub primitives: bool,
+    #[serde(default)]
+    pub draft: bool,
+    #[serde(default)]
+    pub status: bool,
 }
 
 /// What a write answers: the netlist with the ops written into it, and its Document, whose
@@ -158,9 +170,10 @@ pub fn respond(request: &[u8]) -> Response {
     let files = MemoryProvider { files, package_dirs: request.package_dirs };
     let options = BuildOptions {
         dialect: request.dialect,
-        runtime: Options { std: request.std },
+        runtime: Options { std: request.std, draft: request.draft, ..Options::default() },
         svg: request.svg,
         primitives: request.primitives,
+        status: request.status,
     };
     if let Some(p) = request.parts {
         let parts = Parts { drawing: p.drawing, host: p.host, model: p.model };
@@ -188,9 +201,10 @@ fn write(request: WriteRequest) -> Response {
     let files = MemoryProvider { files, package_dirs: request.package_dirs };
     let options = BuildOptions {
         dialect: Some(request.write.dialect),
-        runtime: Options { std: request.std },
+        runtime: Options { std: request.std, draft: request.draft, ..Options::default() },
         svg: request.svg,
         primitives: request.primitives,
+        status: request.status,
     };
     match rnl_view::build(entry, &files, &options) {
         Ok(document) => Response::Written(Box::new(Written { text, document })),
@@ -384,6 +398,13 @@ C1 a 0 1p
         let without = answer(json!({ "entry": "a.sp", "files": files, "std": false }));
         let count = |v: &Value| v["document"]["diagnostics"].as_array().unwrap().len();
         assert_ne!(count(&with), count(&without));
+        // the solve status only when asked for
+        assert!(with["document"]["levels"][0].get("solve").is_none());
+        let status = answer(json!({ "entry": "a.sp", "files": files, "status": true }));
+        assert_eq!(status["document"]["levels"][0]["solve"], "unsolved");
+        let native = BuildOptions { status: true, ..BuildOptions::default() };
+        let native = rnl_view::build("a.sp", &MemoryProvider::new().with("a.sp", NETLIST), &native).unwrap();
+        assert_eq!(status["document"], serde_json::to_value(native).unwrap());
     }
 
     #[test]

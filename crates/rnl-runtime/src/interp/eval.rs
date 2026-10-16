@@ -12,7 +12,7 @@ use crate::model::{FailedSpan, HostRef, RefTarget};
 use crate::syntax::{Coord, Member, ObjExpr, Params, PathItem, Point, Ref, Segment, Sep, SetExpr, Value};
 use crate::words::{words, ParamSpec, ParamType, Takes};
 
-use super::ctx::{Ctx, Defining, FrameKind, Nested};
+use super::ctx::{Ctx, Defining, FrameKind, Nested, StmtSpan};
 use super::obj::*;
 use super::unit::{closest, Binding, UnitKind};
 use super::{Interp, Memo};
@@ -642,7 +642,8 @@ impl<'p> Interp<'p> {
             selected: false,
             defining: None,
             def_unit: None,
-            scope_in: false,
+            scope_in: rec.is_some_and(|r| self.units[u].scope_places.contains_key(&r)),
+            stmt: Some(StmtSpan { rec, start: m.start, end: m.end }),
         };
         let (r, bound) = self.eval_member(m, &ctx);
         self.in_progress.remove(&skey);
@@ -662,6 +663,16 @@ impl<'p> Interp<'p> {
 
     /// Segments in order; each `=> name` binds the handle its segment produced (5.5, PR8).
     pub(crate) fn eval_member(&mut self, m: &Rc<Member>, ctx: &Ctx) -> (R<ObjId>, Bound) {
+        // the objects made while this member is evaluated, and not by a member it reads, are its
+        // own: a name it binds to one of them is that object's own name (5.9)
+        self.next_eval += 1;
+        self.evals.push(self.next_eval);
+        let out = self.eval_segments(m, ctx);
+        self.evals.pop();
+        out
+    }
+
+    fn eval_segments(&mut self, m: &Rc<Member>, ctx: &Ctx) -> (R<ObjId>, Bound) {
         let mut val = NOTHING;
         let mut sel = false;
         let mut bound: Bound = Vec::new();
@@ -692,6 +703,11 @@ impl<'p> Interp<'p> {
             }
             for b in m.binds.iter().filter(|b| b.after == k) {
                 bound.push(((b.prefix, b.name.clone()), val));
+                // a name of a member of a record or of a definition body, which other members can
+                // use; one bound inside a `{…}` holds only there (6.7) and is no name for 5.9
+                if ctx.nested.is_none() {
+                    self.note_named(val);
+                }
                 if val != NOTHING && val != LEVEL && val != OWNER {
                     let nameable = matches!(
                         self.o(val),
@@ -832,6 +848,7 @@ impl<'p> Interp<'p> {
         let p = self.new_obj(ObjData::Point { x, y, local });
         if let (Some(s), false) = (ctx.scene, local) {
             self.scene_add_point(s, p, ctx.pos.clone());
+            self.note_birth(s, p, ctx, e.start, None);
         }
         Ok(p)
     }
@@ -953,6 +970,8 @@ impl<'p> Interp<'p> {
             sel = ctx.frame.as_ref().is_some_and(|f| f.borrow().selected);
         } else if e.prefix == '#' || e.prefix == '&' {
             obj = self.resolve_host(e, ctx)?;
+        } else if let Some(n) = e.number {
+            obj = self.resolve_number(n, e, ctx)?;
         } else {
             let name = e.name.clone().unwrap_or_default();
             let found = self.lookup(e.prefix, &name, ctx);
