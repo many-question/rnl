@@ -57,6 +57,14 @@ pub struct Fact {
     pub direct: bool,
     /// The usages whose expansion made it, outermost first (14.8).
     pub chain: Vec<ObjId>,
+    pub segments: Segments,
+}
+
+impl Fact {
+    /// Its position in the order of resolution (8.5).
+    pub fn order(&self) -> Pos {
+        order_pos(&self.pos, &self.segments)
+    }
 }
 
 /// A WIRE given a wire in a statement of the draft 0.3, which rewrites the wire (its 13.1): the
@@ -565,7 +573,7 @@ impl Interp<'_> {
 
     // ------------------------------------------------------------------ creation (phase 3)
 
-    pub(crate) fn scene_add_point(&mut self, s: SceneId, p: ObjId, at: Pos) {
+    pub(crate) fn scene_add_point(&mut self, s: SceneId, p: ObjId, at: Pos, ctx: &Ctx) {
         let (x, y) = match self.o(p) {
             ObjData::Point { x, y, .. } => (*x, *y),
             _ => return,
@@ -586,6 +594,7 @@ impl Interp<'_> {
                     off: 0,
                     direct: true,
                     chain: Vec::new(),
+                    segments: ctx.segments.clone(),
                 });
             }
         }
@@ -614,6 +623,7 @@ impl Interp<'_> {
                 off: 0,
                 direct: true,
                 chain: Vec::new(),
+                segments: ctx.segments.clone(),
             });
         }
     }
@@ -739,6 +749,7 @@ impl Interp<'_> {
                 off: 0,
                 direct: true,
                 chain: Vec::new(),
+                segments: ctx.segments.clone(),
             });
         }
     }
@@ -773,6 +784,7 @@ impl Interp<'_> {
                 off: 0,
                 direct: true,
                 chain: Vec::new(),
+                segments: ctx.segments.clone(),
             });
             sc.styles.len() - 1
         });
@@ -852,6 +864,7 @@ impl Interp<'_> {
                         off: *off,
                         direct,
                         chain: chain.clone(),
+                        segments: ctx.segments.clone(),
                     });
                 }
                 if let Some(y) = y {
@@ -864,6 +877,7 @@ impl Interp<'_> {
                         off: *off,
                         direct,
                         chain,
+                        segments: ctx.segments.clone(),
                     });
                 }
             }
@@ -877,6 +891,7 @@ impl Interp<'_> {
                     off: *off,
                     direct,
                     chain,
+                    segments: ctx.segments.clone(),
                 });
             }
             TargetOp::Layer { layer, off } => {
@@ -889,6 +904,7 @@ impl Interp<'_> {
                     off: *off,
                     direct,
                     chain: Vec::new(),
+                    segments: ctx.segments.clone(),
                 });
             }
             TargetOp::Symbol { symbol, off } => {
@@ -901,6 +917,7 @@ impl Interp<'_> {
                     off: *off,
                     direct,
                     chain: Vec::new(),
+                    segments: ctx.segments.clone(),
                 });
             }
             TargetOp::Style { style, off } => {
@@ -913,6 +930,7 @@ impl Interp<'_> {
                     off: *off,
                     direct,
                     chain: Vec::new(),
+                    segments: ctx.segments.clone(),
                 });
             }
             TargetOp::Current { direction, off } => {
@@ -953,6 +971,7 @@ impl Interp<'_> {
                     off: *off,
                     direct,
                     chain: Vec::new(),
+                    segments: ctx.segments.clone(),
                 });
             }
             TargetOp::Route { mode, style, off } => {
