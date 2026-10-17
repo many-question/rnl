@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::resolve::tests::{fact, instance, point, problem_of};
 use rnl_runtime::problem::ProblemGroup;

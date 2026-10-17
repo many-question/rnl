@@ -4,7 +4,7 @@
 //! the encoding of the model.
 
 use num_traits::One;
-use rnl_runtime::geom::{fmt_num,Orient};
+use rnl_runtime::geom::{fmt_num, Orient};
 use rnl_runtime::interp::obj::Priority;
 use rnl_runtime::model::PinView;
 use rnl_runtime::problem::*;
@@ -48,7 +48,7 @@ fn symbol() -> ProblemSymbol {
         pos: (x, y),
         label: None,
         dir: Some(dir),
-        direction_written:true,
+        direction_written: true,
         terminals: vec![t.to_string()],
     };
     ProblemSymbol {
@@ -896,7 +896,7 @@ fn the_witness_keeps_the_constants_as_written() {
 fn within_the_tolerance_the_witness_keeps_the_constants_of_the_facts_that_rank_first() {
     // B at x 0.4 and A at x 0, on one x, hold together only within 0.5: the constant of the fact
     // that ranks first is held as written, the other within the tolerance (11.7, 8.5)
-    let options = SolverOptions { tolerance: frac(1,2), ..SolverOptions::without_time_limit() };
+    let options = SolverOptions { tolerance: frac(1, 2), ..SolverOptions::without_time_limit() };
     let b = from_f64(0.4).unwrap();
     let p = problem_of(
         points(2),
@@ -948,7 +948,10 @@ fn orientations_that_give_the_same_constants_are_tried_once() {
 
 /// Options without a time limit but `seconds`, which [`Ticks`] counts in readings.
 fn within(seconds: f64) -> SolverOptions {
-    SolverOptions { time_limit: Some(crate::rational::from_f64(seconds).unwrap()), ..SolverOptions::without_time_limit() }
+    SolverOptions {
+        time_limit: Some(crate::rational::from_f64(seconds).unwrap()),
+        ..SolverOptions::without_time_limit()
+    }
 }
 
 /// Resolves with a time limit of `seconds` on [`Ticks`] and checks what the draft 0.3 says of it

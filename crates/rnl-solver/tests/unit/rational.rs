@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// A fixed xorshift sequence, so the tests are the same on every run.

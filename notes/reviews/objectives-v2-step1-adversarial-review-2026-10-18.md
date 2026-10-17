@@ -339,3 +339,46 @@ R7-01 曾把全部后续 barycentre orders 的准备挂在已付首 order 上：
 另独立核短 T1 真 CLI：旧 08 与 R7 两轮 exit=0，完整解文件逐字节相同，SHA-256 `2cf8b533512ab963772f227d4b7bf28c90a36e1221aff4a8b32ad9c5c66f46c5`；完整日志仅 revision、time、输出路径不同，scoring/facts/work/hash 相同。R7 CLI SHA-256 `094b63385906eba024dd0388364c07c25e4a4e86a9858a19998e5bb3a5420cd5`；`B-r7-final-cli-01` 构建 exit=0。618 文件清单 SHA-256 `0d7f6c36d9851fbd13099a2fa73c9d6110a413066dab62d5ebbb32b0f7731546` 已核，其生产/测试/config/Cargo 文件无漂移；核查时仅本审阅报告及 R7 说明文档因补录本轮证据变化，不影响构建输入。
 
 **本轮技术结论：R7 关闭，目前无剩余生产 must-fix。** 既有 tiny 长轮后来由 root 为 R7 修复主动中断并留存证据，不算通过或超时失败；需按新快照完成原完整 tiny、最终语料与全套门禁。触帽输入的池、工作量或布局预期可能变化，应按新生产实测并解释；未触帽的 T1/T6 证据只按上述字段与来源复用。不得据此次短轮取消最终验证、宣称性能问题已消失，或把旧 08 长 CLI 测量改名为 R7 实测。
+
+### 后续窄审：0.2 升级的输入 provenance（源码通过，执行待补）
+
+独立核查 `target/objectives-v2-validation/cli-upgrade-provenance-02/manifest.json`，SHA-256 `40085796320a3b746f195cb7eaf09247583cc36e6bf7a8582d359b30a4ca5773`，两个源码/测试副本哈希全部一致。新发现的 P2 根因是 `rnl-cli/src/solve.rs:409` 附近的升级流程只恢复第一 pass 的 run.read；第二 pass 的 memory overlay 绕过 Noting，导致实际升级后的 invocation.inputs 可能为空。既有 R7 T1 的 `input_manifest=[]` 不能作为“无依赖”或完整来源证书。
+
+冻结修复保存第一 pass invocation；第二 pass 完成后追加仅在第二 pass 首次读取的依赖 path，同 path 保留第一 pass 的原 Provider 解码文本 SHA，再恢复 invocation。静态审阅通过：它不改变 solver 的输入、options、候选、记录、读文件列表或排序，未引入重新求解。新真实 CLI 回归包含 0.2 entry 的 UTF-8 BOM、include、两个原始解码文本 SHA、实际升级到 0.3 的断言，针对根因；本轮没有执行该回归。
+
+证据复用边界：已有几何、逐项评分和工作量仍可按旧 source/binary 标签引用；旧空 manifest 不可冒充完整依赖绑定。修后 CLI 需要新 source/build/binary 绑定及短 T1 真 CLI 的 solved 字节、非 provenance 评分/work 对照。旧用时仍只属于旧 binary，不改名为修后 CLI 测量；没有理由仅因这处 metadata 修复再跑长 T6。P2 的源码闭环不等于执行或最终全门禁闭环。
+
+root 后续通知：corrected tiny 已自然 exit=0，九层功能回归通过，总 987.07 秒，T6 两解与 checker 838.099 秒；T14 的旧 R7 0.2 T6 真 solve 179.370236 秒、solved SHA `bb59c4ea…` 与 08 相同，来源仍 `0b5afb35/f510495f`。这是执行方通知，尚待本审阅下一轮独立读取完整绑定/日志后正式更新验收，不替代此前对 profile 不含真实路径的限制，也不充当新 metadata CLI 的计时。高耗时风险和最终 corpus/full gates 仍未验收。
+
+### R8 关闭：升级 provenance 的执行与绑定复核
+
+上述 provenance 修复正式编号 R8，提交 `c9adffd2403226ce0bad3cab4780e82e81f025fa`。已独立读取 `R8-T-cli-provenance-01.log`，专用真实 CLI BOM/include 测试 1/1 通过（编译 10.21 秒、测试 1.33 秒）。`target/objectives-v2-validation/step1-r8-c9adffd2` 的 618 文件 source archive 逐文件哈希全部与 manifest 相符；manifest SHA `c2287c706535e60e051446899c0cdc9c4c977d488f3ca14d0226903d5b640ece`、archive SHA `7ed3bb5cff5c1e972241d7420da6f181c41a5a1b9647e118090a792cca10f334`、CLI SHA `91c3e4e8f822a2d996464d4548178a158527b015cef648b8f4c4a55aab81bf40`、config SHA `a1228faa0bc8d244fba04b5d161c8248a1922c2bbab1df0e26428852de210045` 均实算核对。
+
+短 T1 真实旧/新 CLI 均 exit=0；解文件逐字节相同，SHA `2cf8b533512ab963772f227d4b7bf28c90a36e1221aff4a8b32ad9c5c66f46c5`。独立比较两份完整 24 行 stdout，差异仅 revision、input manifest 和 wrote 路径，facts/scoring/work/hash 一致，stderr 相同且空。新 entry manifest 的解码文本 SHA 按实际 UTF-8/BOM 解码、保留 CRLF 实算正确；未把 Python 普通文本读取的换行归一化误认为 Provider 的解码行为。
+
+**R8 已关闭。** 源码作用域与该短轮支持复用 T14 旧 `0b5afb35/f510495f` 的 solver 几何/逐项质量证据；所有旧耗时仍是旧 binary 实测，不能重新标为 R8 CLI 的新测量。T14 的质量变化解释和最终完整门禁/语料/视觉验收不因 R8 关闭而自动通过。
+
+
+### T14 九层质量退化裁决：允许限定 14 份快照迁移
+
+本轮只读审阅了 `notes/solver-design/objectives-v2-step1-t14-quality-analysis.md` 与 finalpass-03/04 原始 profile、绑定文件、原始/输出 RNL 和 T14 stdout。`t14-quality-finalpass-03/A-quality-localisation.json` SHA 为 `77532fb7abaa9c578f40bb5f1dc4e65359f4e9e1ecd1aa139748d4ba21ab06f4`，04 对应 SHA 为 `698ba64e1950634f6d0157a8f61d4ebd98d9f56473ffabdc21b495c4dad6b455`，均实算相符。没有执行新的求解或构建。
+
+**结论：九层退化的解释缺口已关闭，允许验证方受控迁移已列明的 14 份求解快照。没有由这批证据发现新的 production must-fix。** 依据 v3 第 125、170 行，Step1 明确保留前二朝向截断；第 179、322 行要求逐处解释变化并检查快照，而没有要求该有限搜索一定胜过旧解。本结论依据具体可达性和排序证据，不以“旧算法近似”泛化豁免，也不把面积改善当作高优先级退化的补偿。
+
+独立核查包括：
+
+- 03 的 raw T2/T4 和 04 的 raw T2b/ota、0.3 T2/T2b/ota/T6：共 731 个实际八向数组，逐个用 Python Fraction 对完整层向量及稳定顺序重排，核对实际 rank 与前二；每例所有 placed 顺序、四个 routed 候选的完整层/code 顺序、最终 chosen 均一致。没有只引用分析 JSON 的布尔自报。
+- 每例 profile SHA、原 entry/config SHA、实际 chosen-file 与保存 T14 的逐字节输出、Host 读回 record SHA 实算匹配。逐层从原 T14 stdout 重新取完整 ScoreReport、work、sig3 和 kept fact 序列，均匹配该诊断。raw T4 已使用 CLI `--report` 实际启用的 `hints_for_low=true`，没有复用此前不匹配的 helper 工作量。
+- 检查仪器源码：搜索/摆放/布线来自原始 entry 或已绑定的显式 0.2 升级 overlay；旧记录只在完成候选选择之后用于对照/原帧合法性测试。旧 frame 新增 PLACE/ORIENT facts 后，原 retained facts 序列必须完全不变且所有新增 frame facts 被保留。03 两例原事实/frame 数为 13/27、38/76；04 六例分别为 14/27、16/46、18/27、19/27、20/38、27/102。
+- 两版 ota 只重执行所指子层；其它层保存记录作为事后输出载体。目标完整身份 record/ScoreReport/work/sig3 的严格匹配有效，但载体文件相同不能说其它层在本轮重求解。
+- 每例旧完整朝向向量在所有实际 placed 候选中缺席。raw T2/T2b 的旧 VIN MY 与 RD R0 在实际八向评价中未进前二；raw T4 的 VIP/VIN MY 均在全部相关调用中排第八。raw ota 的旧 PMOS 类根 MY 排第三；0.3 ota 排第七。0.3 T6 的 VB0 MY 在 17 次调用中排第四或第六，未进前二。
+- **0.3 T2/T2b 必须保留联合可达性的准确表述**：旧 VIN MXR90 在相关调用中排第二，可单独进入 beam；旧 RD R0 和 M1 R0 分别排第五、第三，而 P0 的 VIN 为 R0。因此旧完整向量仍不在实际池中，不能写成“所有旧 MY 都被截断”或“任何旧单体朝向都不可达”。
+- raw T6 继续复用此前已独立审查的 544 次 trace、旧 18 facts+102 frame facts 以及旧整体向量缺席证据，保留原 source/binary 标签。不能把这项或 T14 旧用时重标为 R8 新 CLI 实测。
+
+新池中的低弯数候选在更早的 body/short/label 层落败，完整排序本身正确。这证明具体的 Step1 前二/有限 sketch 候选边界，既不证明全局最优，也不证明只把前二改为八向就一定恢复旧坐标或路由。原逐项表中 18 层的九好九坏、各层首差、低优先级反向变化以及高耗时风险必须继续公开。
+
+raw T4 新增一条输出线和一个分叉的原因也独立核对：读取旧/新 `&out @WIRE` 的显式端点（不按坐标合并），旧四条边连 CC:n/M6:d/CL:p/M7:d 与单一 rt7，degree=4；新五条边连同四个物理端子与 rt7/rt8，后两者各 degree=3。独立重算两侧均连通且 E=V-1，未新增或遗漏端子。该结论只解释此 net 的输出树划分，不能外推 Step2 身份计分。
+
+迁移限制：仅此 14 个已解释文件；保留原事实、身份树、作者线、端点及几何保障，不以泛化豁免换快照通过。完成 bless 后必须运行正常非 bless 快照检查。Step1 全门禁、20 电路语料及最终整体验收仍未完成；本轮质量裁决没有宣称它们通过。质量文档开头仍有早期“本轮尚未完成”的历史状态，建议在最终验收整理时明确最新状态，保留失败历史但避免读者误判当前结论。
+
+附：Step3 平台资源冒烟边界已单独裁定。v3 第 177、202 行要求无配置文件时内置回退及开发/安装/portable/内置各自冒烟，没有 GNU 必须单 exe 的要求。已证依赖 WebView2Loader.dll 的 GNU 可用“exe + 明确列出并绑定 SHA 的加载依赖，目录内无 solver config”的实际发行闭包；不得靠 PATH 偶然 DLL 冒充单 exe。必须记录目录、PE imports、resource_dir 并真实求解检查 builtin/missing/error 语义。MSVC 单 exe 仅在已有可用且已证静态产物时测试；本轮没有执行平台冒烟，也没有审 Step3 API 全部实现。

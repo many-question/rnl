@@ -69,14 +69,14 @@ pub(super) fn coverage(p: &LevelProblem, resolved: &Resolved, s: &Structure, pre
         for (k, o) in p.objects.iter().enumerate() {
             match &o.position {
                 Position::At(r) => {
-                    for axis in 0..2 {
+                    for axis in [0, 1] {
                         if known(r, axis, &axes, &orient) {
                             axes[k][axis] = Some("authored point relationship".into());
                         }
                     }
                 }
                 Position::InSymbol { owner, replaced, .. } if orient[*owner] => {
-                    for axis in 0..2 {
+                    for axis in [0, 1] {
                         if let Some((a, slot)) = replaced.as_ref().filter(|(a, _)| usize::from(*a == Axis::Y) == axis) {
                             let _ = a;
                             if constant(slot, k, axis) {
@@ -117,7 +117,7 @@ pub(super) fn coverage(p: &LevelProblem, resolved: &Resolved, s: &Structure, pre
             excluded.push(json!({"object":k,"label":o.label,"reason":"no Step1 scoring geometry"}));
             continue;
         }
-        for axis in 0..2 {
+        for axis in [0, 1] {
             if axes[k][axis].is_none() {
                 missing.push(json!({"object":k,"label":o.label,"axis":if axis==0 {"x"} else {"y"},"reason":"not recorded or certified as an authored constant/position relationship"}));
             }

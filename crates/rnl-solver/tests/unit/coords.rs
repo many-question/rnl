@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::rational::{frac, int};
 

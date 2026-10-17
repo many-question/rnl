@@ -380,34 +380,26 @@ pub(crate) fn attachments(s: &Structure, rows: &[Vec<usize>], ori: &[Orient]) ->
         if !info.own || info.fact_touched || info.stub.is_some() || origin(s, k).is_none() || s.pins(k).is_empty() {
             continue;
         }
-        match info.role {
-            Role::Port => {
-                let pins = s.attach_pins(k);
-                let sideways = pins.iter().find_map(|&p| match s.exit(p.0, p.1, ori[p.0]) {
-                    Some((-1, 0)) => Some((p, Side::Left)),
-                    Some((1, 0)) => Some((p, Side::Right)),
-                    Some((0, 1)) => Some((p, Side::Above)),
-                    Some((0, -1)) => Some((p, Side::Below)),
-                    _ => None,
-                });
-                let attach = sideways.or_else(|| {
-                    let side = Side::Left;
-                    pins.iter()
-                        .min_by_key(|p| (row_of.get(&p.0).copied().unwrap_or(usize::MAX), **p))
-                        .map(|&p| (p, side))
-                });
-                if let Some((host, side)) = attach {
-                    // only the router leaves a pin by its lead: a port that its net's wires
-                    // written, or nothing, join to the host stays at the host's pin
-                    let facing = if s.connections.routed((k, 0), host) {
-                        facing_pin(s, &row_of, &pins, host, ori)
-                    } else {
-                        None
-                    };
-                    out.insert(k, Attach { host, side, facing });
-                }
+        if info.role == Role::Port {
+            let pins = s.attach_pins(k);
+            let sideways = pins.iter().find_map(|&p| match s.exit(p.0, p.1, ori[p.0]) {
+                Some((-1, 0)) => Some((p, Side::Left)),
+                Some((1, 0)) => Some((p, Side::Right)),
+                Some((0, 1)) => Some((p, Side::Above)),
+                Some((0, -1)) => Some((p, Side::Below)),
+                _ => None,
+            });
+            let attach = sideways.or_else(|| {
+                let side = Side::Left;
+                pins.iter().min_by_key(|p| (row_of.get(&p.0).copied().unwrap_or(usize::MAX), **p)).map(|&p| (p, side))
+            });
+            if let Some((host, side)) = attach {
+                // only the router leaves a pin by its lead: a port that its net's wires
+                // written, or nothing, join to the host stays at the host's pin
+                let facing =
+                    if s.connections.routed((k, 0), host) { facing_pin(s, &row_of, &pins, host, ori) } else { None };
+                out.insert(k, Attach { host, side, facing });
             }
-            _ => {}
         }
     }
     out
@@ -1773,7 +1765,7 @@ impl Search<'_> {
                 // future orders after the budget is exhausted.
                 let remaining = self.options.budget.candidates.saturating_sub(self.made);
                 for _ in 0..BARYCENTRE_ROUNDS {
-                    if orders.len() as u64 - 1 >= remaining {
+                    if orders.len() as u64 > remaining {
                         break;
                     }
                     let p = Plan { order: self.place(base, &current), ..base.clone() };
