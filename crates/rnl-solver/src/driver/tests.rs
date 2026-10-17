@@ -626,21 +626,26 @@ fn check_capped(
             assert!(x.is_finite() && y.is_finite(), "{what}: {pl:?}");
         }
     }
-    // every object with a position of its own placed, those the file fixes too (plan 3.2), and
-    // every text that its symbol places on one axis only, where it is (13.3); and every
-    // orientation given
+    // every object with a position of its own placed, those the file fixes too (plan 3.2), but what
+    // the solver leaves free (13.3, 11.1), and every text that its symbol places on one axis only,
+    // where it is (13.3); and every orientation given, but to what is left free
     for (k, o) in p.objects.iter().enumerate() {
         let pl: Vec<&Placement> = solved.solution.placements.iter().filter(|pl| pl.object == k).collect();
         assert!(pl.len() <= 1, "{what}: {pl:?}");
         let at = pl.first().and_then(|pl| pl.at);
         let orient = pl.first().and_then(|pl| pl.orient);
-        let own = matches!(o.position, Position::Own { .. } | Position::InSymbol { replaced: Some(_), .. });
+        let own = match o.position {
+            Position::Own { .. } => !left_free(&e.structure, k),
+            Position::InSymbol { replaced: Some(_), .. } => true,
+            _ => false,
+        };
         assert_eq!(at.is_some(), own, "{what}: {} {pl:?}", o.label);
         if let (Some((x, y)), Position::InSymbol { .. }) = (at, &o.position) {
             let origin = &e.placed.origins[k];
             assert_eq!((from_f64(x).as_ref(), from_f64(y).as_ref()), (Some(&origin[0]), Some(&origin[1])), "{what}");
         }
-        let oriented = o.orient.is_some() && !matches!(o.position, Position::InSymbol { .. });
+        let oriented =
+            o.orient.is_some() && !matches!(o.position, Position::InSymbol { .. }) && !left_free(&e.structure, k);
         assert_eq!(orient.is_some(), oriented, "{what}: {} {pl:?}", o.label);
     }
     check_wires(p, &solved, &e, &what);
@@ -807,17 +812,21 @@ fn t3_is_drawn_as_the_plan_pictures_it() {
     assert_eq!(s.objects[grounds[0]].stub.as_ref().unwrap().host.0, m5);
     assert!(y(grounds[0]) < y(m5) && x(grounds[0]) == x(m5), "{what}");
     assert_eq!(g.orient[grounds[0]], Orient::R0, "{what}");
-    // the ports beside what they connect to: inp left of M1's gate, inn right of M2's, out right
-    // of M4's drain, vbias left of M5's gate
+    // the ports beside what they connect to: inp left of M1's gate, inn right of M2's, vbias left
+    // of M5's gate
     let port = |net: &str| s.ports.iter().find(|q| q.net.as_deref() == Some(net)).unwrap().object;
     let tag = |net: &str| s.pin_at(at, &g.orient, port(net), 0).unwrap();
-    for (net, host, terminal, left) in
-        [("inp", m1, "2", true), ("inn", m2, "2", false), ("out", m4, "1", false), ("vbias", m5, "2", true)]
-    {
+    for (net, host, terminal, left) in [("inp", m1, "2", true), ("inn", m2, "2", false), ("vbias", m5, "2", true)] {
         let (t, h) = (tag(net), pin(host, terminal));
         assert_eq!(t[1], h[1], "{what}: {net}");
         assert!(if left { t[0] < h[0] } else { t[0] > h[0] }, "{what}: {net}");
     }
+    // and out right of M4's drain, which leaves down to M2's: two below it, in the gap between the
+    // two rows, above M2's drain (quality review SE-13)
+    let (t, top, bottom) = (tag("out"), pin(m4, "1"), pin(m2, "1"));
+    assert!(t[0] > top[0], "{what}");
+    assert_eq!(t[1], &top[1] - int(2), "{what}");
+    assert!(bottom[1] < t[1], "{what}");
     assert_eq!(s.ports.iter().find(|q| q.net.as_deref() == Some("inp")).unwrap().kind, PortKind::Input);
     assert_eq!(s.ports.iter().find(|q| q.net.as_deref() == Some("out")).unwrap().kind, PortKind::Output);
     // nothing overlaps, and every relation of the layout fits but the column of M5 under M1,
@@ -1291,9 +1300,10 @@ fn routed_whole(body: &str, options: &str) -> (LevelProblem, Solved, Exact) {
     (p, solved, e)
 }
 
-/// Rows without facts put pins of two nets face to face across the gap of 2 between neighbours,
-/// where both lead to one node: the net routed second leaves its pin along the edge of its
-/// symbol, and every net is one tree, with and without the objectives (review of S4).
+/// Pins of two nets face to face across a gap of 2 between neighbours, where both lead to one node
+/// (rows keep such pins of two nets routed three apart now, but facts may put them closer): the net
+/// routed second leaves its pin along the edge of its symbol, and every net is one tree, with and
+/// without the objectives (review of S4).
 #[test]
 fn pins_of_two_nets_face_to_face_in_a_row_are_both_routed() {
     for body in [
@@ -1371,28 +1381,31 @@ fn routes_of_one_net_with_different_styles_are_noted() {
     );
 }
 
-/// T3: the two wires of &out that meet at M4's drain end at a branch point there with a junction,
-/// which a wire of length 0 joins to the drain (13.2; review of S4).
+/// T3: the wire of the port of &out meets the wire between the drains of M4 and M2 in its middle,
+/// at a branch point with a junction, not at M4's drain by a wire of length 0, which the port
+/// beside the drain at its height made (13.2; quality review SE-13).
 #[test]
-fn t3_has_a_junction_where_two_wires_meet_at_a_drain() {
+fn t3_has_a_junction_where_the_port_meets_the_wire_between_the_drains() {
     let ps = problems(&repo().join("tests/integration/solver/T3-ota5t.sp"));
     let p = ps.iter().find(|p| p.title == "ota5t").unwrap();
     let (solved, e) = check_level("T3", p);
-    let m4 = object(p, "#M4");
-    let drain = |q: &rnl_runtime::solution::WirePoint| matches!(q, rnl_runtime::solution::WirePoint::Anchor(PointRef::Pin { object, terminal, .. }) if *object == m4 && terminal == "d");
-    let at_drain: Vec<(usize, &rnl_runtime::solution::RoutedWire)> = solved
-        .solution
-        .wires
-        .iter()
-        .enumerate()
-        .filter(|(_, w)| p.routes[w.route].net == "out" && w.points.iter().any(drain))
-        .collect();
-    assert_eq!(at_drain.len(), 1, "{}", summary(p, &solved, &e));
-    let (i, w) = at_drain[0];
-    let path = &e.routing.paths[i];
-    assert_eq!(path[0], path[1], "of length 0: {w:?}");
-    let rnl_runtime::solution::WirePoint::Branch(b) = w.points[0] else { panic!("{w:?}") };
-    assert!(solved.solution.branches[b].junction);
+    let what = summary(p, &solved, &e);
+    for (w, path) in solved.solution.wires.iter().zip(&e.routing.paths) {
+        assert!(path.windows(2).any(|s| s[0] != s[1]), "{what}: of length 0: {w:?}");
+    }
+    let (m2, m4) = (object(p, "#M2"), object(p, "#M4"));
+    let s = &e.structure;
+    let drain = |k: usize| {
+        let j = s.pins(k).iter().position(|pi| pi.terminals.iter().any(|t| t == "1")).unwrap();
+        s.pin_at(&e.placed.origins, &e.placed.geometry.orient, k, j).unwrap()
+    };
+    let (top, bottom) = (drain(m4), drain(m2));
+    assert_eq!(top[0], bottom[0], "{what}");
+    let inside = solved.solution.branches.iter().filter(|b| {
+        let (x, y) = (from_f64(b.at.0).unwrap(), from_f64(b.at.1).unwrap());
+        x == top[0] && bottom[1] < y && y < top[1]
+    });
+    assert_eq!(inside.filter(|b| b.junction).count(), 1, "{what}");
 }
 
 /// Without objectives the candidates differ, and every ROUTE of T1–T6 is still routed whole (T4
@@ -1406,4 +1419,538 @@ fn every_case_of_the_solver_is_routed_whole_without_objectives() {
             assert!(solved.report.unrouted.is_empty(), "{}: {:?}", p.title, solved.report.unrouted);
         }
     }
+}
+
+// ------------------------------------------------------- the quality review of the first drawings
+
+/// The bends of the wires routed for each net, by its name (the turns of the objectives on the
+/// wires, net by net).
+fn bends_by_net(p: &LevelProblem, solved: &Solved, e: &Exact) -> BTreeMap<String, usize> {
+    let mut out: BTreeMap<String, usize> = BTreeMap::new();
+    for (w, path) in solved.solution.wires.iter().zip(&e.routing.paths) {
+        *out.entry(p.routes[w.route].net.clone()).or_default() += crate::objectives::bends(path);
+    }
+    out
+}
+
+/// The ends of the wires routed that leave a pin against its exit (9.2.4), each said with its net
+/// and its pin: a wire from a pin whose first step of some length is not the pin's own way, as a
+/// lead along the edge of its symbol is (`crate::route`).
+fn violated_exits(p: &LevelProblem, solved: &Solved, e: &Exact) -> Vec<String> {
+    use rnl_runtime::solution::WirePoint;
+    let (s, ori) = (&e.structure, &e.placed.geometry.orient);
+    let mut out = Vec::new();
+    for (w, path) in solved.solution.wires.iter().zip(&e.routing.paths) {
+        let backwards: Vec<[Q; 2]> = path.iter().rev().cloned().collect();
+        for (end, path) in [(w.points.first(), path), (w.points.last(), &backwards)] {
+            let Some(WirePoint::Anchor(PointRef::Pin { object, pin, terminal })) = end else { continue };
+            let Some((x, y)) = s.exit(*object, *pin, ori[*object]) else { continue };
+            let Some(start) = path.first() else { continue };
+            let Some(next) = path.iter().find(|q| *q != start) else { continue };
+            let way = ((&next[0] - &start[0]).signum(), (&next[1] - &start[1]).signum());
+            if way != (int(x), int(y)) {
+                let label = &p.objects[*object].label;
+                out.push(format!("{} at {label}:{terminal}, its exit ({x}, {y}): {path:?}", p.routes[w.route].net));
+            }
+        }
+    }
+    out
+}
+
+/// The level of a case of the solver with a title, solved and checked.
+fn case_level(file: &str, title: &str) -> (LevelProblem, Solved, Exact) {
+    level_in("tests/integration/solver", file, title)
+}
+
+/// The level with a title of a netlist in a directory of the repository, solved and checked.
+fn level_in(dir: &str, file: &str, title: &str) -> (LevelProblem, Solved, Exact) {
+    let ps = problems(&repo().join(dir).join(file));
+    let p = ps.into_iter().find(|p| p.title == title).unwrap_or_else(|| panic!("{file}: no level {title}"));
+    let (solved, e) = check_level(file, &p);
+    (p, solved, e)
+}
+
+/// T1, the RC low-pass filter: a pin that leaves sideways towards its neighbour and a pin that
+/// leaves up are not put on one height, which leaves the router only a jog of three bends, but
+/// the sideways one above the other's lead, an L of one bend (quality review SE-1, LP-1, SC-1):
+/// R1 is the rail on top, C1 lower, two bends in all.
+#[test]
+fn t1_is_drawn_with_an_l_for_each_wire() {
+    let (p, solved, e) = case_level("T1-rc-lowpass.sp", "T1-rc-lowpass.sp");
+    let what = summary(&p, &solved, &e);
+    let bends = bends_by_net(&p, &solved, &e);
+    assert_eq!(bends.get("in"), Some(&1), "{what}");
+    assert_eq!(bends.get("out"), Some(&1), "{what}");
+    let at = &e.placed.origins;
+    let [vin, r1, c1] = ["#VIN", "#R1", "#C1"].map(|l| object(&p, l));
+    let pin = |k: usize, j: usize| e.structure.pin_at(at, &e.placed.geometry.orient, k, j).unwrap();
+    // R1 lies across, above the top pins of VIN and C1
+    assert_eq!(pin(r1, 0)[1], pin(r1, 1)[1], "{what}");
+    for k in [vin, c1] {
+        let top = (0..2).map(|j| pin(k, j)[1].clone()).max().unwrap();
+        assert!(top < pin(r1, 0)[1], "{what}: {}", p.objects[k].label);
+    }
+}
+
+/// T2 and T2b, the common-source stage: the gate wire from VIN is an L, not a jog of three bends
+/// (quality review SE-1, LP-1, SC-1).
+#[test]
+fn t2_has_an_l_from_the_source_to_the_gate() {
+    for file in ["T2-common-source.sp", "T2b-common-source-dragged.sp"] {
+        let (p, solved, e) = case_level(file, file);
+        assert_eq!(bends_by_net(&p, &solved, &e).get("in"), Some(&1), "{}", summary(&p, &solved, &e));
+    }
+}
+
+/// T3's testbench: &inn goes up from VIN and turns once into the input of XU1, with no jog round
+/// the corner of its box (quality review LP-1).
+#[test]
+fn t3_has_no_jog_into_the_input_of_the_ota() {
+    let (p, solved, e) = case_level("T3-ota5t.sp", "T3-ota5t.sp");
+    assert_eq!(bends_by_net(&p, &solved, &e).get("inn"), Some(&1), "{}", summary(&p, &solved, &e));
+}
+
+/// T5: &vin is an L from the source to RI; the tops of RL and C1, which both leave up to &n2, on
+/// one line (quality review SE-1, SE-16); the output of the level of the subcircuit an L from the
+/// port two above E1's pin (SE-13).
+#[test]
+fn t5_has_an_l_for_the_input_and_one_rail_on_the_load() {
+    let (p, solved, e) = case_level("T5-inverting-amp-rlc.sp", "T5-inverting-amp-rlc.sp");
+    let what = summary(&p, &solved, &e);
+    assert_eq!(bends_by_net(&p, &solved, &e).get("vin"), Some(&1), "{what}");
+    let s = &e.structure;
+    let top = |label: &str| {
+        let k = object(&p, label);
+        let j = s.pins(k).iter().position(|pi| pi.terminals.iter().any(|t| t == "1")).unwrap();
+        assert_eq!(s.exit(k, j, e.placed.geometry.orient[k]), Some((0, 1)), "{what}: {label}");
+        s.pin_at(&e.placed.origins, &e.placed.geometry.orient, k, j).unwrap()
+    };
+    assert_eq!(top("#RL")[1], top("#C1")[1], "{what}");
+    let (p, solved, e) = case_level("T5-inverting-amp-rlc.sp", "opamp");
+    assert_eq!(bends_by_net(&p, &solved, &e).get("out"), Some(&1), "{}", summary(&p, &solved, &e));
+}
+
+/// T6, the R-2R ladder: each source next to its leg of 2R in the row joins it by an L, and &n0
+/// has no jog: RT, R2B0 and RS0 meet on one line (quality review SE-1). The legs whose sources
+/// the order of the row puts elsewhere are SE-10's.
+#[test]
+fn t6_joins_each_source_to_its_leg_by_an_l() {
+    let (p, solved, e) = case_level("T6-r2r-ladder.sp", "T6-r2r-ladder.sp");
+    let what = summary(&p, &solved, &e);
+    let bends = bends_by_net(&p, &solved, &e);
+    let row = &e.candidate.rows[0];
+    let mut neighbours = 0;
+    for i in 0..8 {
+        let (vb, leg) = (object(&p, &format!("#VB{i}")), object(&p, &format!("#R2B{i}")));
+        let at = |k: usize| row.iter().position(|&j| j == k).unwrap();
+        if at(vb).abs_diff(at(leg)) == 1 {
+            neighbours += 1;
+            assert_eq!(bends.get(&format!("b{i}")), Some(&1), "{what}: b{i}");
+        }
+    }
+    assert!(neighbours >= 6, "{neighbours}: {what}");
+    assert_eq!(bends.get("n0"), Some(&0), "{what}");
+}
+
+/// No wire routed for T1–T6 leaves a pin against its exit (9.2.4). The compacted tail of T6's
+/// row put pins of two nets face to face two apart, R2B5's of b5 and R2B7's of b7, RS6's of n6 and
+/// RS5's of n5, their leads ending on one node, which neither net then keeps: b5 left R2B5 and n5
+/// left RS5 along the edges of their symbols. Such pins are three apart now (review of phase 1 of
+/// the quality review). T4 is left out: &tail leaves M1's source, at the corner of its box,
+/// sideways to the branch point beside it, as the router prices a violated exit as a bend.
+#[test]
+fn wires_routed_for_t1_to_t6_leave_each_pin_its_own_way() {
+    for file in netlists("tests/integration/solver", "T") {
+        if file.ends_with("T4-miller-conflicts.sp") {
+            continue;
+        }
+        for p in problems(&file) {
+            let (solved, e) = check_level(&file.to_string_lossy(), &p);
+            let bad = violated_exits(&p, &solved, &e);
+            assert!(bad.is_empty(), "{}: {bad:#?}\n{}", p.title, summary(&p, &solved, &e));
+        }
+    }
+}
+
+/// A port beside a pin that leaves up or down stays at the pin's height when wires written draw
+/// its net, or nothing does: only the router leaves a pin by its lead, and a wire written is drawn
+/// by its mode (13.1). Raised past the pin, corpus 03's port of &out, written from the junction to
+/// the port, put the port's box in the way of the oblique &bias written, and the ports of rdiv in
+/// corpus 04 turned R1 and R2 round, so that &mid ran lengthwise over R1 (review of phase 1 of the
+/// quality review, SE-13).
+#[test]
+fn a_port_on_a_net_written_stays_at_the_height_of_its_pin() {
+    use crate::search::{attachments, Side};
+    for (file, title) in [("03-five-transistor-ota.sp", "03-five-transistor-ota.sp"), ("04-hierarchy.sp", "rdiv")] {
+        let (p, solved, e) = level_in("tests/conformance/cases", file, title);
+        let what = summary(&p, &solved, &e);
+        let (s, ori, at) = (&e.structure, &e.placed.geometry.orient, &e.placed.origins);
+        let mut vertical = 0;
+        for (k, a) in attachments(s, &e.candidate.rows, ori) {
+            if s.objects[k].role != Role::Port || !matches!(a.side, Side::Left | Side::Right) {
+                continue;
+            }
+            let label = &p.objects[k].label;
+            assert!(!s.connections.routed((k, 0), a.host), "{what}: {label}");
+            let (port, host) = (s.pin_at(at, ori, k, 0).unwrap(), s.pin_at(at, ori, a.host.0, a.host.1).unwrap());
+            assert_eq!(port[1], host[1], "{what}: {label}");
+            vertical += usize::from(matches!(s.exit(a.host.0, a.host.1, ori[a.host.0]), Some((0, _))));
+        }
+        assert!(vertical > 0, "{what}");
+    }
+}
+
+/// A pin that leaves up and one that leaves sideways towards it, neighbours in a row: the router
+/// joins them by an L, the sideways one above the other's lead; a wire written that its mode draws
+/// straight keeps them on one height, so that it is not oblique; one written vertical first from
+/// the pin that leaves up is an L too (quality review SE-1; 13.1).
+#[test]
+fn neighbours_are_held_as_the_wire_between_them_is_drawn() {
+    let body = |statement: &str| {
+        format!(
+            "V1 a 0 1
+R1 a b 1k
+* @RNL {{ {{#V1 #R1}} @AS $FLOW; {statement} }}
+"
+        )
+    };
+    for (statement, l) in [
+        ("&a @ROUTE", true),
+        ("&a @WIRE {#V1:1 #R1:1}", false),
+        ("&a @WIRE(mode=\"vertical-horizontal\") {#V1:1 #R1:1}", true),
+    ] {
+        let (p, solved, e) = routed_whole(&body(statement), "");
+        let what = format!(
+            "{statement}
+{}",
+            summary(&p, &solved, &e)
+        );
+        let s = &e.structure;
+        let pin = |label: &str| {
+            let k = object(&p, label);
+            let j = s.pins(k).iter().position(|pi| pi.terminals.iter().any(|t| t == "1")).unwrap();
+            (
+                s.exit(k, j, e.placed.geometry.orient[k]),
+                s.pin_at(&e.placed.origins, &e.placed.geometry.orient, k, j).unwrap(),
+            )
+        };
+        let ((up, source), (left, resistor)) = (pin("#V1"), pin("#R1"));
+        assert_eq!((up, left), (Some((0, 1)), Some((-1, 0))), "{what}");
+        if l {
+            assert!(resistor[1] > source[1], "{what}");
+        } else {
+            assert_eq!(resistor[1], source[1], "{what}");
+        }
+        assert!(e.placed.dropped.is_empty(), "{what}: {:?}", e.placed.dropped);
+    }
+}
+
+// -------------------------------------------------- what the solver places, and what it leaves free
+
+use rnl_runtime::problem::{Filler, Reference};
+
+use crate::model::{ax, PointId};
+
+/// Every netlist of the cases of the solver and of the conformance corpus, `.sp` and `.scs`: T1–T6
+/// and T2b, the cases of 0.2 and of the draft 0.3, and the pairs of equivalent netlists.
+fn every_netlist() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for dir in [
+        "tests/integration/solver",
+        "tests/conformance/cases",
+        "tests/conformance/cases-0.3",
+        "tests/conformance/equivalence",
+    ] {
+        let mut files: Vec<PathBuf> = std::fs::read_dir(repo().join(dir))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.extension().is_some_and(|x| x == "sp" || x == "scs"))
+            .collect();
+        files.sort();
+        out.extend(files);
+    }
+    out
+}
+
+/// The points that a relation of the solver's own bounds, by axis.
+fn relation_points(r: &Relation) -> Vec<(usize, Vec<PointId>)> {
+    let points = |terms: &[(PointId, Q)]| terms.iter().map(|(p, _)| *p).collect::<Vec<PointId>>();
+    match r {
+        Relation::Orient { .. } => Vec::new(),
+        Relation::Linear { axis, terms, .. } => vec![(*axis, points(terms))],
+        Relation::Apart { axis, low, high, .. } => vec![(*axis, points(&[low.clone(), high.clone()].concat()))],
+        Relation::OneOf(alternatives) => {
+            alternatives.iter().flatten().map(|(axis, terms, _)| (*axis, points(terms))).collect()
+        }
+        Relation::Even { axis, points } => vec![(*axis, points.clone())],
+    }
+}
+
+/// Whether the LP decides each object's coordinate on each axis, by object: false where it is
+/// left where the witness of the resolution happens to be. The LP's first two layers, the facts
+/// kept, the links of pins and texts to their objects, the wires, the relations of the candidate
+/// `c` taken, with the orientations `ori`, and the anchors of texts all bound differences of
+/// coordinates only, so a set of objects that they join on an axis can move as one along it,
+/// unless it holds an element, which the search places in its rows, or a fact kept that fixes a
+/// coordinate (a PLACE, or a coordinate of a point, 11.1). Otherwise only layer 3, the distance
+/// to where the resolution put it, holds it, and its coordinates there are where the witness
+/// happens to be, such as 0 for what nothing reaches; the repair of overlaps only pushes it out of
+/// the way of the symbols placed, and is not counted. Such is a point `(_, _)` in no wire on an
+/// axis that no fact reaches, and a supply, ground or port symbol that no fact reaches and that
+/// the candidate puts beside no pin; a text attached to a wire or a net that no fact reaches would
+/// be but for its anchor.
+fn grounded(problem: &LevelProblem, s: &Structure, c: &Candidate, ori: &[Orient]) -> Vec<[bool; 2]> {
+    let n = problem.objects.len();
+    // the objects, then one node for what is held: a union-find on each axis
+    let mut parent: [Vec<usize>; 2] = [(0..=n).collect(), (0..=n).collect()];
+    fn root(parent: &mut [usize], mut k: usize) -> usize {
+        while parent[k] != k {
+            parent[k] = parent[parent[k]];
+            k = parent[k];
+        }
+        k
+    }
+    let mut join = |axis: usize, a: usize, b: usize| {
+        let (ra, rb) = (root(&mut parent[axis], a), root(&mut parent[axis], b));
+        if ra != rb {
+            parent[axis][ra.max(rb)] = ra.min(rb);
+        }
+    };
+    let held = n;
+    let object_of = |p: &PointId| match p {
+        PointId::Origin(k) | PointId::Pin(k, _) | PointId::Text(k) => Some(*k),
+        PointId::Centre(_) => None,
+    };
+    // the elements, in the rows of the candidate
+    for &k in c.rows.iter().flatten() {
+        join(0, k, held);
+        join(1, k, held);
+    }
+    for (k, o) in problem.objects.iter().enumerate() {
+        match &o.position {
+            // drawn at the point of its main object (12.1)
+            Position::At(_) => {
+                if let Some(j) = s.model.origin_point[k].as_ref().and_then(object_of) {
+                    join(0, k, j);
+                    join(1, k, j);
+                }
+            }
+            // a point of its owner on the axes that its symbol gives (13.3)
+            Position::InSymbol { owner, .. } => {
+                for axis in [Axis::X, Axis::Y] {
+                    if o.position.from_symbol(axis) {
+                        join(ax(axis), k, *owner);
+                    }
+                }
+            }
+            Position::Own { .. } => {}
+        }
+    }
+    for &f in &s.kept {
+        let (Some(unit), Some(fact)) = (s.model.units.get(f), problem.facts.get(f)) else { continue };
+        let fixes = match &fact.kind {
+            FactKind::Place { axis, .. } | FactKind::PointCoordinate { axis, .. } => Some(ax(*axis)),
+            _ => None,
+        };
+        for axis in 0..2 {
+            let objects: Vec<usize> = unit.touched[axis].iter().filter_map(object_of).collect();
+            for w in objects.windows(2) {
+                join(axis, w[0], w[1]);
+            }
+            if let (Some(&first), true) = (objects.first(), fixes == Some(axis)) {
+                join(axis, first, held);
+            }
+        }
+    }
+    // the relations of the candidate: rows, gaps, rows and blocks apart, ports and supply and
+    // ground symbols beside their pins, columns, even rows
+    for t in crate::search::relations(s, c, ori, &SolverOptions::without_time_limit()) {
+        for (axis, points) in relation_points(&t.rel) {
+            let objects: Vec<usize> = points.iter().filter_map(object_of).collect();
+            for w in objects.windows(2) {
+                join(axis, w[0], w[1]);
+            }
+        }
+    }
+    for d in &s.connections.drawn {
+        let objects: Vec<usize> = d.points.iter().filter_map(object_of).collect();
+        for w in objects.windows(2) {
+            join(0, w[0], w[1]);
+            join(1, w[0], w[1]);
+        }
+    }
+    for (k, a) in &s.anchors {
+        for &(j, _) in &a.from {
+            join(0, *k, j);
+            join(1, *k, j);
+        }
+    }
+    let ground = [root(&mut parent[0], held), root(&mut parent[1], held)];
+    (0..n).map(|k| [root(&mut parent[0], k) == ground[0], root(&mut parent[1], k) == ground[1]]).collect()
+}
+
+/// The texts of a level: on the wire `%w` and on the net `&b`, which no fact reaches, and `%l` on
+/// the wire, whose y an ALIGN with R2 gives.
+const TEXTS_ON_WIRES: &str = concat!(
+    "R1 a b 1k\n",
+    "R2 b c 1k\n",
+    "* @RNL {\n",
+    "*   %w = &b @WIRE {#R1:2 #R2:1};\n",
+    "*   %w @TEXT(\"on the wire\");\n",
+    "*   &b @TEXT(\"on the net\");\n",
+    "*   %l = %w @TEXT(\"aligned\");\n",
+    "*   {%l #R2} @ALIGN(\"y\")\n",
+    "* }\n",
+);
+
+/// A text attached to a wire or a net, which has no coordinate point (13.3), and that no fact
+/// reaches, is left free: the viewer places it next to what it is attached to, and the report
+/// says so. Placed, the LP would have left it where the witness of the resolution is, such as the
+/// origin. A text on the wire whose y a fact gives is placed, its x where the viewer puts a label
+/// of the wire, in the middle of its two points, which no fact reaches and the grid does not move.
+#[test]
+fn a_text_on_a_wire_or_a_net_that_no_fact_reaches_is_left_to_the_viewer() {
+    let (p, solved, e) = solve_text(&netlist(TEXTS_ON_WIRES));
+    let attached = |unnamed: fn(&Filler) -> bool| {
+        let found = p.objects.iter().position(|o| {
+            o.reference != Reference::Name("%l".into()) && o.text.as_ref().is_some_and(|t| unnamed(&t.attach))
+        });
+        found.unwrap()
+    };
+    let placed = |k: usize| solved.solution.placements.iter().find(|pl| pl.object == k).and_then(|pl| pl.at);
+    let on_wire = attached(|f| matches!(f, Filler::Wire(_)));
+    let on_net = attached(|f| matches!(f, Filler::Net(n) if n == "b"));
+    for k in [on_wire, on_net] {
+        assert!(left_free(&e.structure, k), "{}", p.objects[k].label);
+        assert_eq!(placed(k), None, "{}", p.objects[k].label);
+    }
+    assert!(
+        solved.report.notes.iter().any(|n| n.starts_with("2 texts that no fact kept reaches are left free")),
+        "{:#?}",
+        solved.report.notes
+    );
+    let l = p.objects.iter().position(|o| o.reference == Reference::Name("%l".into())).unwrap();
+    assert!(!left_free(&e.structure, l));
+    assert_eq!(e.structure.objects[l].fact_axes, [false, true]);
+    assert_eq!(grounded(&p, &e.structure, &e.candidate, &e.placed.geometry.orient)[l], [true, true]);
+    let (x, y) = placed(l).expect("the aligned text is placed");
+    assert_eq!(y, to_f64(&e.placed.origins[object(&p, "#R2")][1]));
+    // in the middle of the wire's two points, the pins of R1 and R2, on x
+    let pin_x = |r: &PointRef| {
+        let PointRef::Pin { object, pin, .. } = r else { panic!("{r:?}") };
+        let at = e.structure.pin_offset(*object, *pin, e.placed.geometry.orient[*object]).unwrap();
+        &e.placed.origins[*object][0] + &at[0]
+    };
+    let middle = (pin_x(&p.wires[0].anchors[0]) + pin_x(&p.wires[0].anchors[1])) / int(2);
+    assert_eq!(from_f64(x), Some(middle), "{x}");
+}
+
+/// A supply, ground or port symbol without a name (5.9) that no fact reaches and that is on no net
+/// whose pins the problem shows, as no ROUTE or wire written draws one, has no pin to go beside:
+/// the solution leaves it free, neither placed nor oriented, it is no component and no symbol
+/// that others are put apart from, and the report says so. One with a name is placed as before,
+/// and one without a name on a net that a wire draws goes below its pin.
+#[test]
+fn a_symbol_without_a_name_on_no_net_drawn_is_left_free() {
+    let (p, solved, e) = solve_text(&netlist(concat!(
+        "R1 a b 1k\n",
+        "R2 b c 1k\n",
+        "* @RNL {\n",
+        "*   &b @WIRE {#R1:2 #R2:1};\n",
+        "*   $GND @ATTACH &c;\n",
+        "*   %g = $GND @ATTACH &a;\n",
+        "*   $GND @ATTACH &b\n",
+        "* }\n",
+    )));
+    let grounds: Vec<usize> = (0..p.objects.len()).filter(|&k| e.structure.objects[k].role == Role::Ground).collect();
+    let [on_c, named, on_b] = grounds.as_slice() else { panic!("{grounds:?}") };
+    let (on_c, named, on_b) = (*on_c, *named, *on_b);
+    assert!(matches!(p.objects[on_c].reference, Reference::Number { .. }), "{:?}", p.objects[on_c]);
+    assert_eq!(p.objects[named].reference, Reference::Name("%g".into()));
+    assert!(left_free(&e.structure, on_c));
+    assert!(solved.solution.placements.iter().all(|pl| pl.object != on_c), "{:?}", solved.solution.placements);
+    assert!(!e.structure.components().any(|k| k == on_c) && !crate::coords::solid(&e.structure, on_c));
+    assert!(e.placed.overlaps.iter().all(|o| o.a != on_c && o.b != on_c));
+    let note = "1 symbol without a name that no fact kept reaches is left free";
+    assert!(solved.report.notes.iter().any(|n| n.starts_with(note)), "{:#?}", solved.report.notes);
+    // the one with a name is placed, though nothing places it either
+    let placed = |k: usize| solved.solution.placements.iter().find(|pl| pl.object == k).and_then(|pl| pl.at);
+    assert!(!left_free(&e.structure, named) && placed(named).is_some());
+    // the one on the net drawn goes below the first pin of an element on it, R1's
+    let ori = &e.placed.geometry.orient;
+    let attach = crate::search::attachments(&e.structure, &e.candidate.rows, ori);
+    assert_eq!(attach.get(&on_b).map(|a| (a.host.0, a.side)), Some((object(&p, "#R1"), crate::search::Side::Below)));
+    assert!(!left_free(&e.structure, on_b) && placed(on_b).is_some());
+    assert_eq!(grounded(&p, &e.structure, &e.candidate, ori)[on_b], [true, true]);
+    let host = attach[&on_b].host;
+    let hpin = e.structure.pin_at(&e.placed.origins, ori, host.0, host.1).unwrap();
+    let gpin = e.structure.pin_at(&e.placed.origins, ori, on_b, 0).unwrap();
+    assert_eq!(gpin[0], hpin[0]);
+    assert!(gpin[1] < hpin[1], "{gpin:?} below {hpin:?}");
+}
+
+/// Nothing is placed where only the witness of the resolution puts it, in every case of the
+/// solver and of the corpus, `.sp` and `.scs`, of 0.2 and of the draft 0.3: every object the
+/// solution places is held on each axis by a fact kept, a relation of the candidate taken, an
+/// element of its rows or what it is attached to ([`grounded`]), but for the points `(_, _)` that
+/// are not drawn, the axes of `$MIRROR_PAIR` and the middle point of `$TAIL_CENTER` (T3, T4, corpus
+/// 03 and 15) and a point aligned on x only (corpus 10), on y (11.1), and the ports that rules
+/// make, which the record names (10.5), on nets that nothing draws: no pin of an element on them
+/// is known to the solver, which places them as before (`crate::structure::ObjectInfo::left_free`).
+/// What it leaves free is the bus label of corpus 09, on a wire (13.3), and the ground without a
+/// name of the subcircuit of 0.3/09, on a net that nothing draws; the solution gives it no
+/// orientation either, and nothing that the candidate puts beside a pin is left free.
+#[test]
+fn nothing_is_placed_where_only_the_witness_puts_it() {
+    let mut unheld: BTreeMap<String, usize> = BTreeMap::new();
+    let mut left = Vec::new();
+    for f in every_netlist() {
+        let name = f.file_name().unwrap().to_string_lossy().to_string();
+        for p in problems(&f) {
+            let (solved, e) = solve_exact(&p, &SolverOptions::without_time_limit());
+            let ori = &e.placed.geometry.orient;
+            let g = grounded(&p, &e.structure, &e.candidate, ori);
+            for pl in solved.solution.placements.iter().filter(|pl| pl.at.is_some()) {
+                let o = &p.objects[pl.object];
+                let free: Vec<usize> = (0..2).filter(|&a| !g[pl.object][a]).collect();
+                if free.is_empty() || o.kind == ObjectKind::Point {
+                    continue;
+                }
+                let what = format!("{name} / {}: {} on {free:?}", p.title, o.label);
+                let port = e.structure.objects[pl.object].role == Role::Port;
+                assert!(port && matches!(o.reference, Reference::Generated { .. }), "{what}");
+                *unheld.entry(format!("{name} / {}", p.title)).or_default() += 1;
+            }
+            for k in (0..p.objects.len()).filter(|&k| left_free(&e.structure, k)) {
+                left.push(format!("{name} / {}: {}", p.title, p.objects[k].label));
+                assert!(solved.solution.placements.iter().all(|pl| pl.object != k), "{name} / {}", p.title);
+            }
+            for k in crate::search::attachments(&e.structure, &e.candidate.rows, ori).keys() {
+                assert!(!left_free(&e.structure, *k), "{name} / {}: {}", p.title, p.objects[*k].label);
+            }
+        }
+    }
+    let unheld: Vec<(&str, usize)> = unheld.iter().map(|(k, n)| (k.as_str(), *n)).collect();
+    assert_eq!(
+        unheld,
+        [
+            ("04-no-rule-packages.scs / cell", 2),
+            ("06-symbols.sp / shapes", 2),
+            ("08-styles-and-text.sp / opamp", 3),
+            ("09-buses-and-bundles.sp / dff", 3),
+            ("09-buses-and-bundles.sp / reg4", 1),
+            ("09-include-without-header.sp / divider", 2),
+            ("12-diagnostics.sp / sub", 2),
+            ("19-set-cycles.sp / cell", 2),
+            ("inverter-chain.scs / inv", 1),
+            ("inverter-chain.sp / inv", 1),
+        ]
+    );
+    assert_eq!(
+        left,
+        [
+            "09-buses-and-bundles.sp / 09-buses-and-bundles.sp: a text",
+            "09-include-without-header.sp / divider: a usage of $GND",
+        ]
+    );
 }
