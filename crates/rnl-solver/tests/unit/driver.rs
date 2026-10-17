@@ -1563,13 +1563,8 @@ fn violated_exits(p: &LevelProblem, solved: &Solved, e: &Exact) -> Vec<ExitViola
     out
 }
 
-/// The level of a case of the solver with a title, solved and checked.
-fn case_level(file: &str, title: &str) -> (LevelProblem, Solved, Exact) {
-    level_in("tests/integration/solver", file, title)
-}
-
 /// Exact-shape regressions use committed v1 geometry as explicit language facts, not hints.
-/// The raw-input helper above remains unchanged. Fixture provenance is recorded in
+/// The raw-input level_in/check_level helpers remain unchanged. Fixture provenance is recorded in
 /// notes/solver-design/objectives-v2-step1-legacy-layout-fixtures.json.
 fn fixed_legacy_case_level(file: &str, title: &str) -> (LevelProblem, Solved, Exact) {
     let mut p =
@@ -1636,13 +1631,59 @@ fn t1_is_drawn_with_an_l_for_each_wire() {
     }
 }
 
-/// T2 and T2b, the common-source stage: the gate wire from VIN is an L, not a jog of three bends
-/// (quality review SE-1, LP-1, SC-1).
+/// In T2/T2b's explicit historical frame, VIN leaves up and M1's gate leaves left: the router
+/// must preserve their physical identities and join them by one L, not a three-bend jog
+/// (quality review SE-1, LP-1, SC-1). The configurable default may choose another legal frame;
+/// the raw cases' facts, identities, trees and actual scores remain covered independently.
 #[test]
 fn t2_has_an_l_from_the_source_to_the_gate() {
+    use rnl_runtime::solution::WirePoint;
     for file in ["T2-common-source.sp", "T2b-common-source-dragged.sp"] {
-        let (p, solved, e) = case_level(file, file);
-        assert_eq!(bends_by_net(&p, &solved, &e).get("in"), Some(&1), "{}", summary(&p, &solved, &e));
+        let (p, solved, e) = fixed_legacy_case_level(file, file);
+        let what = summary(&p, &solved, &e);
+        let route = p.routes.iter().position(|r| r.net == "in").expect("input ROUTE");
+        assert!(
+            solved.report.routing_fallbacks.iter().all(|f| f.route != route && f.net != "in"),
+            "{what}: input must be routed by the hard phase: {:?}",
+            solved.report.routing_fallbacks
+        );
+        let wires: Vec<_> = solved
+            .solution
+            .wires
+            .iter()
+            .zip(&e.routing.paths)
+            .filter(|(w, _)| w.route == route)
+            .collect();
+        assert_eq!(wires.len(), 1, "{what}: one physical pin-to-pin input wire");
+        let (wire, path) = wires[0];
+        let (vin, m1) = (object(&p, "#VIN"), object(&p, "#M1"));
+        let (s, at, ori) = (&e.structure, &e.placed.origins, &e.placed.geometry.orient);
+        let source = s.pin_at(at, ori, vin, 0).expect("VIN physical pin p");
+        let gate = s.pin_at(at, ori, m1, 0).expect("M1 physical pin g");
+        assert_eq!(s.exit(vin, 0, ori[vin]), Some((0, 1)), "{what}");
+        assert_eq!(s.exit(m1, 0, ori[m1]), Some((-1, 0)), "{what}");
+        assert_ne!(source[0], gate[0], "{what}: horizontal displacement is nonzero");
+        assert_ne!(source[1], gate[1], "{what}: vertical displacement is nonzero");
+        let expected: BTreeSet<_> = [(vin, 0, "p".to_string()), (m1, 0, "g".to_string())].into_iter().collect();
+        let mut ends = BTreeSet::new();
+        for (endpoint, reverse) in [(wire.points.first(), false), (wire.points.last(), true)] {
+            let Some(WirePoint::Anchor(PointRef::Pin { object, pin, terminal })) = endpoint else {
+                panic!("{what}: input endpoint must preserve a physical pin identity: {endpoint:?}");
+            };
+            assert!(ends.insert((*object, *pin, terminal.clone())), "{what}: duplicate physical endpoint");
+            let outward: Vec<_> = if reverse { path.iter().rev().cloned().collect() } else { path.clone() };
+            let first = outward.first().expect("nonempty routed path");
+            assert_eq!(Some(first.clone()), s.pin_at(at, ori, *object, *pin), "{what}");
+            let next = outward.iter().find(|q| *q != first).expect("positive input departure");
+            let (dx, dy) = s.exit(*object, *pin, ori[*object]).expect("explicit pin exit");
+            assert_eq!(
+                ((&next[0] - &first[0]).signum(), (&next[1] - &first[1]).signum()),
+                (int(dx), int(dy)),
+                "{what}: first positive segment must follow this physical pin's actual exit"
+            );
+        }
+        assert_eq!(ends, expected, "{what}: exact physical VIN:p/M1:g endpoint set");
+        assert_eq!(bends_by_net(&p, &solved, &e).get("in"), Some(&1), "{what}");
     }
 }
 
