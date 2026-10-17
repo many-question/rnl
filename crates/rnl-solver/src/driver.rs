@@ -34,7 +34,8 @@
 //! clock the caller gives (`crate::Clock`); a fact whose check did not finish is discarded
 //! undecided, with a warning in the report (7.6), and a fact whose groups were not all found says
 //! so (`crate::Discarded::complete`). Everything after it is counted, never timed, so that it is
-//! the same on every machine: the search makes at most `candidates`, P0 always among them
+//! the same on every machine: the search admits at most `candidates` attempts, including P0;
+//! a zero budget permits only that one necessary P0 fallback
 //! (`crate::Budget`); the router expands at most `astar_expansions` cells for one net and leaves
 //! the rest of the net to flight lines; the witness of the resolution taken as written, the
 //! solver's own resolutions of the relations of a candidate and of the rows, and the coordinate LP

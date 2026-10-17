@@ -129,3 +129,14 @@ Timing correction: A did run the explicitly granted local cargo checks above. Th
 | 02:55:17 approx. | 02:57:21 approx. | A | local verification wait | actual full-search cache/reference oracle123.30s,544 traces and old-record facts |
 | 02:57 approx. | 03:00:33 approx. | A | review rework/local verification | R6 degenerate-box repair,2/2 oracle1.00s,pure08 profile88.96s,CLI build11.89s |
 | 03:01:37 | 03:04:37 approx. | A | local verification wait | final08 isolated CLI179.946s; no source changes; token explicitly returned after completion |
+
+
+## R7 budget repair and final validation handoff
+
+Independent review found a P1 in the inherited candidate budget: each node could bootstrap above the cap, while EvenRows and CURRENT derivatives were inconsistently charged. Root opened only search and necessary regression/documentation work. Candidate01 passed its initial two tests, but review rejected preparation of additional barycentre orders after the remaining slots were exhausted. Candidate02 reserves those slots before preparation, retains one charged P0 (the sole budget-zero exception), admits every actual estimate/derived variant, and never refunds duplicate attempts. The detailed contract and exact evidence are in objectives-v2-step1-budget-r7.md.
+
+Candidate02 three targeted tests passed after6.92s compilation/0.60s execution, and the independent EvenRows/multiple-CURRENT test passed0.24s. First candidate compilation31.55s is recorded separately and is not final-version verification. The default T1 old/new complete profile fields agree; a single new T6 profile92.56s agrees with08 in all544 traces,10 candidates,4 routed records, choice and work. A guarded9.32s CLI build followed by serial actual T1 solves proves identical written bytes and complete scoring/work. Pure default proof timing is verification, not implementation or final performance acceptance. The sole Cargo token was explicitly returned with no active owned process.
+
+The old complete tiny round was stopped only after the production P1 was independently established: preserved partial wall1276.55s/CPU1256.42s are interrupted evidence, not pass/fail or timeout. Its required corrected full rerun and all final gates remain pending. START/END case/level messages now identify two-solves+checker duration, first-solve work and fallback count without changing order, clock, caps or assertions.
+
+This local commit is a pending-validation source checkpoint. It includes the explicitly approved strict fixed-frame exit/zero-identity test migrations and R7 regressions, not unrelated pre-existing phase0 or package handoff notes. Large logs, saved executables and immutable copies stay ignored under target. Step1 fixes propagate into Step2 by merge, never by rebasing or copying production edits between trees.

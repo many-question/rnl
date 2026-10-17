@@ -499,7 +499,7 @@ fn check_wires(p: &LevelProblem, solved: &Solved, e: &Exact, what: &str) {
             assert!(seg[0][0] == seg[1][0] || seg[0][1] == seg[1][1], "{what}: not along an axis");
             for (k, b) in &boxes {
                 assert!(
-                    !crate::route::meets_inside(b, &seg[0], &seg[1]) || inside_own(*k, b) || reported_fallback,
+                    !positive_segment_meets_inside(b, &seg[0], &seg[1]) || inside_own(*k, b) || reported_fallback,
                     "{what}: through the box of {}",
                     p.objects[*k].label
                 );
@@ -736,7 +736,17 @@ fn a_tiny_budget_still_gives_a_valid_solution() {
     let mut left = 0;
     for f in netlists("tests/integration/solver", "T") {
         for p in problems(&f) {
+            let started = std::time::Instant::now();
+            eprintln!("tiny START {} / {}", f.display(), p.title);
             let (solved, _) = check_capped(&f.to_string_lossy(), &p, &options, &StoppedClock, caps);
+            eprintln!(
+                "tiny END {} / {} two-solves+checker={:.3}s FIRST-solve work={:?} fallbacks={}",
+                f.display(),
+                p.title,
+                started.elapsed().as_secs_f64(),
+                solved.report.work,
+                solved.report.routing_fallbacks.len()
+            );
             left += solved.report.routing_fallbacks.len();
             for u in &solved.report.routing_fallbacks {
                 assert!(matches!(u.phase.as_str(), "soft" | "fallback"), "{}: {u:?}", p.title);
@@ -1002,6 +1012,45 @@ fn an_overlap_is_noted_with_its_cause() {
 pub(crate) fn problems_of(text: &str) -> Vec<LevelProblem> {
     let files = rnl_runtime::source::MemoryProvider::new().with("t.sp", text);
     rnl_view::interpret("t.sp", None, &files, &rnl_runtime::Options::solver()).unwrap().problems
+}
+
+#[test]
+fn candidate_budget_zero_one_two_keep_facts_and_identity_through_writeback() {
+    use rnl_runtime::diag::{Severity, Sink};
+    use rnl_runtime::problem::{same_input, sig3};
+    use rnl_runtime::source::MemoryProvider;
+    use rnl_runtime::writeback::replace_generated;
+    let text = include_str!("../data/candidate-budget.sp");
+    let files = MemoryProvider::new().with("t.sp", text);
+    let document = rnl_view::interpret("t.sp", None, &files, &rnl_runtime::Options::solver()).unwrap();
+    assert!(!document.diagnostics().iter().any(|d| d.severity == Severity::Error));
+    let p = &document.problems[0];
+    assert_eq!(document.problems.len(), 1);
+    for budget in [0, 1, 2] {
+        let mut options = SolverOptions::without_time_limit();
+        options.budget.candidates = budget;
+        let (solved, _) = check_capped("candidate-budget.sp", p, &options, &StoppedClock, CAPS);
+        assert!(solved.report.work.candidates <= budget.max(1));
+        assert_eq!(solved.report.kept.len(), p.facts.len());
+        assert!(solved.report.routing_fallbacks.is_empty());
+        assert_eq!(solved.solution.wires.len(), 1);
+        assert_eq!(solved.solution.wires[0].points.len(), 2);
+        assert_ne!(solved.solution.wires[0].points[0], solved.solution.wires[0].points[1]);
+        let hash = sig3(p, &options.canonical());
+        let written = rnl_runtime::solution::write_record(p, &solved.solution, crate::AUTHOR, &hash);
+        assert!(written.unsolved.is_empty(), "{:?}", written.unsolved);
+        let doc = rnl_view::read_host("t.sp", None, &files, &mut Sink::new()).unwrap();
+        let record = rnl_view::finish_record(&doc, &files, &rnl_runtime::Options::solver(), p, &written.record);
+        let output = replace_generated(&doc, p.level, text, &record);
+        let again = MemoryProvider::new().with("t.sp", &output);
+        let viewed = rnl_view::interpret("t.sp", None, &again, &rnl_runtime::Options::default()).unwrap();
+        assert!(!viewed.diagnostics().iter().any(|d| d.severity == Severity::Error), "{record}");
+        let level = viewed.model.levels.iter().find(|l| l.level == p.level).unwrap();
+        assert!(level.unplaced.is_empty());
+        assert!(level.flylines.is_empty());
+        let reread = rnl_view::interpret("t.sp", None, &again, &rnl_runtime::Options::solver()).unwrap();
+        assert_eq!(same_input(&hash, &reread.problems[0]), Some(true));
+    }
 }
 
 /// Solves the one level of a netlist given as text, checked as the cases of the files are.
@@ -1466,6 +1515,23 @@ struct ExitViolation {
     description: String,
 }
 
+// A coincident connection still carries two endpoint identities, but has no segment interior.
+// Keep production's geometric predicate and every other wire invariant unchanged.
+fn positive_segment_meets_inside(b: &[Q; 4], a: &[Q; 2], z: &[Q; 2]) -> bool {
+    a != z && crate::route::meets_inside(b, a, z)
+}
+
+#[test]
+fn through_body_checker_rejects_positive_segments_but_not_zero_identity_edges() {
+    let b = [int(1), int(1), int(5), int(5)];
+    let at = [int(3), int(3)];
+    assert!(!positive_segment_meets_inside(&b, &at, &at));
+    assert!(positive_segment_meets_inside(&b, &[int(0), int(3)], &[int(6), int(3)]));
+    assert!(positive_segment_meets_inside(&b, &at, &[int(6), int(3)]));
+}
+
+include!("driver_exit_diagnostic.rs");
+
 fn violated_exits(p: &LevelProblem, solved: &Solved, e: &Exact) -> Vec<ExitViolation> {
     use rnl_runtime::solution::WirePoint;
     let (s, ori) = (&e.structure, &e.placed.geometry.orient);
@@ -1660,18 +1726,53 @@ fn wires_routed_for_t1_to_t6_leave_each_pin_its_own_way() {
             let (p, solved, e) = fixed_legacy_case_level(file.file_name().unwrap().to_str().unwrap(), &p.title);
             let bad = violated_exits(&p, &solved, &e);
             let corner_outward = file.ends_with("T3-ota5t.sp") && p.title == "ota5t" && p.kind != "file";
+            // These finite physical endpoint sets are independently reviewed Step1 edge leads.
+            // They cannot expand to any other layer, terminal or net, and must overlap the actual
+            // bounded box edge by positive length rather than its infinite extension.
+            let bounded_edges: &[(&str, usize, &str, &str)] = if file.ends_with("T5-inverting-amp-rlc.sp")
+                && p.kind == "file"
+                && p.title == "T5-inverting-amp-rlc.sp"
+            {
+                &[("#XA", 1, "inn", "n1"), ("#RF", 1, "n", "vo"), ("#RL", 0, "p", "n2")]
+            } else if file.ends_with("T6-r2r-ladder.sp") && p.kind == "file" && p.title == "T6-r2r-ladder.sp" {
+                &[
+                    ("#R2B5", 0, "p", "b5"),
+                    ("#RS1", 0, "p", "n1"),
+                    ("#RS1", 1, "n", "n2"),
+                    ("#RS2", 1, "n", "n3"),
+                    ("#RS3", 1, "n", "n4"),
+                    ("#RS5", 0, "p", "n5"),
+                    ("#RS5", 1, "n", "n6"),
+                    ("#RS6", 1, "n", "n7"),
+                ]
+            } else {
+                &[]
+            };
+            let bounded_expected: std::collections::BTreeSet<_> = bounded_edges
+                .iter()
+                .map(|&(label, pin, terminal, net)| (object(&p, label), pin, terminal.to_string(), net.to_string()))
+                .collect();
             let expected: std::collections::BTreeSet<(usize, usize)> =
                 if file.ends_with("T3-ota5t.sp") && p.kind == "file" {
                     [(object(&p, "#XU1"), 0), (object(&p, "#VB"), 0)].into_iter().collect()
                 } else if corner_outward {
                     [(object(&p, "#M1"), 2), (object(&p, "#M2"), 2)].into_iter().collect()
+                } else if !bounded_expected.is_empty() {
+                    bounded_expected.iter().map(|(object, pin, _, _)| (*object, *pin)).collect()
                 } else {
                     Default::default()
                 };
             if corner_outward {
                 assert_eq!(bad.len(), 2, "{}: the exact corner-outward physical pins", p.title);
             }
+            if !bounded_expected.is_empty() {
+                assert_eq!(bad.len(), bounded_expected.len(), "{}: exact bounded-edge endpoints", p.title);
+                assert!(solved.report.routing_fallbacks.is_empty(), "{}: strict hard edge leads", p.title);
+                let kept: std::collections::BTreeSet<_> = solved.report.kept.iter().copied().collect();
+                assert_eq!(kept, (0..p.facts.len()).collect(), "{}: all frame/authored facts kept", p.title);
+            }
             let mut seen = std::collections::BTreeSet::new();
+            let mut bounded_seen = std::collections::BTreeSet::new();
             for violation in &bad {
                 assert!(
                     expected.contains(&violation.pin),
@@ -1696,6 +1797,28 @@ fn wires_routed_for_t1_to_t6_leave_each_pin_its_own_way() {
                     );
                     let inside = |q: &[Q; 2]| b[0] < q[0] && q[0] < b[2] && b[1] < q[1] && q[1] < b[3];
                     assert!(!inside(a) && !inside(z), "{}: interior endpoint: {}", p.title, violation.description);
+                } else if !bounded_expected.is_empty() {
+                    let identity =
+                        (violation.pin.0, violation.pin.1, violation.terminal.clone(), violation.net.clone());
+                    assert!(
+                        bounded_expected.contains(&identity),
+                        "{}: unexpected physical endpoint {identity:?}",
+                        p.title
+                    );
+                    let overlap = |axis: usize| {
+                        a[axis].clone().min(z[axis].clone()).max(b[axis].clone())
+                            < a[axis].clone().max(z[axis].clone()).min(b[axis + 2].clone())
+                    };
+                    let along = (a[0] == z[0] && (a[0] == b[0] || a[0] == b[2]) && overlap(1))
+                        || (a[1] == z[1] && (a[1] == b[1] || a[1] == b[3]) && overlap(0));
+                    assert!(
+                        along,
+                        "{}: no positive intersection with own bounded edge: {}",
+                        p.title, violation.description
+                    );
+                    let inside = |q: &[Q; 2]| b[0] < q[0] && q[0] < b[2] && b[1] < q[1] && q[1] < b[3];
+                    assert!(!inside(a) && !inside(z), "{}: interior endpoint: {}", p.title, violation.description);
+                    bounded_seen.insert(identity);
                 } else {
                     let along = (a[0] == z[0] && (a[0] == b[0] || a[0] == b[2]))
                         || (a[1] == z[1] && (a[1] == b[1] || a[1] == b[3]));
@@ -1709,6 +1832,7 @@ fn wires_routed_for_t1_to_t6_leave_each_pin_its_own_way() {
                 );
                 seen.insert(violation.pin);
             }
+            assert_eq!(bounded_seen, bounded_expected, "{}: exact physical/net/terminal set", p.title);
             assert_eq!(
                 seen,
                 expected,

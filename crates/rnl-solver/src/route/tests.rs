@@ -651,6 +651,28 @@ fn no_search_budget_still_connects_distinct_coincident_pins_and_preserves_author
 }
 
 #[test]
+fn hard_coincident_distinct_pins_inside_a_third_body_keep_their_zero_length_identity_edge() {
+    let mut l = layout(&[[1, 1, 5, 5]], vec![net(vec![anchor(3, 3, None), anchor(3, 3, None)])]);
+    l.nets[0].anchors[0].owner = Some(0);
+    l.nets[0].anchors[1].owner = Some(1);
+    assert!(inside(&l.boxes[0].1, &l.nets[0].anchors[0].at));
+    assert!(l.nets[0].anchors.iter().all(|a| a.owner != Some(l.boxes[0].0)));
+    let (outs, _, phases) = completed(&l, 12, 0);
+    assert!(phases.is_empty(), "the coincident identity edge succeeds in hard routing");
+    assert_eq!(outs[0].wires.len(), 1);
+    let wire = &outs[0].wires[0];
+    let (End::Anchor(a), End::Anchor(b)) = (wire.start, wire.end) else {
+        panic!("both distinct physical anchors must remain explicit: {wire:?}");
+    };
+    let mut identities = [a, b];
+    identities.sort();
+    assert_eq!(identities, [0, 1]);
+    assert_eq!(wire.vertices, vec![p(3, 3), p(3, 3)]);
+    assert_eq!(outs[0].parts, 1);
+    assert_eq!(outs[0].failure, None);
+}
+
+#[test]
 fn an_unrepresentable_lattice_uses_exact_geometry_fallback() {
     let fine = Q::new(1.into(), (MAX_UNIT + 1).into());
     let mut l = layout(&[], vec![net(vec![anchor(0, 0, NORTH), anchor(8, 4, WEST), anchor(20, 1, None)])]);

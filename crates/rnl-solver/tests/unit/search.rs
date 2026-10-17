@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::resolve::tests::{instance, problem_of};
 
@@ -77,4 +76,110 @@ fn constants_go_up_to_the_grid() {
     assert_eq!(up(crate::rational::frac(-1, 2), &g), int(0));
     assert_eq!(up(crate::rational::frac(16, 5), &None), crate::rational::frac(16, 5));
     assert_eq!(up(crate::rational::frac(3, 4), &Some(crate::rational::frac(1, 2))), int(1));
+}
+
+fn budget_fixture() -> (LevelProblem, SolverOptions) {
+    use rnl_runtime::problem::{CurrentDirection, CurrentTerminal, ProblemCurrent, ProblemGroup, Reference};
+    let mut objects: Vec<_> = (0..6)
+        .map(|k| {
+            let mut object = instance();
+            object.label = format!("#M{k}");
+            object.reference = Reference::Name(object.label.clone());
+            object
+        })
+        .collect();
+    let mut problem = problem_of(std::mem::take(&mut objects), Vec::new());
+    problem.groups = vec![
+        ProblemGroup { label: "inner".into(), members: vec![0, 1, 2] },
+        ProblemGroup { label: "middle".into(), members: vec![0, 1, 2, 3] },
+        ProblemGroup { label: "outer".into(), members: (0..6).collect() },
+    ];
+    for object in 0..6 {
+        for (pin, direction) in [(0, CurrentDirection::In), (1, CurrentDirection::Out)] {
+            problem.currents.push(ProblemCurrent {
+                terminal: CurrentTerminal::Instance { instance: object, terminal: format!("p{pin}") },
+                net: "feedback".into(),
+                direction,
+                display: Some(rnl_runtime::problem::PointRef::Pin { object, pin, terminal: format!("p{pin}") }),
+            });
+        }
+    }
+    let mut options = SolverOptions::without_time_limit();
+    for direction in [crate::Direction::Left, crate::Direction::Right] {
+        options.objectives.layers.push(crate::Layer {
+            items: vec![crate::Term { direction: Some(direction), ..crate::Term::new("current_direction") }],
+            tolerance: Q::zero(),
+        });
+    }
+    (problem, options)
+}
+
+#[test]
+fn candidate_budget_zero_one_two_bound_actual_work_and_keep_p0_in_a_deep_tree() {
+    let (problem, mut options) = budget_fixture();
+    for budget in [0, 1, 2] {
+        options.budget.candidates = budget;
+        let resolved = crate::resolve(&problem, &options);
+        let mut work = Work::default();
+        let structure = crate::structure::analyse(&problem, &resolved, &options, crate::options::CAPS, &mut work);
+        assert!(structure.tree.nodes.len() >= 4);
+        assert!(structure.has(Source::EvenRows));
+        assert!(structure.has(Source::Barycentre));
+        assert!(structure.depth.is_some());
+        assert!(!evenly(&structure, &structure.rows).is_empty());
+        let candidates = search(&problem, &structure, &options, &mut work);
+        assert!(work.candidates <= budget.max(1), "budget={budget}, work={work:?}");
+        assert!(candidates.len() as u64 <= work.candidates);
+        assert!(candidates.iter().any(|candidate| candidate.origin == "P0" && !candidate.even));
+        if budget <= 1 {
+            assert_eq!(work.candidates, 1);
+            assert_eq!(candidates.len(), 1);
+            assert_eq!(candidates[0].origin, "P0");
+        }
+    }
+}
+
+#[test]
+fn even_twins_and_additional_current_frames_are_admitted_and_counted() {
+    let (problem, mut options) = budget_fixture();
+    options.budget.candidates = 2000;
+    let resolved = crate::resolve(&problem, &options);
+    let mut work = Work::default();
+    let structure = crate::structure::analyse(&problem, &resolved, &options, crate::options::CAPS, &mut work);
+    let candidates = search(&problem, &structure, &options, &mut work);
+    assert!(work.candidates < options.budget.candidates, "fixture must exercise an unexhausted search");
+    assert!(candidates.iter().any(|candidate| candidate.even));
+    let frames: BTreeSet<_> = candidates.iter().filter_map(|candidate| candidate.flow).collect();
+    assert_eq!(frames, BTreeSet::from([crate::Direction::Down, crate::Direction::Left, crate::Direction::Right]));
+    assert!(candidates.len() as u64 <= work.candidates);
+    for budget in [3, 5, 9, work.candidates - 1] {
+        options.budget.candidates = budget;
+        let mut limited = Work::default();
+        let candidates = search(&problem, &structure, &options, &mut limited);
+        assert!(limited.candidates <= budget);
+        assert!(candidates.len() as u64 <= limited.candidates);
+        assert!(candidates.iter().any(|candidate| candidate.origin == "P0" && !candidate.even));
+    }
+}
+
+#[test]
+fn candidate_budget_stops_preparation_for_unadmitted_orders() {
+    let problem = problem_of(vec![instance(), instance(), instance()], Vec::new());
+    for budget in [0, 1, 2] {
+        let mut options = SolverOptions::without_time_limit();
+        options.budget.candidates = budget;
+        let resolved = crate::resolve(&problem, &options);
+        let mut work = Work::default();
+        let structure = crate::structure::analyse(&problem, &resolved, &options, crate::options::CAPS, &mut work);
+        assert_eq!(structure.tree.nodes.len(), 1);
+        assert!(structure.has(Source::Barycentre));
+        crate::test_profile::reset();
+        let candidates = search(&problem, &structure, &options, &mut work);
+        let calls = crate::test_profile::take();
+        assert_eq!(work.candidates, budget.max(1));
+        assert!(candidates.iter().any(|c| c.origin == "P0"));
+        assert_eq!(calls.get("search.barycentre"), None, "budget={budget}: {calls}");
+        let orientations = calls["search.orient"]["calls"].as_u64().unwrap_or(0);
+        assert_eq!(orientations, u64::from(budget == 2), "budget={budget}: {calls}");
+    }
 }

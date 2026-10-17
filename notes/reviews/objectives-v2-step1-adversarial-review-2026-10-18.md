@@ -4,7 +4,7 @@
 
 ## 当前结论
 
-**最新生产复审：R1–R6 全部关闭，candidate-08 已审代码没有剩余静态 must-fix。raw 0.2 T6 的质量差异已定位为声明的前二朝向近似边界；其最终性能专项已裁决为显著的量化阶段风险，可继续验收，但完整语料性能、旧测试迁移与全套执行闭环仍未完成，不能给出整体验收结论。** 本记录不代表完整验收或最终合入批准。
+**最新结论：R1–R7 已关闭，candidate-r7-budget-02 的生产增量及四项定向执行已通过独立复核，当前未发现剩余生产 must-fix。T1 与 T6 的默认未触帽 trace、候选 code/精确层、routed 记录、选择和工作量已独立比对一致；另已核短 T1 真 CLI 解字节及 source 绑定。T6 的 profile 不含实际解几何字节，不能据此声称 T6 解文件逐字节相同。完整 tiny、最终语料与全套门禁仍待闭环，不能给出整体验收结论。raw 0.2 T6 的质量近似与量化性能风险裁决保持原适用范围。** 本记录不代表完整验收或最终合入批准。
 
 审阅只读生产代码、测试和已有验证材料；未运行 cargo、Node 构建或 Playwright，未修改实现。运行验证由实施负责人持统一令牌完成。以下结论来自独立的静态数据流、数学和标准核查，不以实现者自报测试通过代替代码审查。
 
@@ -267,3 +267,75 @@ defaults 仅在开窗时读取一次。选择或手输新 TOML 路径只改路�
 复用依据不是仅无文件交叉。调用链核查：`rnl solve` 在 `crates/rnl-cli/src/solve.rs:534/542` 使用 `rnl_runtime::solution::write_record` 和 `rnl_view::finish_record`，后者直接调用 runtime 的 finish_record；`rnl-view` 无 `rnl-edit` 依赖。CLI 中 edit::write 只在单独 write 命令分支；wasm 的 write 请求独立调用它。现有 T6 profile、固定记录 evaluator 和基准输入只经 interpret/solver/runtime 写回，不经过新的 AddText 分支。固定文本/配置未重生成时，此上游改动不改变已核查的 solver 几何、计分或朝向 trace。
 
 因此允许复用旧 main41 与 candidate08 的固定输入性能/质量证据及技术风险裁决，无须仅因这次 merge 再做 T6 专项长跑。保留原始 commit、binary、input/config hash 和实际测量时间，不能把旧测量改名为 main476 或合并后 binary 的实测；在验收说明注明调用路径等价的复用理由。合并后仍应核对 solver/runtime/render/config 与相关固定输入未变，按计划重建 CLI 绑定新 revision 并执行最终完整门禁。若冲突处理改变上述路径，则重新评估。使用新 AddText 导出而变化的文本、editor 往返、wasm write 行为不在此复用结论内；其正确性由更新后的相应测试和全门禁覆盖。
+
+
+### candidate-09 与最终出口全集：迁移裁决
+
+09 清单 SHA-256 `3c8156504accadedf1b55d87fa7770408ed2662e646d940c4581aa5bbde1bd5e` 的两个文件独立核对一致，且与合并后 e977116 的相应文件内容一致。完整阅读 OTA 新增 route 回归和 driver 增量：实际 net/terminal 与物理 key、精确违例向量、corner/horizontal-outward、!inside/!through/!along 均按先前裁决保留。`T-t3-final-boundary-01.log` 表明新 route 回归通过，driver 越过 T3 两层后在 T5 失败；因此 09 的 T3 修正闭环，但整个严格出口测试尚未通过。
+
+独立核对验证交接 SHA-256 `da2b6e7129ce1b7975586e26e40f207ed6112691b3253ed9a7c06ee097441bf5`，以及 `exit-diagnostic-delta-02` 的 driver（`c39b5e9b2f5d59070dc8578d859bbed30c3464849eccbf1fa44ab153c66148b1`）和 ignored 诊断源码（`0a42302cced8b9dce4e75d556bc6e8076cfb8ac3c21f4156629aee985e302f56`）。诊断继续使用历史 fixed frame、真实 solved endpoints 和首非零段，没有修改严格断言。`fixed-exit-all-layers-01.json` SHA-256 为 `7cd19e4347bc9ef567469661bcdbcbedccc9b5ebaef750b5b282870372ddfe71`；独立用 Fraction 重算全部 9 层 18 条的 start/next inside、bounded-edge 正长交集和 through，与记录全部一致。不能把收集完成 1/1 当作回归通过。
+
+新增 T5/T6 全部属于既已裁决的 Step 1 own-edge 出口提示近似，不新增生产 must-fix。允许迁移的范围如下；label 仅用于在这一固定 fixture/层中解析 object ID，必须连同物理 pin、terminal、net 检查，不能形成求解器或通用测试名字豁免。
+
+| 固定文件及 file 层 | label | pin | terminal | net |
+| --- | --- | --- | --- | --- |
+| T5-inverting-amp-rlc.sp | #XA | 1 | inn | n1 |
+| T5-inverting-amp-rlc.sp | #RF | 1 | n | vo |
+| T5-inverting-amp-rlc.sp | #RL | 0 | p | n2 |
+| T6-r2r-ladder.sp | #R2B5 | 0 | p | b5 |
+| T6-r2r-ladder.sp | #RS1 | 0 | p | n1 |
+| T6-r2r-ladder.sp | #RS1 | 1 | n | n2 |
+| T6-r2r-ladder.sp | #RS2 | 1 | n | n3 |
+| T6-r2r-ladder.sp | #RS3 | 1 | n | n4 |
+| T6-r2r-ladder.sp | #RS5 | 0 | p | n5 |
+| T6-r2r-ladder.sp | #RS5 | 1 | n | n6 |
+| T6-r2r-ladder.sp | #RS6 | 1 | n | n7 |
+
+必要断言：每层违例长度分别恰 3/8，完整 identity/terminal/net 集合等于表，不能用集合去重隐藏重复违例；fallback 列表空；原事实保持（本次分别 45/45、120/120）。每个首段轴向非零、固定坐标是自身 bbox 某边，变化轴上的 segment span 与实际有界边的交集严格为正长度，起止均不在内部且 !meets_inside。只与无限支撑线共线不充分，也不能套用 OTA corner-outward 分支。原 T3 主层两沿边和子层两角点条件保留；T1/T2/T2b/T5-opamp 仍要求空集，T4 原排除不扩大。无需针对已证明的同一有限 EXIT/ALONG 机制另做 T5/T6 长诊断，但修后完整严格回归必须执行。
+
+### tiny T4：零长度身份线的检查器修正裁决
+
+独立读取 `tiny-t4-owner-exemption-01.json`（SHA-256 `29afd729e3d8e11287a321c8cf2b807aaa55a4d4619073c542d72b415ca68afa`）、原始日志和只执行一次 solve 的诊断源码。inn 网确实只有 M2:g=(object1,pin0) 与 VIN:p=(object11,pin0)，坐标同为 (3,3)；二者均不严格在自己的框内部，recomputed exempt owners 为空。route4 仅一条具有两个不同 Anchor 身份的 [(3,3),(3,3)] 连接，无该网 fallback。无关的 VB 框为 [3/2,0,9/2,6]，点在其内部，但没有正长度线段穿体。先前 owner-exemption 假说被实际证据否定，不应为其增加豁免。
+
+**接受仅 test-only 检查器修正，不新增生产 must-fix。** A03 明确要求“同一点上的不同端子：保留零长度连接，不按坐标去重”；main41 的 legacy `score.rs` 已对 windows(2) 使用 a!=b 过滤，08 的缓存与原 oracle 路径同样如此（当前 score.rs:164/299）。`route.rs` 仍按既有规则把单节点路径写成两个坐标相同但身份不同的端点。`driver.rs:498–505` 直接把所有相邻坐标送入 meets_inside；该谓词对内部零点为真，因而把身份连接误称为正长穿体。
+
+最窄修正：只在“正长段穿过本体”检查中跳过相同坐标的相邻对；轴向断言和该 wire 的端点合法性、物理身份、路径坐标对应、分叉、连通/树等检查全部保留。不要跳过整根 wire，不按坐标合并端点，不改生产 meets_inside，不加 T4/VB/owner 特例，不伪造 soft/fallback 记录，也不调整预算。必须补两项小边界保障：两个不同 anchor 在无关框内部同点时保留一条双端零路径，hard 成功/parts=1/该网无 fallback；同一检查器仍拒绝无 owner 豁免、无 fallback 的非零穿体段。随后执行原 tiny-budget 完整回归，不能以单点取证代替。
+
+本次 167.93 秒包含外部负载，不是隔离性能基准。hard=12、soft=200000 是每网独立预算；总 work=8 candidates/54156 expansions、chosen=10112 expansions 不能直接与 12 比较来判超预算。当前只裁定这次明确的零段误报；后续 tiny 完整执行或全语料若暴露不同失败，须另行分类，不被本结论豁免。原单点诊断与全集 collector 无需为本 test-only 修正重复；修正源码的静态复审、新小回归、严格出口和 tiny 完整回归仍待闭环，全套门禁仍未验收。
+
+
+### driver-migration-final-review：已审实际增量与三项通过证据
+
+清单 SHA-256 `6ac2c3fa70971923999519217c5d7645142ecc924686c17457b5193ceb0552dc`；三个副本、两份 before 和 tracked patch 哈希全部独立核对一致，before 与 e977116 对应文件一致。完整阅读 tracked-delta.patch 和新 ignored 诊断文件。T5/T6 只在正确文件/file 层匹配精确 object/pin/terminal/net；长度与完整集合双检，fallback 空、facts 全 kept，有限边段交集正长与不穿体检查正确。T3 两类和其他层保持原约束。zero-segment 仅替换 check_wires 的穿体谓词，所有 wire/endpoint/branch/连通检查保留。
+
+新 route 小夹具在无关第三方框内部用两个不同 Anchor 身份同点，验证 hard 成功、一根零路径、parts=1、无 phase fallback；driver 小测试验证正长度横穿及从内部出发仍被正长穿体谓词识别。已读取 `T-migration-final-small-01.log/.json`：三项通过（含完整严格出口测试），exit=0、测试 12.71 秒。当前正在进行的完整 tiny 回归没有被视为通过。下述预算修复将改变生产时，不能把这些旧 binary 执行结果冒称为新生产的全套通过。
+
+### R7 — P1：候选预算在 bootstrap 和候选派生路径上未被执行（必须在 Step 1 修复）
+
+本条行号指 e977116 的生产源码：`search.rs:1441–1442` 只比较 made 与预算，`:1523–1530` 的 estimate 无条件 made+=1；`:1716` 和 `:1762` 的 `!next.is_empty` / `!tried.is_empty` 条件允许每节点第一个尝试越过耗尽额度；`:1746–1756` barycentre 准备未先检预算；`:2082–2107` P0、EvenRows twins 和 CURRENT 多 direction 派生无统一准入，最终只汇总 work。`driver.rs:133–151` 会实际摆放并布线这些额外输出，非只多报计数。
+
+最小已有反例：tiny T4 的 candidates=0，却 work.candidates=8、4 placed/4 routed；其 JSON 和源码已独立核查。这个结论与 167.93 秒耗时、当前长测试是否完成无关，也不从 A* 总展开数推断每网超限。main41 已有 bootstrap 漏洞；但“旧代码已有”不等于公开契约准许。
+
+依据交叉核对：main 与现生产 `search.rs:46–47` 明言 no more than Budget::candidates；`driver.rs:37` 明言 at most candidates 且 P0 在内；README 的 Budget 段只明确 P0 总是存在、额度耗尽保留已有结果；`lib.rs:264–275` 又明确 Work.candidates 是 Budget 所计的候选。v2.1 机制表对预算写“其余照旧”，应继承这项工作量承诺，不能解释为继承未声明越帽缺陷。v3 第 3 节要求按工作量计；Step 1 明确延期的是朝向前二、LP 等，没有每节点 seed 超帽例外。B01 的全八可达属于 Step 2，本裁决不要求提前实现它。
+
+**裁决：R7 为 Step 1 must-fix，不能仅改文档增加任意 bootstrap 例外或标到 Step 2。** 为兼容合法的非负零选项与始终可解的 P0，最小明确边界是：N>=1 时把一个必要 P0 预留并计入 N，整个候选工作不超过 N；N=0 时只产生这一份必要 P0，Work 如实为 1，不运行额外 beam/bootstrap/barycentre/EvenRows/方向派生候选。这是一份最低兜底的例外，不是每节点例外。
+
+修复应在新候选工作开始前统一准入：包含既有 Search::estimate 的实际尝试、额外 EvenRows 与 CURRENT frame 派生；额度耗尽时不再为未准入的新候选做朝向/barycentre 准备。不得仅在最终 Vec 截断、给 report clamp、去重后退款来掩盖已耗工作。已计费 Plan 转换为输出不能重复计费；确实重复执行一次 estimate 的尝试仍照实消费。一个已准入候选内部的有限八朝向全配置排序不自动变为本轮新设的八个预算单位，不能借此改变 top2、目标层序、其他 caps 或旧工作单位；边界和报告应写清楚。
+
+最小保障：预算 0/1/2，深分组树，以及可产生 EvenRows 和多 CURRENT direction frame 的结构；同时检查实际输出候选数、Work.candidates、P0 存在、没有超帽的准备/派生尝试，以及保持事实、可写/身份连通。应证明默认预算未触帽的既有输入维持候选 trace/输出；触帽导致的预期变化单独解释并绑定新快照。当前旧 tiny 回归继续自然运行，无需为本审阅中断、重跑或改预算；之后由 root 调度修复候选的定向与必要全门禁。
+
+### candidate-r7-budget-02：R7 关闭，完整验收仍待执行
+
+本轮完整审阅 e977116 → R7-02 的生产增量及新测试。不可变清单 `target/objectives-v2-validation/candidate-r7-budget-02/manifest.json` SHA-256 为 `bf9ab30a472d7eb9a92ce8357d294fa0d64dfb5ac022b6b360a5c063341dfba9`；全部 7 个副本哈希及工作树同名文件均独立核对一致。生产行为变化仅在 search.rs；driver/options 是对应预算文档，profile 是 test-only 计数入口。未运行构建或求解。
+
+R7-01 曾把全部后续 barycentre orders 的准备挂在已付首 order 上：平坦树 N=2 时虽最终只估计首 order，仍进行后续 orders 的完整朝向准备。本审阅指出其违反“额度耗尽不做未准入准备”，A 在 02 修复。以下行号指 02 冻结副本：`search.rs:1448` 统一 admit；`:1534` 所有普通 estimate 先准入；`:1754` 首 order 先准入；`:1774–1787` 后续 distinct orders 仅在剩余槽位内准备。此批次没有其他 counter 消费者，故预留数始终不超过 remaining；随后 `:1793` 对每个额外 order 正式计费。重复 bary cycle 立即结束，未制造额外候选；有限探测不另立新的预算单位。N=2 不再调用额外 orient/barycentre。
+
+`search.rs:2092` 预留并计入一个 P0；节点与子组合不再有 !empty bootstrap 例外；邻域、反向关系均经过 admit。EvenRows `:2118` 和不同 CURRENT frame `:2139` 统一收费；base 已是第一个配置方向，其输出转换不重计。`:2149` 保留原 P0 code；实际重复 estimate 和已生成后再去重的派生不退款，`:2159` 如实累计 made。审阅未发现遗漏入口或通过末端截断/report clamp 掩盖工作。正预算总量 ≤ N；0 只保留必要 P0、work=1。内部已准入候选的有限八朝向评分、top2、路由/LP caps 均未改。
+
+已独立读取 `step1-gates/T-r7-candidate-budget-02.log/.json`：3/3 通过，包括平坦树 N=0/1/2 的实际 orient=0/0/1、bary=0，深分组树/EvenRows/CURRENT 的工作量与 P0，以及真实 0.3 零长度双身份连接的 solve/write/read、全部事实保留。`even-current.log` 1/1 通过，覆盖不耗尽与多个限额下的 EvenRows/多 CURRENT frames。保存 test binary SHA-256 `a1a12865f5e020d064393e235bdb9d210c5a3ebc929b0260c75c692a9af92fcd` 已实算核对。这四项是定向证明，不代表完整 tiny 或全库通过。
+
+默认未触帽对照独立复算，而非仅读取 comparison 的布尔结论：T1 对旧保存 binary `4ace8f7c…`，10 次完整八朝向 trace、5 个候选的 code/精确层、routed 记录、选择、work=80/448/7/132 全相等。T6 对 08 `cached-pure-stage-profile.json`，544 次 trace、10 个候选、4 个 routed 记录、选择、work=2993/8943/71/177821 全相等；输入、旧 profile、配置哈希均重新核对。新 T6 profile SHA-256 `d46009ed384d84292db660826c030c3ffbf4b901ae6d79b7fc0e52a8c42cbd73`，stage 总 92.388 秒/search 80.557 秒；这是一轮实际运行，不替换原隔离性能证据。routed 字段记录分数/expansions/fallback，不含完整路径几何，不扩称 T6 解字节相等。
+
+另独立核短 T1 真 CLI：旧 08 与 R7 两轮 exit=0，完整解文件逐字节相同，SHA-256 `2cf8b533512ab963772f227d4b7bf28c90a36e1221aff4a8b32ad9c5c66f46c5`；完整日志仅 revision、time、输出路径不同，scoring/facts/work/hash 相同。R7 CLI SHA-256 `094b63385906eba024dd0388364c07c25e4a4e86a9858a19998e5bb3a5420cd5`；`B-r7-final-cli-01` 构建 exit=0。618 文件清单 SHA-256 `0d7f6c36d9851fbd13099a2fa73c9d6110a413066dab62d5ebbb32b0f7731546` 已核，其生产/测试/config/Cargo 文件无漂移；核查时仅本审阅报告及 R7 说明文档因补录本轮证据变化，不影响构建输入。
+
+**本轮技术结论：R7 关闭，目前无剩余生产 must-fix。** 既有 tiny 长轮后来由 root 为 R7 修复主动中断并留存证据，不算通过或超时失败；需按新快照完成原完整 tiny、最终语料与全套门禁。触帽输入的池、工作量或布局预期可能变化，应按新生产实测并解释；未触帽的 T1/T6 证据只按上述字段与来源复用。不得据此次短轮取消最终验证、宣称性能问题已消失，或把旧 08 长 CLI 测量改名为 R7 实测。

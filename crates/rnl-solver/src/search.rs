@@ -41,7 +41,8 @@
 //! evenly at a regular interval ([`evenly`]); never for a row as such, a chain of a `$FLOW` or the
 //! elements in no group (quality review SE-3). The coordinates of each are then sought by the
 //! lexicographic LP (`crate::coords`). The search makes no more than `Budget::candidates`
-//! candidates; past that it keeps what it has.
+//! candidate attempts, P0 included; zero permits only the one necessary P0 fallback.
+//! Every additional estimate or derived candidate is admitted before its work begins.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1442,6 +1443,16 @@ impl Search<'_> {
         self.made >= self.options.budget.candidates
     }
 
+    /// One admission for an actual candidate attempt. P0 is reserved before search starts;
+    /// no per-node bootstrap or derived twin receives an additional implicit allowance.
+    fn admit(&mut self) -> bool {
+        if self.out_of_budget() {
+            return false;
+        }
+        self.made += 1;
+        true
+    }
+
     /// A plan with a variant's decisions in place.
     fn with(&self, plan: &Plan, v: &Variant) -> Plan {
         let mut p = plan.clone();
@@ -1520,8 +1531,12 @@ impl Search<'_> {
     }
 
     /// The layered estimate of a plan, and its candidate.
-    fn estimate(&mut self, plan: &Plan) -> (Vec<Q>, Candidate) {
-        self.made += 1;
+    fn estimate(&mut self, plan: &Plan) -> Option<(Vec<Q>, Candidate)> {
+        self.admit().then(|| self.estimate_admitted(plan))
+    }
+
+    /// The finite orientation/barycentre preparation and estimate of one admitted attempt.
+    fn estimate_admitted(&self, plan: &Plan) -> (Vec<Q>, Candidate) {
         let c = self.candidate(plan, "beam");
         let ori = c.orientations(self.s);
         let at = sketch(self.problem, self.s, &c, &ori, self.options);
@@ -1702,6 +1717,9 @@ impl Search<'_> {
 
     /// The variants of a node (see the module), best first.
     fn node(&mut self, node: usize, plan: &Plan, variants: &BTreeMap<usize, Vec<Variant>>) -> Vec<Variant> {
+        if self.out_of_budget() {
+            return Vec::new();
+        }
         let s = self.s;
         let beam = self.options.beam.max(1);
         let n = &s.tree.nodes[node];
@@ -1713,11 +1731,11 @@ impl Search<'_> {
             let mut next: Vec<Scored> = Vec::new();
             for (_, p) in &combos {
                 for v in variants.get(&c).map_or(&[][..], |v| v) {
-                    if self.out_of_budget() && !next.is_empty() {
+                    if self.out_of_budget() {
                         break;
                     }
                     let q = self.with(p, v);
-                    let (e, cand) = self.estimate(&q);
+                    let Some((e, cand)) = self.estimate(&q) else { break };
                     next.push((e, cand.code(s), q));
                 }
             }
@@ -1731,6 +1749,11 @@ impl Search<'_> {
         let classes = self.local_classes(node);
         let mut found: Vec<Scored> = Vec::new();
         for (_, base) in combos.iter().take(2) {
+            // Reserve before preparing the first order. Its bounded barycentre/orientation
+            // subwork belongs to this one admitted attempt; later orders require admission.
+            if !self.admit() {
+                break;
+            }
             // 2. the orders of the items: first by the elements' places in the netlist, then by
             // the barycentre of what each is connected to
             let first_key = |i: Item| -> (Q, usize) {
@@ -1744,7 +1767,15 @@ impl Search<'_> {
             let mut orders: Vec<Vec<Item>> = vec![self.order_items(node, &items, &first_key, &before)];
             if s.has(Source::Barycentre) {
                 let mut current = orders[0].clone();
+                // Each additional distinct order reserves one of the still available slots.
+                // No other work can consume those slots before this batch is estimated.
+                // In particular the first order's admission does not authorize preparing
+                // future orders after the budget is exhausted.
+                let remaining = self.options.budget.candidates.saturating_sub(self.made);
                 for _ in 0..BARYCENTRE_ROUNDS {
+                    if orders.len() as u64 - 1 >= remaining {
+                        break;
+                    }
                     let p = Plan { order: self.place(base, &current), ..base.clone() };
                     let (p, _) = self.orient(&p, &classes);
                     let key = self.barycentre(&p, &current);
@@ -1758,14 +1789,14 @@ impl Search<'_> {
             }
             let mut tried: Vec<Scored> = Vec::new();
             let mut seconds: Vec<Vec<(usize, Orient)>> = Vec::new();
-            for order in &orders {
-                if self.out_of_budget() && !tried.is_empty() {
+            for (order_index, order) in orders.iter().enumerate() {
+                if order_index > 0 && !self.admit() {
                     break;
                 }
                 let mut p = Plan { order: self.place(base, order), ..base.clone() };
                 p.items.insert(node, order.clone());
                 let (p, second) = self.orient(&p, &classes);
-                let (e, cand) = self.estimate(&p);
+                let (e, cand) = self.estimate_admitted(&p);
                 let code = cand.code(s);
                 found.push((e.clone(), code.clone(), p.clone()));
                 tried.push((e, code, p));
@@ -1800,7 +1831,7 @@ impl Search<'_> {
                 }
                 let mut p = Plan { order: self.place(&bp, &o), ..bp.clone() };
                 p.items.insert(node, o);
-                let (e, cand) = self.estimate(&p);
+                let Some((e, cand)) = self.estimate(&p) else { break };
                 found.push((e, cand.code(s), p));
             }
             // a union, whose parts no swap moves, reversed
@@ -1810,7 +1841,7 @@ impl Search<'_> {
                 if self.order_items(node, &o, &place, &before) == o {
                     let mut p = Plan { order: self.place(&bp, &o), ..bp.clone() };
                     p.items.insert(node, o);
-                    let (e, cand) = self.estimate(&p);
+                    let Some((e, cand)) = self.estimate(&p) else { break };
                     found.push((e, cand.code(s), p));
                 }
             }
@@ -1820,7 +1851,7 @@ impl Search<'_> {
                 }
                 let mut p = bp.clone();
                 p.values[c] = v;
-                let (e, cand) = self.estimate(&p);
+                let Some((e, cand)) = self.estimate(&p) else { break };
                 found.push((e, cand.code(s), p));
             }
             // and each fact whose side is open and each DISTRIBUTE decided here reversed
@@ -1931,7 +1962,7 @@ impl Search<'_> {
             let o = self.order_items(node, border, &place, &precedences(s, &p.flipped));
             p.order = self.place(bp, &o);
             p.items.insert(node, o);
-            let (e, cand) = self.estimate(&p);
+            let Some((e, cand)) = self.estimate(&p) else { break };
             out.push((e, cand.code(s), p));
         }
         out
@@ -1953,6 +1984,8 @@ impl Search<'_> {
     /// mean x of its own elements. With the inputs on the left in force, elements connected to an
     /// input port go first and those connected to an output port last.
     fn barycentre(&self, plan: &Plan, items: &[Item]) -> BTreeMap<Item, (Q, usize)> {
+        #[cfg(test)]
+        let _profile = crate::test_profile::section("search.barycentre");
         let s = self.s;
         let cand = self.candidate(plan, "beam");
         let ori = cand.orientations(s);
@@ -2056,13 +2089,16 @@ pub(crate) fn search(
     work: &mut Work,
 ) -> Vec<Candidate> {
     let plan = p0_plan(s);
-    let mut search = Search { problem, s, options, made: 0, work };
+    let mut search = Search { problem, s, options, made: 1, work };
     let p0 = search.candidate(&plan, "P0");
     let mut out: Vec<Candidate> = Vec::new();
     if !s.elements.is_empty() || !s.open.classes.is_empty() {
         let mut variants: BTreeMap<usize, Vec<Variant>> = BTreeMap::new();
         let mut current = plan.clone();
         for node in s.tree.post_order() {
+            if search.out_of_budget() {
+                break;
+            }
             let vs = search.node(node, &current, &variants);
             if let Some(best) = vs.first() {
                 current = search.with(&current, best);
@@ -2074,22 +2110,43 @@ pub(crate) fn search(
             out.push(search.candidate(&p, "beam"));
         }
     }
+    let p0_code = p0.code(s);
     out.push(p0);
     if s.has(Source::EvenRows) {
-        let twins: Vec<Option<Candidate>> = out
-            .iter()
-            .map(|c| (!evenly(s, &c.rows).is_empty()).then(|| Candidate { even: true, ..c.clone() }))
-            .collect();
-        out = out.into_iter().zip(twins).flat_map(|(a, b)| std::iter::once(a).chain(b)).collect();
+        let mut expanded = Vec::new();
+        for candidate in out {
+            if !search.out_of_budget() && !evenly(s, &candidate.rows).is_empty() && search.admit() {
+                expanded.push(candidate.clone());
+                expanded.push(Candidate { even: true, ..candidate });
+            } else {
+                expanded.push(candidate);
+            }
+        }
+        out = expanded;
     }
     if s.depth.is_some() {
         let directions: Vec<_> =
             s.active.terms().filter(|t| t.kind == "current_direction").filter_map(|t| t.direction).collect();
-        out = out
-            .into_iter()
-            .flat_map(|c| directions.iter().map(move |&d| Candidate { flow: Some(d), ..c.clone() }))
-            .collect();
+        let mut expanded = Vec::new();
+        for candidate in out {
+            // candidate() already uses the first configured direction, so this is the paid
+            // output conversion, not another attempt. Every different direction is new work.
+            expanded.push(candidate.clone());
+            for &direction in &directions {
+                if candidate.flow == Some(direction) {
+                    continue;
+                }
+                if !search.admit() {
+                    break;
+                }
+                expanded.push(Candidate { flow: Some(direction), ..candidate.clone() });
+            }
+        }
+        out = expanded;
     }
+    // Preserve the reserved P0 if a paid beam attempt happens to have the same code.
+    // The duplicate attempt remains charged; de-duplication never refunds actual work.
+    out.retain(|candidate| candidate.origin == "P0" || candidate.code(s) != p0_code);
     let mut seen: Vec<Vec<u32>> = Vec::new();
     out.retain(|c| {
         let code = c.code(s);
@@ -2097,9 +2154,9 @@ pub(crate) fn search(
         seen.push(code);
         new
     });
-    // the candidates estimated, and P0 and the twins, which are not
-    let estimated = out.iter().filter(|c| c.origin == "beam" && !c.even).count() as u64;
-    search.work.candidates += search.made + out.len() as u64 - estimated;
+    // P0, each actual estimate attempt, and every admitted derived candidate are already
+    // charged. Turning a paid root Plan into its output Candidate does not charge it twice.
+    search.work.candidates += search.made;
     out
 }
 

@@ -1,6 +1,6 @@
 # Objectives v2 implementation contract
 
-Status: Step1 production is frozen at reviewed candidate08 for concentrated validation. Original authorization was on2026-10-18. This document records the shared contract for implementation packages A, B, and C in `C:/Users/jielu/.codex/worktrees/cdac/rnl`, branch `codex/objectives-v2-step1`, based on `41d6b7d68544601f7a206af69c5b91286a2ed7c9`. All packages have handed integration back to A; validation owns only explicitly approved test migration/correction files while holding the sole build token. Production changes require a coordinated correction window and new source evidence.
+Status: Step1 production is frozen at R7 candidate02 for concentrated validation. Candidate08 remains the original performance/quality evidence, with actual default T1/T6 equivalence checked after R7; corrected low-budget paths require new execution. Original authorization was on2026-10-18. This document records the shared contract for implementation packages A, B, and C in `C:/Users/jielu/.codex/worktrees/cdac/rnl`, branch `codex/objectives-v2-step1`, based on `41d6b7d68544601f7a206af69c5b91286a2ed7c9` and merged upstream `476578a74010cf37406f15fd82bd978298ad8248`. All packages have handed integration back to A; validation owns only explicitly approved test migration/correction files while holding the sole build token. Production changes require a coordinated correction window and new source evidence.
 
 ## Ownership
 

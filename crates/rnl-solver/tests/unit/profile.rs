@@ -48,12 +48,12 @@ impl Drop for Section<'_> {
     }
 }
 
-fn reset() {
+pub(crate) fn reset() {
     TIMINGS.with(|t| *t.borrow_mut() = Some(BTreeMap::new()));
     ORIENTATIONS.with(|t| t.borrow_mut().clear());
 }
 
-fn take() -> serde_json::Value {
+pub(crate) fn take() -> serde_json::Value {
     let values = TIMINGS.with(|t| t.borrow_mut().take().unwrap());
     serde_json::json!(values
         .into_iter()

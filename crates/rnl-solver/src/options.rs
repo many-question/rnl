@@ -243,6 +243,7 @@ impl Objectives {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Budget {
+    /// Actual candidate attempts over one level, including P0. Zero permits only P0 (work=1).
     pub candidates: u64,
     pub astar_expansions: u64,
     pub soft_expansions: u64,
