@@ -1638,6 +1638,7 @@ fn t1_is_drawn_with_an_l_for_each_wire() {
 #[test]
 fn t2_has_an_l_from_the_source_to_the_gate() {
     use rnl_runtime::solution::WirePoint;
+    use std::collections::BTreeSet;
     for file in ["T2-common-source.sp", "T2b-common-source-dragged.sp"] {
         let (p, solved, e) = fixed_legacy_case_level(file, file);
         let what = summary(&p, &solved, &e);
@@ -1647,13 +1648,8 @@ fn t2_has_an_l_from_the_source_to_the_gate() {
             "{what}: input must be routed by the hard phase: {:?}",
             solved.report.routing_fallbacks
         );
-        let wires: Vec<_> = solved
-            .solution
-            .wires
-            .iter()
-            .zip(&e.routing.paths)
-            .filter(|(w, _)| w.route == route)
-            .collect();
+        let wires: Vec<_> =
+            solved.solution.wires.iter().zip(&e.routing.paths).filter(|(w, _)| w.route == route).collect();
         assert_eq!(wires.len(), 1, "{what}: one physical pin-to-pin input wire");
         let (wire, path) = wires[0];
         let (vin, m1) = (object(&p, "#VIN"), object(&p, "#M1"));
