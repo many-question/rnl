@@ -1904,12 +1904,34 @@ fn every_minimal_group_is_named_and_a_limit_that_cuts_them_says_the_list_is_not_
                 {#R1 #R2 #R3} @ALIGN(\"x\"); #R1 @PLACE(0, 0); #R2 @PLACE(10, 0); #R3 @PLACE(20, 0) }\n.end\n";
     let files = MemoryProvider::new().with("/w/t.sp", body);
     let clock = Ticks::default();
-    let all = solve_with_clock(Path::new("/w/t.sp"), &files, &within(1e9), &clock).unwrap();
+    let timed_options = within(1e9);
+    let all = solve_with_clock(Path::new("/w/t.sp"), &files, &timed_options, &clock).unwrap();
     let reads = clock.reads();
     let level = &all.levels[0];
     let p = &level.problem;
     let whole = &level.solved.report;
-    assert_eq!(whole, &solve(Path::new("/w/t.sp"), &files, &unlimited()).unwrap().levels[0].solved.report);
+    let untimed_options = unlimited();
+    let untimed = solve(Path::new("/w/t.sp"), &files, &untimed_options).unwrap();
+    let untimed_report = &untimed.levels[0].solved.report;
+    // Each report describes the exact configuration actually used, including the time limit.
+    for (report, options) in [(whole, &timed_options.solver), (untimed_report, &untimed_options.solver)] {
+        let canonical = options.canonical();
+        assert_eq!(report.scoring.config, canonical);
+        assert_eq!(report.scoring.config_digest, rnl_runtime::problem::options_digest(&canonical));
+    }
+    let mut timed_config: serde_json::Value = serde_json::from_str(&whole.scoring.config).unwrap();
+    let untimed_config: serde_json::Value = serde_json::from_str(&untimed_report.scoring.config).unwrap();
+    assert_eq!(timed_config["rules"]["time_limit"].as_str(), Some("1000000000"));
+    assert!(untimed_config["rules"]["time_limit"].is_null());
+    timed_config["rules"]["time_limit"] = serde_json::Value::Null;
+    assert_eq!(timed_config, untimed_config, "only the configured time limit differs");
+    assert_ne!(whole.scoring.config_digest, untimed_report.scoring.config_digest);
+    // Translate only those independently verified configuration fields in a comparison clone.
+    // All facts, groups, exact term values/metadata, work and notes still compare in full.
+    let mut same_semantics = untimed_report.clone();
+    same_semantics.scoring.config = timed_options.solver.canonical();
+    same_semantics.scoring.config_digest = rnl_runtime::problem::options_digest(&same_semantics.scoring.config);
+    assert_eq!(whole, &same_semantics);
     let fact = |text: &str| (0..p.facts.len()).find(|&k| describe_fact(p, k).contains(text)).unwrap();
     let align = fact("ALIGN x");
     let xs = [fact("the x of #R1 = 0"), fact("the x of #R2 = 10"), fact("the x of #R3 = 20")];
