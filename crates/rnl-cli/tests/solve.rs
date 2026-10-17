@@ -569,6 +569,27 @@ fn in_a_file_of_the_draft_the_record_reaches_every_object() {
     }
 }
 
+/// Exact public provenance, including original Provider-decoded texts rather than raised
+/// overlays. These two report migrations must not hide or discard the metadata lines.
+fn expected_provenance(run: &SolveRun, inputs: &[(&str, &str)]) -> [String; 2] {
+    assert!(!run.invocation.solver_revision.is_empty());
+    let expected: Vec<_> = inputs
+        .iter()
+        .map(|(path, text)| {
+            let digest = rnl_runtime::numbering::sha256(text.as_bytes())
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
+            serde_json::json!({"path":normalize(path),"text_sha256":digest})
+        })
+        .collect();
+    assert_eq!(serde_json::to_value(&run.invocation.inputs).unwrap(), serde_json::json!(expected));
+    [
+        format!("solver revision: {}", run.invocation.solver_revision),
+        format!("input manifest: {}", serde_json::to_string(&expected).unwrap()),
+    ]
+}
+
 #[test]
 fn a_level_whose_rnl_is_not_interpreted_is_not_solved() {
     let fs = FsProvider::new(&[]);
@@ -578,8 +599,13 @@ fn a_level_whose_rnl_is_not_interpreted_is_not_solved() {
     let run = solve(&f, &fs, &unlimited()).unwrap();
     assert!(run.levels.is_empty() && run.files.is_empty(), "{:?}", run.levels.len());
     assert_eq!(run.not_solved.len(), 1);
+    let original = fs.read(&path_str(&f)).unwrap();
+    let provenance = expected_provenance(&run, &[(&path_str(&f), &original)]);
+    let said = lines(&run, false);
+    assert_eq!(said.len(), 3, "two provenance lines precede the unchanged not-solved report");
+    assert_eq!(said[..2], provenance);
     assert_eq!(
-        lines(&run, false),
+        &said[2..],
         ["level 13-unsupported-version.sp (file in 13-unsupported-version.sp): not solved, and nothing is written \
              for it: 13-unsupported-version.sp declares the version 9.0, which this reading does not interpret: none \
              of its RNL is read, and it is kept as it is (16.1)"]
@@ -2375,6 +2401,15 @@ fn a_raise_warns_of_the_aliases_imported_and_of_the_files_that_take_its_version(
     let clashes = vec!["an alias, `numbering`, line 2", "a parameter name, `numbering`, line 6"];
     assert_eq!(followers, [("/w/child.inc", clashes), ("/w/grand.inc", vec![])]);
     let said = lines(&run, false);
+    let provenance = expected_provenance(
+        &run,
+        &[("/w/top.sp", top), ("/w/child.inc", child), ("/w/grand.inc", grand), ("/w/kept.inc", kept)],
+    );
+    let metadata_at = said.iter().position(|line| line == &provenance[0]).unwrap();
+    assert_eq!(said.iter().filter(|line| line.starts_with("solver revision: ")).count(), 1);
+    assert_eq!(said.iter().filter(|line| line.starts_with("input manifest: ")).count(), 1);
+    assert_eq!(said[metadata_at..metadata_at + 2], provenance);
+    assert_eq!(said[metadata_at + 2], "level top.sp (file in top.sp): 0 kept, 0 discarded of 0 facts");
     let follows = |name: &str| {
         format!(
             "warning: {name}: it writes no VERSION and takes that of top.sp: it reads in 0.3 too, its text unchanged \
@@ -2384,9 +2419,14 @@ fn a_raise_warns_of_the_aliases_imported_and_of_the_files_that_take_its_version(
     let alias = "warning: child.inc: an alias, `numbering`, line 2, has the spelling of a word that 0.3 adds (2.8): \
                  read in 0.3, it may mean something else (16.1)";
     for line in [follows("child.inc"), alias.to_string(), follows("grand.inc")] {
-        assert!(said.contains(&line), "{line}: {said:?}");
+        assert!(said[..metadata_at].contains(&line), "the original warnings precede provenance: {line}: {said:?}");
     }
-    assert!(!said.iter().any(|l| l.contains("kept.inc")), "{said:?}");
+    // kept.inc is read and therefore belongs in the exact provenance manifest, but it
+    // declares its own version: it is still absent from all raise/warning/level body lines.
+    assert!(
+        !said[..metadata_at].iter().chain(said[metadata_at + 2..].iter()).any(|line| line.contains("kept.inc")),
+        "{said:?}"
+    );
     assert_eq!(run.files.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(), ["/w/top.sp"]);
 }
 
