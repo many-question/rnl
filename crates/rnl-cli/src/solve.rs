@@ -405,8 +405,17 @@ pub fn solve_watched(
     }
     // the files read are those of the first pass: the second reads the files raised from memory
     let read = run.read.clone();
+    let mut invocation = run.invocation.clone();
     let mut run = if texts.is_empty() { run } else { pass(file, files, options, clock, &texts, watch)?.0 };
     run.read = read;
+    // Keep original provider text hashes for raised files, plus any dependency first read by
+    // the raised pass. The memory overlay is an internal transformation, not a new input file.
+    for input in std::mem::take(&mut run.invocation.inputs) {
+        if !invocation.inputs.iter().any(|old| old.path == input.path) {
+            invocation.inputs.push(input);
+        }
+    }
+    run.invocation = invocation;
     // a file level that cannot say 0.3 itself, such as a library section without a header record,
     // takes the version of the file that includes it (16.1): when that one is raised, it reads in
     // 0.3 too, and the line of that file says so

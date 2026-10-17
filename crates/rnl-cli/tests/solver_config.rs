@@ -91,6 +91,40 @@ fn selected_configuration_and_overrides_are_shared_by_problem_preview_and_solve(
 }
 
 #[test]
+fn upgraded_zero_two_reports_original_decoded_input_and_include_hashes() {
+    let d = Directory::new();
+    let original = "* legacy\n* @RNL(type=\"header\") { @VERSION(\"0.2\") }\n.include child.inc\nR1 a b 1k\n.end\n";
+    let child = ".subckt child a b\nR2 a b 2k\n.ends child\n";
+    d.file("legacy.sp", &format!("\u{feff}{original}"));
+    d.file("child.inc", child);
+    let output = success(d.run(&[
+        "solve",
+        "legacy.sp",
+        "-o",
+        "out",
+        "--report",
+        "--solver-options",
+        "budget=candidates:0;time_limit=none",
+    ]));
+    let manifest: Value = serde_json::from_str(
+        output.lines().find_map(|line| line.strip_prefix("input manifest: ")).expect("CLI input manifest"),
+    )
+    .unwrap();
+    let sha = |text: &str| {
+        rnl_runtime::numbering::sha256(text.as_bytes()).iter().map(|b| format!("{b:02x}")).collect::<String>()
+    };
+    let inputs = manifest.as_array().unwrap();
+    assert_eq!(inputs.len(), 2, "{manifest}");
+    for (name, text) in [("legacy.sp", original), ("child.inc", child)] {
+        let input =
+            inputs.iter().find(|input| input["path"].as_str().is_some_and(|path| path.ends_with(name))).unwrap();
+        assert_eq!(input["text_sha256"], sha(text));
+    }
+    let written = std::fs::read_to_string(d.0.join("out/legacy.sp")).unwrap();
+    assert!(written.contains("@VERSION(\"0.3\")"), "upgrade was not exercised: {written}");
+}
+
+#[test]
 fn every_solve_operational_error_is_one_and_unknown_cli_option_is_two() {
     let d = Directory::new();
     d.file("rc.sp", "* rc\nR1 a 0 1k\n.end\n");
