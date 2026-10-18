@@ -4,7 +4,7 @@ Five static pages, in Chinese and English, for circuit designers who have not wo
 
 - `index.html`, the introduction: what RNL is, the problem it addresses, the goal, before/after scenarios, where things stand (the released milestones and what comes next, with an FAQ), and the ways on to the other pages. It is short on purpose; what it once held has moved ([Sections that moved](#sections-that-moved)).
 - `language.html`, the language tour: the language at a glance (the anatomy of a statement, the keyword families, how a level takes effect), nine hands-on sections on the parts of the language the introduction does not unpack (standard sentences and Chinese, definitions, the standard package's defaults, sets and selections, wires, text, orientation, priority, the header record), and a few examples.
-- `tools.html`, the page of the tools: what the viewers of the first toolkit, 0.1, do; the web viewer, with a few samples to open in it; the desktop viewer for Windows, with the files of its newest release; the toolchain, its modules and how data flows through them; and the licences.
+- `tools.html`, the page of the tools: what the viewers of the first toolkit, 0.1, do; the web viewer, with a few samples to open in it; the desktop viewer for Windows and Linux, with the files of its newest release; the toolchain, its modules and how data flows through them; and the licences.
 - `agents.html`, the entry for AI agents: how to get the RNL skill package and install it, what is in it, and how to check and draw the files an agent writes ([For agents](#for-agents)).
 - `packages.html`, the gallery of the standard packages: every package in [`libraries/`](../libraries/README.md), with what it is for, what it references and its text, every symbol as the core draws it, with its pins and box, and the rules that give elements their symbols ([The gallery](#the-gallery-of-the-standard-packages)).
 
@@ -46,7 +46,7 @@ The page of the tools links to the files of the desktop viewer's newest release,
 <!--no-release--><p>…the first release is coming…</p><!--/no-release-->
 ```
 
-With a release, the build keeps the `<!--release-->` blocks and fills in `{{viewer-version}}`, such as `0.1.0`, and `{{viewer-tag}}`, `viewer-v0.1.0`; without one, it keeps the `<!--no-release-->` blocks, which say that the first release is coming and link the [GitHub releases](https://github.com/rich-netlist/rnl/releases). It refuses to build when a block does not close or holds another, and when a field is used outside a `<!--release-->` block or is not one of the two. Both kinds of block are checked for their languages, whichever the build keeps.
+With a release, the build keeps the `<!--release-->` blocks and fills in `{{viewer-version}}`, such as `0.1.0`, and `{{viewer-tag}}`, `viewer-v0.1.0`; without one, it keeps the `<!--no-release-->` blocks, which say that the first release is coming and link the [GitHub releases](https://github.com/rich-netlist/rnl/releases). It refuses to build when a block does not close or holds another, and when a field is used outside a `<!--release-->` or `<!--linux-release-->` block or is not one of the two. Both kinds of block are checked for their languages, whichever the build keeps.
 
 `pages.yml` checks out the whole history, tags included, and runs again after each release of the desktop viewer, so that the published page links to the new files. `--viewer-version` sets the version for a local build or a test, whatever the tags say, and `--viewer-version none` builds the page as before the first release.
 

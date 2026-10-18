@@ -70,7 +70,7 @@ cargo run --release -p rnl-cli -- check tests/conformance/cases/03-five-transist
 cargo run --release -p rnl-cli -- render tests/conformance/cases/03-five-transistor-ota.sp -o target/svg
 ```
 
-See [`crates/rnl-cli`](crates/rnl-cli/README.md) for the other commands. The desktop viewer for Windows has installers on the [releases](https://github.com/rich-netlist/rnl/releases) page (the newest tag `viewer-v…`), and the core is on npm: `npm i @rich-netlist/runtime@next`. To run the desktop viewer from the source instead, as on macOS or Linux, and look at a netlist in it:
+See [`crates/rnl-cli`](crates/rnl-cli/README.md) for the other commands. The desktop viewer for Windows has installers on the [releases](https://github.com/rich-netlist/rnl/releases) page (the newest tag `viewer-v…`), and the core is on npm: `npm i @rich-netlist/runtime@next`. The next viewer tag that includes the Linux build also provides AppImage and deb packages for Linux x86_64. To run the desktop viewer from source, including on macOS, and look at a netlist in it:
 
 ```bash
 cargo run --manifest-path apps/desktop/Cargo.toml -- tests/conformance/cases/03-five-transistor-ota.sp
