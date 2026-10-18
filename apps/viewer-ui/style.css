@@ -417,7 +417,7 @@ body[data-background="dark"] .unplaced-row .thumb { background: var(--drawing-ba
 /* a selected symbol, wire or ground: its lines and texts in the selection colour, but for the
    strokes over a shape's first, such as the colour between the lines of a double line */
 .canvas svg g.sel [stroke]:not([stroke="none"]):not(.inner) { stroke: var(--select); }
-.canvas svg g.sel [fill]:not([fill="none"]):not([fill="#ffffff"]):not([fill="white"]) { fill: var(--select); }
+.canvas svg g.sel .highlight-fill { fill: var(--select); }
 .canvas.sel-sub, .source.sel-sub, .selection.sel-sub {
   --select: var(--sub);
   --select-text: var(--sub-text);

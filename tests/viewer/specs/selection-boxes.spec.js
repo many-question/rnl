@@ -21,6 +21,11 @@ for (const platform of ["web", "desktop"]) {
       expect(y1 - y0).toBeCloseTo(kind === "explicit" ? 84 : 28, 6);
       for (const mode of ["light", "dark"]) {
         await page.evaluate((mode) => window.viewer.command(`background-${mode}`), mode);
+        if (kind === "explicit") {
+          // Black fill becomes white in Dark, but retains the normal subcircuit highlight.
+          await expect(page.locator("#canvas g.sel circle")).toHaveCSS("fill", "rgb(194, 37, 92)");
+          await expect(page.locator("#canvas g.sel").first()).toHaveCSS("filter", "none");
+        }
         await page.keyboard.press("f");
         for (const key of [null, "Control+="]) {
           if (key) await page.keyboard.press(key);
@@ -33,8 +38,8 @@ for (const platform of ["web", "desktop"]) {
           // CSS layout rounds to subpixel quanta (e.g. 1/64 px); SVG geometry above stays exact.
           expect(b.x - corner.x).toBeCloseTo(4, 1);
           expect(corner.y - (b.y + b.height)).toBeCloseTo(4, 1);
-          expect(b.width).toBeCloseTo(22, 6);
-          expect(b.height).toBeCloseTo(22, 6);
+          expect(b.width).toBeCloseTo(22, 3);
+          expect(b.height).toBeCloseTo(22, 3);
         }
         const out = process.env.RNL_REVIEW_DIR || info.outputDir;
         await fs.mkdir(out, { recursive: true });

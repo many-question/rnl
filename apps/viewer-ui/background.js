@@ -32,7 +32,10 @@ export function colourDrawing(svg) {
       originals.set(el, ["stroke", "fill"].map((attr) => [attr, el.getAttribute(attr)]));
     }
     for (const [attr, colour] of originals.get(el)) {
-      if (colour !== null) el.setAttribute(attr, dark ? darkColour(colour) : colour);
+      if (colour === null) continue;
+      // Selection leaves white paper alone, but ink turned white by Dark is still ink.
+      if (attr === "fill") el.classList.toggle("highlight-fill", !["none", "#ffffff", "white"].includes(colour));
+      el.setAttribute(attr, dark ? darkColour(colour) : colour);
     }
   }
 }

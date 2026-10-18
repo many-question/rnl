@@ -9,6 +9,7 @@ Xinferred b 0 cell
 *   $explicit = @DEFINE-SYMBOL(box=[-3, -2, 3, 2]) {
 *     (-3, 0) @PIN(terminal="a", direction="left"); (3, 0) @PIN(terminal="b", direction="right");
 *     @RECTANGLE {(-3, -2) (3, 2)};
+*     (0, -1.5) @CIRCLE(radius=0.2, fill="fillcolor", fillcolor="#000000", linestyle="none");
 *     (0, 0) @TEXT("Explicit box", halign="middle", valign="middle")
 *   };
 *   $inferred = @DEFINE-SYMBOL {
