@@ -123,6 +123,10 @@ jobs:
             target/wasm32-unknown-unknown/
           key: pages-wasm-${{ steps.rust.outputs.version }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: pages-wasm-${{ steps.rust.outputs.version }}-
+      - name: Check and render the site's example netlists
+        run: |
+          cargo build -p rnl-cli
+          python3 site/build.py --check --rnl target/debug/rnl
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24

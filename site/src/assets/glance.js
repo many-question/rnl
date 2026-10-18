@@ -265,9 +265,15 @@
   function initExamples() {
     var tabs = $('#ex-tabs');
     if (!tabs) return;
-    var codeEl = $('#ex-code'), fig = $('#ex-fig'), cap = $('#ex-cap'), extra = $('#ex-extra'), top = $('#ex-top'), file = $('#ex-file');
+    var codeEl = $('#ex-code'), fig = $('#ex-fig'), cap = $('#ex-cap'), extra = $('#ex-extra'), top = $('#ex-top'), file = $('#ex-file'), openLink = $('#ex-open');
     var timers = [];
     function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+    function setOpen(target) {
+      if (!openLink) return;
+      if (!target) { openLink.hidden = true; return; }
+      openLink.setAttribute('href', openLink.getAttribute('href').replace(/url=samples\/site\/[^&#]*/, 'url=samples/site/' + target));
+      openLink.hidden = false;
+    }
 
     function mountView(scene, box) {
       fig.innerHTML = '';
@@ -301,6 +307,7 @@
       },
       e2: function () {
         file.textContent = 'ota5t_tb.sp';
+        setOpen('ota5t_tb.sp');
         var lines = SC.E2_LINES;
         C.render(codeEl, lines);
         var m = mountView(SC.TB);
@@ -361,6 +368,7 @@
       },
       e5: function () {
         file.textContent = 'ota5t.sp';
+        setOpen('ota5t-edits.sp');
         var lines = SC.E5_LINES;
         C.render(codeEl, lines);
         var m = mountView(SC.e5Scene(), SC.OTA_BOX);
@@ -394,6 +402,7 @@
       clearTimers();
       extra.innerHTML = '';
       top.innerHTML = '';
+      setOpen(null);
       EX[id]();
     }
     PG.initTabs(tabs, function (t) { show(t.getAttribute('data-ex')); });

@@ -240,13 +240,19 @@
     if (!svg) return;
     var cap = $('#jr-cap'), notice = $('#jr-notice'), metrics = $('#jr-metrics');
     var steps = $$('#jr-steps button');
-    var prevBtn = $('#jr-prev'), nextBtn = $('#jr-next'), playBtn = $('#jr-play');
+    var prevBtn = $('#jr-prev'), nextBtn = $('#jr-next'), playBtn = $('#jr-play'), openLink = $('#jr-open');
     var linker = null;
     var view = new S.View(svg, {
       box: SC.OTA_BOX,
       onHover: function (ref) { if (linker) linker.markRef(ref); }
     });
     var cur = -1, lastLines = null, style = 'en';
+
+    function updateOpen() {
+      if (!openLink) return;
+      var target = cur === 4 ? 'ota5t-edits.sp' : cur === 5 ? 'ota5t-resolved.sp' : style === 'zh' ? 'ota5t-zh.sp' : 'ota5t.sp';
+      openLink.setAttribute('href', openLink.getAttribute('href').replace(/url=samples\/site\/[^&#]*/, 'url=samples/site/' + target));
+    }
 
     function showMetrics() {
       var m = view.metrics();
@@ -276,6 +282,7 @@
       if (i < 0 || i > 5) return;
       var back = i < cur;
       cur = i;
+      updateOpen();
       steps.forEach(function (b, j) {
         b.setAttribute('aria-selected', j === i ? 'true' : 'false');
         b.tabIndex = j === i ? 0 : -1;
@@ -308,6 +315,7 @@
     /* The same file in another writing style: machines read exactly the same statements */
     PG.initSeg($('#jr-style'), 'data-style', function (v) {
       style = v;
+      updateOpen();
       var keep = code.scrollTop;
       renderCode(cur, false);
       code.scrollTop = keep;

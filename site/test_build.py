@@ -50,5 +50,29 @@ class ReleaseDownloads(unittest.TestCase):
         self.assertTrue(build.check_release("<!--no-linux-release-->{{viewer-tag}}<!--/no-linux-release-->", "test"))
 
 
+class SiteExamples(unittest.TestCase):
+    def test_examples_are_published_and_linked_in_both_languages(self):
+        with patch.object(build, "has_linux_release", return_value=False):
+            pages = build.build(None)
+        for name in ("ota5t.sp", "ota5t-zh.sp", "ota5t-edits.sp", "ota5t-resolved.sp", "ota5t_tb.sp"):
+            self.assertIn(f"examples/{name}", pages)
+        for lang, label in (("zh", "在查看器中打开"), ("en", "Open in viewer")):
+            self.assertIn(f'href="../viewer/?url=samples/site/ota5t.sp">{label}</a>', pages[f"{lang}/index.html"])
+            self.assertIn(
+                f'href="{build.SITE_URL}viewer/?url=samples/site/ota5t.sp">{label}</a>',
+                pages[f"{lang}/rnl-intro-standalone.html"],
+            )
+            self.assertIn(f'href="../viewer/?url=samples/site/ota5t.sp">{label}</a>', pages[f"{lang}/language.html"])
+            self.assertIn(f'href="../viewer/?url=samples/site/ota5t_tb.sp"', pages[f"{lang}/language.html"])
+
+    def test_check_examples_detects_drift_between_scenes_and_examples(self):
+        files = build.sources()
+        ex = build.examples()
+        self.assertEqual(build.check_examples(files, ex), [])
+        drifted = dict(ex, **{"ota5t.sp": ex["ota5t.sp"].replace("#M1 @PLACE(12, 8)", "#M1 @PLACE(14, 8)")})
+        errors = build.check_examples(files, drifted)
+        self.assertTrue(any("L_SYM" in e for e in errors), errors)
+
+
 if __name__ == "__main__":
     unittest.main()

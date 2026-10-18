@@ -6,8 +6,8 @@
 //   node apps/web/build.mjs [--no-core] [--samples]
 //
 // --no-core takes the binding as bindings/runtime-wasm/build.mjs last built it instead of building it
-// again; --samples copies the conformance corpus's cases and equivalence files into samples/, to try
-// the viewer with ?url=samples/cases/04-hierarchy.sp and for tests.
+// again; --samples copies the conformance corpus's cases and equivalence files and the site's
+// examples into samples/, to try the viewer with ?url=samples/cases/04-hierarchy.sp and for tests.
 
 import { publishLibrary } from "./library.mjs";
 import { execFileSync } from "node:child_process";
@@ -81,6 +81,7 @@ if (samples) {
   for (const name of ["cases", "equivalence"]) {
     cpSync(join(root, "tests", "conformance", name), join(out, "samples", name), { recursive: true });
   }
+  cpSync(join(root, "site", "examples"), join(out, "samples", "site"), { recursive: true });
 }
 
 /** The files under a directory, by their paths relative to it, `/`-separated. */
