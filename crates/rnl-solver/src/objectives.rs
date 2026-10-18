@@ -473,7 +473,9 @@ fn current_term(t: &Term, view: &View) -> Q {
 /// Symbol-direction matches all actually drawn objects, independently of search
 /// components or collision-marker exemptions (phase0 reply B03).
 fn symbol_direction_objects(s: &Structure) -> impl Iterator<Item = usize> + '_ {
-    s.objects.iter().enumerate()
+    s.objects
+        .iter()
+        .enumerate()
         .filter_map(|(object, info)| (info.symbol.is_some() && !info.left_free).then_some(object))
 }
 fn symbol_term(t: &Term, view: &View) -> Q {

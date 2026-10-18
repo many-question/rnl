@@ -326,18 +326,21 @@ fn symbol_direction_counts_real_pinless_attachments_and_all_same_named_symbols()
     let mut options = SolverOptions::from_toml(include_str!("../data/pinless-symbol-direction.toml")).unwrap();
     options.time_limit = None;
     for (host_orientation, extra_orientation, marker, expected) in [
-        ("R0", None, false, 1), ("R180", None, false, 1),
-        ("R0", Some("R0"), false, 2), ("R0", Some("R180"), false, 1),
+        ("R0", None, false, 1),
+        ("R180", None, false, 1),
+        ("R0", Some("R0"), false, 2),
+        ("R0", Some("R180"), false, 1),
         ("R0", None, true, 1),
     ] {
-        let mut source = SOURCE.replace("@PLACE(0,0) => @ORIENT(\"R0\")",
-            &format!("@PLACE(0,0) => @ORIENT(\"{host_orientation}\")"));
+        let mut source = SOURCE
+            .replace("@PLACE(0,0) => @ORIENT(\"R0\")", &format!("@PLACE(0,0) => @ORIENT(\"{host_orientation}\")"));
         if let Some(orientation) = extra_orientation {
             source = source.replace("*   &n @ROUTE",
                 &format!("*   %second_badge = $BADGE @ATTACH #XA => @SET-SYMBOL $BADGE_SYMBOL => @ORIENT(\"{orientation}\");\n*   &n @ROUTE"));
         }
         if marker {
-            source = source.replace("%badge = $BADGE @ATTACH #XH", "%marker_at = (0,0); %badge = $BADGE @ATTACH %marker_at");
+            source =
+                source.replace("%badge = $BADGE @ATTACH #XH", "%marker_at = (0,0); %badge = $BADGE @ATTACH %marker_at");
         }
         let files = MemoryProvider::new().with("direction.sp", &source);
         let input = rnl_view::interpret("direction.sp", None, &files, &rnl_runtime::Options::solver()).unwrap();
@@ -346,8 +349,14 @@ fn symbol_direction_counts_real_pinless_attachments_and_all_same_named_symbols()
         let badge = p.objects.iter().position(|o| o.label == "%badge").unwrap();
         let host = p.objects.iter().position(|o| o.label == "#XH").unwrap();
         let main = if marker { p.objects.iter().position(|o| o.label == "%marker_at").unwrap() } else { host };
-        assert_eq!(p.objects[badge].position, rnl_runtime::problem::Position::At(rnl_runtime::problem::PointRef::Origin(main)));
-        assert_eq!(p.objects[main].kind, if marker { rnl_runtime::problem::ObjectKind::Point } else { rnl_runtime::problem::ObjectKind::Instance });
+        assert_eq!(
+            p.objects[badge].position,
+            rnl_runtime::problem::Position::At(rnl_runtime::problem::PointRef::Origin(main))
+        );
+        assert_eq!(
+            p.objects[main].kind,
+            if marker { rnl_runtime::problem::ObjectKind::Point } else { rnl_runtime::problem::ObjectKind::Instance }
+        );
         let resolved = crate::resolve(p, &options);
         assert_eq!(resolved.kept.len(), p.facts.len());
         let s = crate::structure::analyse(p, &resolved, &options, crate::options::CAPS, &mut crate::Work::default());
@@ -412,4 +421,3 @@ fn symbol_direction_eligibility_and_reference_status_agree_on_boundary_inputs() 
     s.objects[badge].left_free = true;
     check(&s, &original, 0, true, 0); // the same drawn predicate is used by score and status
 }
-
