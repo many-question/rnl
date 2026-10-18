@@ -438,6 +438,9 @@ impl Interp<'_> {
     fn host_case(&self, owner: ObjId) -> bool {
         match self.o(owner) {
             ObjData::Usage(_) => true,
+            ObjData::Inst { .. } => self.inst_of(owner).case_sensitive,
+            ObjData::Bundle { members, .. } => members.first().is_some_and(|m| self.host_case(*m)),
+            ObjData::LevelObj { scene } => self.doc.levels[self.scenes[*scene].level].case_sensitive,
             _ => self.doc.dialect.case_sensitive,
         }
     }
@@ -497,11 +500,18 @@ impl Interp<'_> {
             ObjData::Bundle { members, .. } => {
                 let mut nets = Vec::new();
                 for m in members {
-                    let node = self.inst_of(m).nodes[index as usize - 1].clone();
-                    nets.push(self.net_obj(s, &node));
+                    // A heterogeneous bundle is still valid (11.8). A shorter member has no
+                    // corresponding terminal, so it contributes no net to this bundle pin.
+                    if let Some(node) = self.inst_of(m).nodes.get(index as usize - 1).cloned() {
+                        nets.push(self.net_obj(s, &node));
+                    }
                 }
-                if nets.iter().all(|n| *n == nets[0]) {
-                    return Ok(nets[0]);
+                let Some(&first) = nets.first() else {
+                    let l = self.label(t);
+                    return self.fail(ctx, format!("{l} is on no net (6.5)"), off);
+                };
+                if nets.iter().all(|n| *n == first) {
+                    return Ok(first);
                 }
                 return Ok(self.new_obj(ObjData::Set(Box::new(SetData::plain(
                     nets.into_iter().map(|n| (n, true)).collect(),
@@ -529,9 +539,9 @@ impl Interp<'_> {
         match self.o(owner).clone() {
             ObjData::Bundle { members, .. } => members
                 .iter()
-                .map(|m| {
-                    let node = self.inst_of(*m).nodes[index as usize - 1].clone();
-                    self.net_obj(s, &node)
+                .filter_map(|m| {
+                    let node = self.inst_of(*m).nodes.get(index as usize - 1).cloned()?;
+                    Some(self.net_obj(s, &node))
                 })
                 .collect(),
             ObjData::Inst { .. } => {
@@ -1278,7 +1288,13 @@ impl Interp<'_> {
                     if let Some(pv) = params.get("terminal") {
                         let ok = match pv {
                             Lit::Num(n) => index == *n as u32,
-                            Lit::Str(w) => name.as_ref().is_some_and(|n| n.eq_ignore_ascii_case(w.as_str())),
+                            Lit::Str(w) => name.as_ref().is_some_and(|n| {
+                                if self.host_case(owner) {
+                                    n == w.as_str()
+                                } else {
+                                    n.eq_ignore_ascii_case(w.as_str())
+                                }
+                            }),
                             _ => false,
                         };
                         if !ok {

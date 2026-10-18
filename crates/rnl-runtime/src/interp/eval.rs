@@ -1790,7 +1790,17 @@ impl<'p> Interp<'p> {
             }
             ParamType::Bool => matches!(val, Lit::Bool(_)),
             ParamType::Array => matches!(val, Lit::Arr(_)),
-            ParamType::Term => matches!(val, Lit::Str(_) | Lit::Num(_) | Lit::Arr(_)),
+            ParamType::Term => {
+                let terminal = |v: &Lit| match v {
+                    Lit::Str(_) => true,
+                    Lit::Num(n) => *n >= 1.0 && *n <= u32::MAX as f64 && n.fract() == 0.0,
+                    _ => false,
+                };
+                match &val {
+                    Lit::Arr(items) if kw == "PIN" => items.iter().all(terminal),
+                    other => terminal(other),
+                }
+            }
             _ => true,
         };
         if !ok {
