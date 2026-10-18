@@ -84,7 +84,9 @@ jobs:
       # to zh/; the page of the tools has the files of the newest tag viewer-vX.Y.Z. site/README.md,
       # site/build.py and site/src/ stay out of the published site.
       - name: Build the site
-        run: python3 site/build.py
+        run: |
+          python3 -m unittest discover -s site -p 'test_*.py'
+          python3 site/build.py
 
       - uses: ./.github/actions/install-spec-tools
 
