@@ -218,12 +218,12 @@ jobs:
           package=$(dpkg-deb --field "$deb" Package)
           trap 'sudo apt-get remove -y "$package"' EXIT
           sudo apt-get install -y "$deb"
-          test -f /usr/share/applications/rnl-viewer.desktop
+          test -f "/usr/share/applications/RNL Viewer.desktop"
           dbus-run-session -- xvfb-run -a node apps/desktop/tests/linux-smoke.mjs --exe /usr/bin/rnl-viewer
           sudo apt-get remove -y "$package"
           trap - EXIT
           test ! -e /usr/bin/rnl-viewer
-          test ! -e /usr/share/applications/rnl-viewer.desktop
+          test ! -e "/usr/share/applications/RNL Viewer.desktop"
       - name: Keep the Linux smoke-test screenshots
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
