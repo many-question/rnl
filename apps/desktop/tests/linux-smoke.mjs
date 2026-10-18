@@ -102,7 +102,8 @@ try {
   assert.ok(last.levels.includes("amp"), "The sample's subcircuit was not loaded.");
   assert.deepEqual(last.errors, [], "The sample opened with errors.");
   // An actual visible X11 window, in addition to the WebView's rendered DOM.
-  const windows = execFileSync("xdotool", ["search", "--onlyvisible", "--name", `^${sample} - RNL Viewer$`], { encoding: "utf8" });
+  const windows = await until("the visible window's title", () =>
+    execFileSync("xdotool", ["search", "--onlyvisible", "--name", `^${sample} - RNL Viewer$`], { encoding: "utf8" }));
   assert.ok(windows.trim(), "There is no visible viewer window.");
   assert.deepEqual(fs.readFileSync(path.join(temp, sample)), original, "Opening the sample wrote to it.");
   console.log(`${path.basename(exe)}: visible window, sample and include loaded, SVG drawn, no errors.`);
