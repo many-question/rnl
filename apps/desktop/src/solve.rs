@@ -108,6 +108,8 @@ pub fn check_solver_options(options: String) -> Result<(), String> {
 /// `name`, and give it drawn as solved, nothing written. The page is told of each level as it is
 /// solved (`solve-progress`); a solve started while another runs stops that one first.
 #[tauri::command]
+// Tauri injects the window and managed state alongside the separate IPC arguments.
+#[allow(clippy::too_many_arguments)]
 pub async fn solve_preview(
     window: WebviewWindow,
     solves: State<'_, Solves>,

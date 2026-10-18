@@ -119,6 +119,8 @@ async fn open_document(
 /// Draw a netlist held in memory, such as one from the clipboard, as the file `name`, whose
 /// extension says how it is read. Bare includes can use the file pool and PATH.
 #[tauri::command]
+// Tauri injects the window and managed state alongside the separate IPC arguments.
+#[allow(clippy::too_many_arguments)]
 async fn open_text(
     window: WebviewWindow,
     unsaved: State<'_, Unsaved>,
