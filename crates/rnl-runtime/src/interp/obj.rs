@@ -215,9 +215,15 @@ pub enum TermKey {
 }
 
 impl TermKey {
-    pub fn same(&self, o: &TermKey) -> bool {
+    pub fn same(&self, o: &TermKey, case_sensitive: bool) -> bool {
         match (self, o) {
-            (TermKey::Name(a), TermKey::Name(b)) => a.eq_ignore_ascii_case(b),
+            (TermKey::Name(a), TermKey::Name(b)) => {
+                if case_sensitive {
+                    a == b
+                } else {
+                    a.eq_ignore_ascii_case(b)
+                }
+            }
             (TermKey::Num(a), TermKey::Num(b)) => a == b,
             _ => false,
         }
@@ -299,6 +305,8 @@ pub struct SymLabel {
 
 #[derive(Clone, Debug, Default)]
 pub struct SymbolDef {
+    /// Original definition of a host-specific pin view; absent on reusable definitions.
+    pub original: Option<ObjId>,
     pub pins: Vec<Pin>,
     pub prims: Vec<SymPrim>,
     /// Declaration positions shared by primitives and nested usages.
