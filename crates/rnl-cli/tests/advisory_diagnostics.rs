@@ -67,7 +67,7 @@ fn each_included_file_gets_its_own_comment_compatibility_hint() {
 
 #[test]
 fn spectre_spice_mode_warns_about_ignored_rnl_after_the_main_end() {
-    let text = "// title\nsimulator lang=spice\nR1 a b 1k\n* @RNL { #R1 @PLACE(2,3) }\n.end\n* @RNL { (0,0) @TEXT(\"ignored\") }\nsimulator lang=spectre\n// @RNL { (0,0) @TEXT(\"also ignored\") }\n";
+    let text = "// title\nsimulator lang=spice\nR1 a b 1k\n* @RNL { #R1 @PLACE(2,3); (0,0) @TEXT(\"kept\") }\n.end\n* @RNL { (0,0) @TEXT(\"ignored\") }\nsimulator lang=spectre\n// @RNL { (0,0) @TEXT(\"also ignored\") }\n";
     let r = read("t.scs", text, &[]);
     let lines: Vec<_> = r
         .diagnostics()
@@ -80,13 +80,18 @@ fn spectre_spice_mode_warns_about_ignored_rnl_after_the_main_end() {
         .collect();
     assert_eq!(lines, [6, 8]);
     assert_eq!(r.doc.levels[0].end_line, 5);
-    assert!(r.model.levels[0].texts.is_empty());
+    // Check the authored markers independently of the resistor symbol's own labels.
+    let texts: Vec<_> = r.model.levels.iter().flat_map(|l| l.texts.iter().map(|t| t.markup.as_str())).collect();
+    assert!(texts.contains(&"kept"), "pre-.end text missing: {texts:?}");
+    for ignored in ["ignored", "also ignored"] {
+        assert!(!texts.contains(&ignored), "post-.end text was drawn: {ignored}: {texts:?}");
+    }
     assert_eq!(r.model.levels[0].items.iter().find(|i| i.id == "#R1").unwrap().at, (2.0, 3.0));
     // .end in an included file does not terminate the main file or suppress its remaining records.
     let r = read(
         "t.scs",
-        "// title\nsimulator lang=spice\n.include child.inc\nR1 a b 1k\n.end\n",
-        &[("child.inc", "* child\n.end\n* @RNL { (0,0) @TEXT(\"included\") }\n")],
+        "// title\nsimulator lang=spice\n.include child.inc\nR1 a b 1k\nX1 a b child\n.end\n",
+        &[("child.inc", "* child\n.subckt child a b\n.end\n* @RNL { (0,0) @TEXT(\"included\") }\n.ends child\n")],
     );
     assert!(r.model.levels.iter().any(|l| l.texts.iter().any(|t| t.markup == "included")));
     assert!(!r.diagnostics().iter().any(|d| d.message.contains("RNL after `.end`")));
@@ -106,7 +111,7 @@ fn free_words_see_forward_declarations_across_records_and_definition_bodies() {
 
 #[test]
 fn free_words_use_inherited_and_scope_published_names_without_leaking_private_names() {
-    let text = "* title\n.subckt cell a b\nR1 a b 1k\n* @RNL { Future Scoped Private (0,0) @TEXT(\"child\") }\n.ends cell\n* @RNL { $Future=@DEFINE-STYLE {}; %Private=(1,1) }\n* @RNL(scope=\"cell\") { %Scoped=(2,2) }\nX1 a b cell\n.end\n";
+    let text = "* title\n.subckt cell a b\nR1 a b 1k\n* @RNL { Future Scoped Private (0,0) @TEXT(\"child\") }\n.ends cell\n* @RNL { $Future = @DEFINE-STYLE {}; %Private=(1,1) }\n* @RNL(scope=\"cell\") { %Scoped=(2,2) }\nX1 a b cell\n.end\n";
     let r = read("t.sp", text, &[]);
     let mut words = typo_words(&r);
     words.sort();
@@ -116,7 +121,7 @@ fn free_words_use_inherited_and_scope_published_names_without_leaking_private_na
 
 #[test]
 fn package_names_are_visible_but_package_advice_and_private_names_stay_local() {
-    let package = "@RNL(type=\"header\") { @VERSION(\"0.3\"); @PACKAGE(name=\"p\",version=\"1.0\") }\n@RNL { Forward (0,0) @TEXT(\"inside\"); $Forward=@DEFINE-STYLE {}; $Visible=@DEFINE-STYLE {}; %Hidden=(0,0) }\n";
+    let package = "@RNL(type=\"header\") { @VERSION(\"0.3\"); @PACKAGE(name=\"p\",version=\"1.0\") }\n@RNL { $Drawing = @DEFINE-SYMBOL { Forward (0,0) @TEXT(\"inside\") }; $Forward = @DEFINE-STYLE {}; $Visible = @DEFINE-STYLE {}; %Hidden=(0,0) }\n";
     let text = "* title\n* @RNL(type=\"header\") { @VERSION(\"0.3\"); @USE-PACKAGE(name=\"p\",path=\"p.rnl\") }\n* @RNL { Visible Hidden (0,0) @TEXT(\"outside\") }\n.end\n";
     let r = read("t.sp", text, &[("p.rnl", package)]);
     assert_eq!(typo_words(&r), ["Visible"]);
