@@ -127,7 +127,7 @@ for (const [platform, query] of Object.entries(modes)) {
       await page.locator("#tab-unplaced").click();
       await expect(page.locator(".thumb svg").first()).toBeVisible();
       await expect(page.locator(".thumb").first()).toHaveCSS("background-color", "rgb(24, 24, 28)");
-      await expect(page.locator('.thumb [stroke="#ffffff"]').first()).toBeAttached();
+      await expect(page.locator('.thumb [stroke="#e0e0e2"]').first()).toBeAttached();
     });
 
     test("right drag fits the rectangle in either direction; short click, Escape and capture loss leave it alone", async ({ page, viewer }) => {

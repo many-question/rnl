@@ -659,13 +659,14 @@ mod tests {
     }
 
     /// Corpus case 17 draws every line style on every shape kind. A "double" line is two strokes
-    /// on each, in scene units with butt caps and miter joins: the colour three times as wide as
-    /// the colour between the lines.
+    /// on each, with butt caps and miter joins: the colour three times as wide as the colour
+    /// between the lines. Zero widths keep pixel units, and nonzero widths keep scene units.
     #[test]
     fn a_double_line_is_two_strokes_on_every_shape() {
         let options = BuildOptions { primitives: true, ..BuildOptions::default() };
         let d = crate::build(&crate::tests::corpus("cases/17-line-styles.sp"), &Disk, &options).unwrap();
         let mut doubles = Vec::new();
+        let mut units = [false; 2];
         for p in d.levels[0].primitives.as_ref().unwrap() {
             let (kind, strokes) = match &p.shape {
                 Shape::Path { strokes, .. } => ("path", strokes),
@@ -676,13 +677,21 @@ mod tests {
             };
             if let [outer, inner] = &strokes[..] {
                 assert_eq!(outer.width, 3.0 * inner.width, "{p:?}");
+                assert_eq!(outer.unit, inner.unit, "{p:?}");
+                if inner.unit == Unit::Pixel {
+                    assert_eq!(inner.width, 1.2, "{p:?}");
+                    units[0] = true;
+                } else {
+                    units[1] = true;
+                }
                 for s in [outer, inner] {
-                    let plain = s.unit == Unit::Scene && s.dashes.is_empty() && s.dash_offset == 0.0;
+                    let plain = s.dashes.is_empty() && s.dash_offset == 0.0;
                     assert!(plain && s.cap == Cap::Butt && s.join == Join::Miter, "{p:?}");
                 }
                 doubles.push((kind, p.owner.as_str()));
             }
         }
+        assert_eq!(units, [true, true]);
         for kind in ["path", "rect", "circle", "ellipse"] {
             assert!(doubles.contains(&(kind, "")), "{kind}: {doubles:?}");
         }
