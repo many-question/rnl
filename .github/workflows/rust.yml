@@ -7,6 +7,8 @@ on:
   push:
     branches: [main]
     paths:
+      - "spec/rnl-words-0.3.json"
+      - "spec/rnl-words.schema.json"
       - "crates/**"
       - "bindings/**"
       - "libraries/**"
@@ -19,6 +21,8 @@ on:
       - ".github/workflows/rust.yml"
   pull_request:
     paths:
+      - "spec/rnl-words-0.3.json"
+      - "spec/rnl-words.schema.json"
       - "crates/**"
       - "bindings/**"
       - "libraries/**"
