@@ -596,6 +596,7 @@ impl Interp<'_> {
         }
         ItemView {
             id: self.label(o),
+            object_id: String::new(),
             kind,
             symbol: si,
             at,
@@ -671,10 +672,18 @@ impl Interp<'_> {
         let mut unplaced_table: HashMap<ObjId, usize> = HashMap::new();
         let mut unplaced_symbols: Vec<SymbolView> = Vec::new();
         let mut unplaced_items = Vec::new();
+        // where each object that is drawn is: for the texts attached to it
+        let mut item_of: HashMap<ObjId, usize> = HashMap::new();
+        let mut wire_of: HashMap<ObjId, usize> = HashMap::new();
         for o in drawn {
             let Some(&sym) = self.scenes[s].symbol.get(&o) else { continue };
             match self.xy(s, o) {
-                Some(at) => items.push(self.item_view(s, o, sym, at, &mut table, &mut symbols, &last_symbol)),
+                Some(at) => {
+                    item_of.insert(o, items.len());
+                    let mut item = self.item_view(s, o, sym, at, &mut table, &mut symbols, &last_symbol);
+                    item.object_id = ids.get(&o).cloned().unwrap_or_default();
+                    items.push(item);
+                }
                 None => unplaced_items.push(self.item_view(
                     s,
                     o,
@@ -709,6 +718,7 @@ impl Interp<'_> {
             let (runs, gaps) = self.wire_drawing(s, w);
             flylines.extend(gaps);
             for points in runs {
+                wire_of.entry(w).or_insert(wires.len());
                 wires.push(WireView {
                     id: self.label(w),
                     object_id: self.ref_id(s, w, &ids),
@@ -781,6 +791,13 @@ impl Interp<'_> {
             if drawable_att && layer == Layer::Middle {
                 layer = self.layer_of(s, att);
             }
+            let target = match self.o(att) {
+                ObjData::Net { .. } => Some(TextTarget::Net(self.net_display(att))),
+                _ => item_of
+                    .get(&att)
+                    .map(|&i| TextTarget::Item(i))
+                    .or_else(|| wire_of.get(&att).map(|&i| TextTarget::Wire(i))),
+            };
             let (key, attach) = match self.o(t) {
                 ObjData::KeyText { key, .. } => (Some(key.clone()), Some(self.ref_id(s, att, &ids))),
                 _ if matches!(self.o(att), ObjData::Point { .. } | ObjData::LevelObj { .. }) => (None, None),
@@ -799,6 +816,7 @@ impl Interp<'_> {
                 id: self.label(t),
                 object_id: self.ref_id(s, t, &ids),
                 attach,
+                target,
                 key,
                 markup: text.as_str().to_string(),
                 written,
