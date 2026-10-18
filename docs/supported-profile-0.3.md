@@ -137,6 +137,9 @@ support.
 CLI solve, strip-generated and desktop save/copy paths now share the same codec and
 refusal/conversion policy. Default output preserves UTF-8 BOM state or Latin-1;
 `--encoding utf8` and the desktop commands explicitly named UTF-8 opt into conversion.
+UTF-8 output adds an encoding BOM when necessary to protect leading text U+FEFF on
+reopening, including conversion and edits to unmarked sources; otherwise conversion
+uses no BOM.
 Save As uses the source encoding, and an encoding error is checked before any file in
 a batch is written. Strip-generated snapshots the actual source, with disk taking
 precedence over exact bundled-package lookup. Missing named disk sources fail preserve

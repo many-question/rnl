@@ -64,7 +64,7 @@ solve options (the levels are read without their type=\"generated\" records; -o 
   solver reads it, whose number it gives on the standard error as rnl check --no-generated counts
   them, or one of the solver
 saving options (solve and strip-generated only):
-  --encoding MODE     preserve (default) or utf8; UTF-8 conversion is explicit and uses no BOM
+  --encoding MODE     preserve (default) or utf8; UTF-8 adds a BOM only to protect leading U+FEFF
                       copied includes that are not rewritten retain their original bytes
 snapshot options:
   --parts LIST        the parts to give, of drawing, host and model; host,model by default

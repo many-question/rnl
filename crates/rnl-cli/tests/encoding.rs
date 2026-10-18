@@ -84,7 +84,12 @@ fn strip_generated_preserves_source_encoding_bom_and_line_endings() {
     let dir = scratch("strip");
     let input = dir.join("top.sp");
     let output = dir.join("stripped.sp");
-    for original in [b"* caf\xe9\n".as_slice(), "* café\n".as_bytes(), b"\xef\xbb\xbf* caf\xc3\xa9\n"] {
+    for original in [
+        b"* caf\xe9\n".as_slice(),
+        "* café\n".as_bytes(),
+        b"\xef\xbb\xbf* caf\xc3\xa9\n",
+        b"\xef\xbb\xbf\xef\xbb\xbf* caf\xc3\xa9\n",
+    ] {
         for ending in ["\n", "\r\n"] {
             for final_newline in [true, false] {
                 let title = decode(original).trim_end().to_owned();
@@ -98,10 +103,9 @@ fn strip_generated_preserves_source_encoding_bom_and_line_endings() {
                     .output()
                     .unwrap();
                 assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
-                assert_eq!(
-                    std::fs::read(&output).unwrap(),
-                    encode(Some(original), &expected, OutputEncoding::Preserve).unwrap()
-                );
+                let preserved = std::fs::read(&output).unwrap();
+                assert_eq!(preserved, encode(Some(original), &expected, OutputEncoding::Preserve).unwrap());
+                assert_eq!(decode(&preserved), expected);
                 let result = Command::new(env!("CARGO_BIN_EXE_rnl"))
                     .args([
                         "strip-generated",
@@ -114,7 +118,14 @@ fn strip_generated_preserves_source_encoding_bom_and_line_endings() {
                     .output()
                     .unwrap();
                 assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
-                assert_eq!(std::fs::read(&output).unwrap(), expected.as_bytes());
+                let converted = std::fs::read(&output).unwrap();
+                assert_eq!(decode(&converted), expected);
+                let expected_bytes = if expected.starts_with('\u{feff}') {
+                    [b"\xef\xbb\xbf".as_slice(), expected.as_bytes()].concat()
+                } else {
+                    expected.as_bytes().to_vec()
+                };
+                assert_eq!(converted, expected_bytes);
             }
         }
     }

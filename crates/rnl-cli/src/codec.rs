@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 const BOM: &[u8] = &[0xef, 0xbb, 0xbf];
 
-/// A user's output choice. Explicit UTF-8 uses no encoding BOM; text is otherwise unchanged.
+/// A user's output choice. Explicit UTF-8 adds a BOM only to protect leading text U+FEFF.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputEncoding {
@@ -35,11 +35,21 @@ pub fn decode(bytes: &[u8]) -> String {
     }
 }
 
+// The reader removes one initial U+FEFF as an encoding BOM. Keep a leading text U+FEFF
+// behind a separate BOM so saving and reopening cannot consume it.
+fn utf8(text: &str) -> Vec<u8> {
+    if text.starts_with('\u{feff}') {
+        [BOM, text.as_bytes()].concat()
+    } else {
+        text.as_bytes().to_vec()
+    }
+}
+
 /// Encode decoded text using the source bytes, never the destination file's encoding.
 /// A new source has UTF-8 encoding. An encoding BOM is separate from any leading U+FEFF in text.
 pub fn encode(original: Option<&[u8]>, text: &str, encoding: OutputEncoding) -> Result<Vec<u8>, String> {
     if encoding == OutputEncoding::Utf8 {
-        return Ok(text.as_bytes().to_vec());
+        return Ok(utf8(text));
     }
     match original {
         Some(bytes) if std::str::from_utf8(bytes).is_err() => text
@@ -54,7 +64,7 @@ pub fn encode(original: Option<&[u8]>, text: &str, encoding: OutputEncoding) -> 
             })
             .collect(),
         Some(bytes) if bytes.starts_with(BOM) => Ok([BOM, text.as_bytes()].concat()),
-        _ => Ok(text.as_bytes().to_vec()),
+        _ => Ok(utf8(text)),
     }
 }
 
@@ -92,6 +102,30 @@ mod tests {
             assert_eq!(encode(Some(bytes), &decode(bytes), OutputEncoding::Preserve).unwrap(), bytes);
         }
         assert_eq!(encode(None, "Ω", OutputEncoding::Preserve).unwrap(), "Ω".as_bytes());
+    }
+
+    #[test]
+    fn utf8_conversion_preserves_leading_text_feff_when_reopened() {
+        for (original, expected) in [
+            (b"* caf\xe9\n".as_slice(), "* café\n".as_bytes()),
+            (b"\xef\xbb\xbftext", b"text".as_slice()),
+            (b"\xef\xbb\xbf\xef\xbb\xbftext", b"\xef\xbb\xbf\xef\xbb\xbftext".as_slice()),
+        ] {
+            let text = decode(original);
+            let converted = encode(Some(original), &text, OutputEncoding::Utf8).unwrap();
+            assert_eq!(converted, expected);
+            assert_eq!(decode(&converted), text);
+        }
+        // A new memory source or an edit adding U+FEFF to an unmarked UTF-8 source
+        // needs the same distinction, including with the default output choice.
+        for original in [None, Some(b"text".as_slice())] {
+            for encoding in [OutputEncoding::Preserve, OutputEncoding::Utf8] {
+                let text = "\u{feff}text";
+                let encoded = encode(original, text, encoding).unwrap();
+                assert_eq!(encoded, b"\xef\xbb\xbf\xef\xbb\xbftext");
+                assert_eq!(decode(&encoded), text);
+            }
+        }
     }
 
     #[test]

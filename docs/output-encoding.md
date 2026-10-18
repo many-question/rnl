@@ -3,7 +3,11 @@
 The CLI and desktop share [`rnl-cli::codec`](../crates/rnl-cli/src/codec.rs).
 They read valid UTF-8 (removing one encoding BOM from the in-memory text), otherwise
 Latin-1. The default output choice, `preserve`, writes UTF-8 with its original BOM
-state or Latin-1 as appropriate. A source created in memory uses UTF-8 without a BOM.
+state or Latin-1 as appropriate. A source created in memory uses UTF-8. If unmarked
+UTF-8 output would begin with a text U+FEFF, the codec adds a separate encoding BOM
+so reopening cannot mistake that character for the BOM and remove it. This necessary
+exception also applies when an edit introduces leading U+FEFF; other new UTF-8 sources
+have no BOM.
 Other legacy encodings are not detected or claimed as supported; an ASCII-only
 source is indistinguishable from UTF-8 and is treated as UTF-8.
 
@@ -29,7 +33,10 @@ rnl strip-generated top.sp -o authored.sp --encoding utf8
 
 `--encoding preserve` is the default; `utf-8` is also accepted as a spelling of
 `utf8`. The option is accepted only by `solve` and `strip-generated`. UTF-8 conversion
-adds no encoding BOM and otherwise preserves the decoded text and its line endings.
+normally adds no encoding BOM and preserves the decoded text and its line endings.
+When the text begins with U+FEFF, it adds a separate encoding BOM to protect that
+character on reopening. An original single encoding BOM is therefore removed; an
+encoding BOM followed by a text U+FEFF remains two encoded U+FEFF values.
 `strip-generated` snapshots the actual entry bytes before parsing. A readable disk
 file takes precedence over an exact bundled-package lookup; virtual packages use
 their UTF-8 text, independent of the adapter's relative display names.
@@ -58,10 +65,11 @@ caller must handle an unrepresentable character. Desktop IPC accepts the optiona
 
 - [`codec.rs`](../crates/rnl-cli/src/codec.rs): byte roundtrips for Latin-1, UTF-8,
   BOM, a leading text U+FEFF distinct from the encoding BOM, CRLF and missing final
-  newline; Latin-1 rejection and explicit conversion.
+  newline; Latin-1 rejection and explicit conversion. Explicit conversion and new or
+  edited unmarked UTF-8 sources preserve leading text U+FEFF when reopened.
 - [`tests/encoding.rs`](../crates/rnl-cli/tests/encoding.rs): multi-file refusal
   before any write; single-file and folder solved-copy refusal and conversion;
-  untouched include bytes; real `strip-generated` CLI runs across three encodings,
+  untouched include bytes; real `strip-generated` CLI runs across UTF-8/Latin-1 and single/double-BOM inputs,
   LF/CRLF and final-newline variants; bundled-package lookup and physical-file
   precedence (exact virtual-path shadowing where the filesystem allows it); real
   `solve` CLI with both option spellings.
