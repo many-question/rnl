@@ -359,12 +359,20 @@ fn run(args: &Args) -> Result<ExitCode, String> {
                     (None, text)
                 }
             };
+            // A real file can have the virtual package's relative name on Unix. The shared
+            // reader reserves the <bundled> prefix, so use a physical absolute path for disk
+            // sources. Do not canonicalize: relative includes retain the entered directory.
+            let read_path = if original.is_some() {
+                std::path::absolute(&args.file).map_err(|e| format!("cannot resolve {}: {e}", args.file.display()))?
+            } else {
+                args.file.clone()
+            };
             // Read the captured entry, so a file changed or removed during parsing cannot change
             // which encoding belongs to its text. Includes still use the normal disk provider.
-            let held = MemoryProvider::new().with(&entry, &input);
+            let held = MemoryProvider::new().with(&rnl_cli::path_str(&read_path), &input);
             let files = Layered { layers: vec![&held, &provider] };
             let mut sink = Sink::new();
-            let doc = rnl_cli::read_host(&args.file, args.dialect.as_deref(), &files, &mut sink)?;
+            let doc = rnl_cli::read_host(&read_path, args.dialect.as_deref(), &files, &mut sink)?;
             let main = doc.main().file.clone();
             let text = doc.source(&main).ok_or_else(|| format!("cannot read {}", args.file.display()))?;
             let stripped = rnl_runtime::writeback::strip_generated(&doc, &main, text);

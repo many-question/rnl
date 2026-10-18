@@ -214,7 +214,8 @@ fn strip_generated_uses_actual_disk_or_bundled_origin_not_the_display_name() {
     {
         let shadow = dir.join(entry);
         std::fs::create_dir_all(shadow.parent().unwrap()).unwrap();
-        std::fs::write(&shadow, disk).unwrap();
+        let with_generated = [disk.as_slice(), b"@RNL(type=\"generated\") { }\r\n"].concat();
+        std::fs::write(&shadow, &with_generated).unwrap();
         let result = Command::new(env!("CARGO_BIN_EXE_rnl"))
             .current_dir(&dir)
             .args(["strip-generated", entry, "-o", output.to_str().unwrap()])
@@ -222,5 +223,13 @@ fn strip_generated_uses_actual_disk_or_bundled_origin_not_the_display_name() {
             .unwrap();
         assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
         assert_eq!(std::fs::read(&output).unwrap(), disk);
+        let result = Command::new(env!("CARGO_BIN_EXE_rnl"))
+            .current_dir(&dir)
+            .args(["strip-generated", entry, "-o", output.to_str().unwrap(), "--encoding", "utf8"])
+            .output()
+            .unwrap();
+        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+        assert_eq!(std::fs::read(&output).unwrap(), decode(disk).as_bytes());
+        assert_eq!(std::fs::read(&shadow).unwrap(), with_generated);
     }
 }

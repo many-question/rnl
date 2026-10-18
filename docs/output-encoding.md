@@ -38,8 +38,11 @@ When the text begins with U+FEFF, it adds a separate encoding BOM to protect tha
 character on reopening. An original single encoding BOM is therefore removed; an
 encoding BOM followed by a text U+FEFF remains two encoded U+FEFF values.
 `strip-generated` snapshots the actual entry bytes before parsing. A readable disk
-file takes precedence over an exact bundled-package lookup; virtual packages use
-their UTF-8 text, independent of the adapter's relative display names.
+file takes precedence over an exact bundled-package lookup; the captured disk text
+is parsed through its absolute physical path so a relative `<bundled>/...` filename
+cannot be redirected into the shared reader's virtual package namespace. Relative
+includes still resolve from the entered directory. Virtual packages use their UTF-8
+text, independent of the adapter's relative display names.
 Includes copied unchanged to a solved folder retain their original bytes: conversion
 applies to the files actually rewritten, not to every dependency.
 
