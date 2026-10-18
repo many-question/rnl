@@ -464,12 +464,13 @@ fn reliability_as_an_instance_name_does_not_open_a_foreign_block() {
 
 #[test]
 fn selected_library_headers_move_before_subcircuits_with_real_reader_boundaries() {
-    for (main, prefix, lib, marker, include, open, close, subckt, ends, protect, unprotect, instance) in [
+    for (main, prefix, lib, marker, whole, include, open, close, subckt, ends, protect, unprotect, instance) in [
         (
             "t.sp",
             "* title\n",
             "lib.sp",
             "*",
+            ".include lib.sp",
             ".lib lib.sp tt",
             ".lib",
             ".endl",
@@ -484,6 +485,7 @@ fn selected_library_headers_move_before_subcircuits_with_real_reader_boundaries(
             "// title\nsimulator lang=spice\n",
             "lib.sp",
             "*",
+            ".include lib.sp",
             ".lib lib.sp tt",
             ".lib",
             ".endl",
@@ -498,6 +500,7 @@ fn selected_library_headers_move_before_subcircuits_with_real_reader_boundaries(
             "// title\n",
             "lib.scs",
             "//",
+            "include \"lib.scs\"",
             "include \"lib.scs\" section=tt",
             "section",
             "endsection",
@@ -508,35 +511,51 @@ fn selected_library_headers_move_before_subcircuits_with_real_reader_boundaries(
             "(a b) resistor r=1k",
         ),
     ] {
-        for protected in [false, true] {
-            let text = format!("{prefix}{include}\n");
-            let protect = if protected { format!("{protect}\n") } else { String::new() };
-            let unprotect = if protected { format!("{unprotect}\n") } else { String::new() };
-            let source = format!(
-                "{marker} models\n{open} tt\nR0 {instance}\n{protect}{subckt} cell a b\n\
+        for includes in [include.to_string(), format!("{whole}\n{include}"), format!("{include}\n{whole}")] {
+            for protected in [false, true] {
+                let text = format!("{prefix}{includes}\n");
+                let protect = if protected { format!("{protect}\n") } else { String::new() };
+                let unprotect = if protected { format!("{unprotect}\n") } else { String::new() };
+                let source = format!(
+                    "{marker} models\n{open} tt\nR0 {instance}\n{protect}{subckt} cell a b\n\
                  {unprotect}R1 {instance}\n{ends} cell\n{marker} @RNL(type=\"header\") {{ }}\n{close} tt\n"
-            );
-            let options = Options { std: false, ..Options::default() };
-            let files = MemoryProvider::new().with(main, &text).with(lib, &source);
-            let r = interpret_file(Path::new(main), None, &files, &options).unwrap();
-            let selected = r.doc.levels.iter().position(|l| l.section.as_deref() == Some("tt")).unwrap();
-            let cell = r.doc.levels.iter().position(|l| l.name == "cell").unwrap();
-            assert_eq!(r.doc.levels[selected].section_lines, Some((2, if protected { 10 } else { 8 })));
-            let record = "@RNL(type=\"generated\") {}";
-            let out = replace_generated_with_header(&r.doc, cell, &source, record, "0.3");
-            let expected = format!(
-                "{marker} models\n{open} tt\nR0 {instance}\n\
+                );
+                let options = Options { std: false, ..Options::default() };
+                let files = MemoryProvider::new().with(main, &text).with(lib, &source);
+                let r = interpret_file(Path::new(main), None, &files, &options).unwrap();
+                let selected = r.doc.levels.iter().position(|l| l.section.as_deref() == Some("tt")).unwrap();
+                let cell = r.doc.levels.iter().position(|l| l.name == "cell").unwrap();
+                assert_eq!(r.doc.levels[selected].section_lines, Some((2, if protected { 10 } else { 8 })));
+                let record = "@RNL(type=\"generated\") {}";
+                let out = replace_generated_with_header(&r.doc, cell, &source, record, "0.3");
+                let expected = format!(
+                    "{marker} models\n{open} tt\nR0 {instance}\n\
                  {marker} @RNL(type=\"header\") {{ @VERSION(\"0.3\") }}\n\
                  {protect}{subckt} cell a b\n{unprotect}R1 {instance}\n\
                  {marker} @RNL(type=\"generated\") {{}}\n{ends} cell\n{close} tt\n"
-            );
-            assert_eq!(out, expected, "{main}, protected={protected}");
-            let files = MemoryProvider::new().with(main, &text).with(lib, &out);
-            let reread = interpret_file(Path::new(main), None, &files, &options).unwrap();
-            assert_eq!(reread.doc.levels[selected].records.len(), 1);
-            assert!(reread.doc.levels[selected].records[0].text.contains("VERSION(\"0.3\")"));
-            assert_eq!(reread.doc.levels[cell].records.len(), 1);
-            assert_eq!(replace_generated_with_header(&reread.doc, cell, &out, record, "0.3"), out);
+                );
+                assert_eq!(out, expected, "{main}, {includes}, protected={protected}");
+                assert_eq!(
+                    rnl_runtime::writeback::move_header_for(&r.doc, cell, &source, "0.3"),
+                    expected.replace(&format!("{marker} {record}\n"), ""),
+                    "the solver's header prepass must stay in the same reading"
+                );
+                let files = MemoryProvider::new().with(main, &text).with(lib, &out);
+                let reread = interpret_file(Path::new(main), None, &files, &options).unwrap();
+                assert_eq!(reread.doc.levels[selected].records.len(), 1);
+                assert!(reread.doc.levels[selected].records[0].text.contains("VERSION(\"0.3\")"));
+                assert_eq!(reread.doc.levels[cell].records.len(), 1);
+                assert!(
+                    reread
+                        .doc
+                        .levels
+                        .iter()
+                        .filter(|l| l.file == lib && l.section.is_none() && l.name != "cell")
+                        .all(|l| l.records.is_empty()),
+                    "the whole-file reading must not acquire the section header"
+                );
+                assert_eq!(replace_generated_with_header(&reread.doc, cell, &out, record, "0.3"), out);
+            }
         }
     }
 }

@@ -513,15 +513,17 @@ pub fn move_header_for(doc: &HostDocument, level: LevelId, text: &str, version: 
 /// written at the end of `level` (17), or before a region written to be encrypted that the end
 /// lies in ([`record_line`]), would come before it, as [`replace_generated_with_header`] says, and
 /// the carrier it has where it goes, which records written with it follow (2.2); None when it
-/// stays where it is, or has no place to go out of such a region.
+/// stays where it is, or has no place to go out of such a region. The target reading controls
+/// both the header and its destination, even when another reading takes the physical file whole.
 fn header_move(doc: &HostDocument, level: LevelId, text: &str, version: &str) -> Option<(Vec<Edit>, &'static str)> {
     let file = &doc.levels[level].file;
     let at = record_line(doc, level, text).ok()?;
-    let header = first_header(doc, file, Some(doc.file_level(level))).filter(|h| span(h).0 .0 >= at)?;
+    let file_level = Some(doc.file_level(level));
+    let header = first_header(doc, file, file_level).filter(|h| span(h).0 .0 >= at)?;
     let marker = carrier(doc, file, text);
-    let to = top(doc, file, text, marker)
+    let to = top(doc, file, file_level, text, marker)
         .or_else(|| subckt_start(doc, level).map(|line| Top { line, marker, bare: false }))
-        .and_then(|to| to.kept(doc, file))?;
+        .and_then(|to| to.kept(doc, file, file_level))?;
     // the version it gets where it is goes with it
     Some((moved_header(header, version, to), to.marker))
 }
@@ -545,7 +547,8 @@ fn subckt_start(doc: &HostDocument, level: LevelId) -> Option<u32> {
         at = lv.parent;
     }
     let (start, outer) = (start.filter(|&line| line > 0)?, at?);
-    free_place(doc, outer, start, 2).ok()
+    let first = doc.levels[outer].section_lines.map_or(2, |(start, _)| start + 1);
+    free_place(doc, outer, start, first).ok()
 }
 
 /// The changes that move a header record to `to`, carried by its marker, with VERSION when it has
@@ -723,7 +726,7 @@ fn new_header(
     marker: &'static str,
     record: impl FnOnce(&'static str) -> String,
 ) -> Option<(Edit, &'static str)> {
-    let to = top(doc, file, text, marker).and_then(|to| to.kept(doc, file))?;
+    let to = top(doc, file, None, text, marker).and_then(|to| to.kept(doc, file, None))?;
     Some((to.edit(carried(&record(to.marker), to.marker)), to.marker))
 }
 
@@ -988,12 +991,13 @@ struct Top {
 
 impl Top {
     /// Where the reading keeps a header written there (2.2): None in a region written to be
-    /// encrypted, and carried by `*` in its stead where the reading is in SPICE mode.
-    fn kept(self, doc: &HostDocument, file: &str) -> Option<Top> {
+    /// encrypted, and carried by `*` in its stead where the reading is in SPICE mode. The
+    /// target file level `at` also bounds a library-section move; None selects the file-wide reading.
+    fn kept(self, doc: &HostDocument, file: &str, at: Option<LevelId>) -> Option<Top> {
         let marker = in_mode(doc, file, self.line, self.marker);
         let mut line = self.line;
         let mut below_first = false;
-        let top = file_records(doc, file, None).0;
+        let (top, records) = file_records(doc, file, at);
         while let Some((open, close)) = unwritable(doc, file, top, line) {
             if open < 2 || below_first {
                 below_first = true;
@@ -1001,13 +1005,19 @@ impl Top {
                 // header position is after the closing pragma, if it closes before EOF and
                 // no existing record would precede the new header there.
                 let past = doc.source(file)?.lines().count() as u32 + 1;
-                if close >= past || records_of(doc, file).iter().any(|(_, r)| r.lines.0 <= close) {
+                if close >= past || records.iter().any(|(_, r)| r.lines.0 <= close) {
                     return None;
                 }
                 line = close + 1;
             } else {
                 line = open;
             }
+        }
+        if top.is_some_and(|level| {
+            let lv = &doc.levels[level];
+            lv.section.is_some() && lv.section_lines.is_none_or(|(start, end)| line <= start || line > end)
+        }) {
+            return None;
         }
         let marker = in_mode(doc, file, line, marker);
         Some(Top { line, marker, ..self })
@@ -1029,10 +1039,11 @@ impl Top {
 /// bare marker first before a statement on the first line of an included file. In a file that is not a `.scs` file, carried by `//`, whose
 /// first statement is `simulator lang=spectre`, after that statement and the lines that continue
 /// it, when no record comes before it; otherwise above it, in SPICE mode, where only `*` is a
-/// comment (2.2), carried by `*`. None for a file read only through library sections: its line 2
-/// lies outside each of them, and is not read (2.2).
-fn top(doc: &HostDocument, file: &str, text: &str, marker: &'static str) -> Option<Top> {
-    if file_records(doc, file, None).0.is_some_and(|top| doc.levels[top].section.is_some()) {
+/// comment (2.2), carried by `*`. None for a selected library-section reading: a file-wide
+/// top position need not lie inside that section, even when another reading takes the file whole (2.2).
+/// `at` names the target file level, or None selects the file-wide reading.
+fn top(doc: &HostDocument, file: &str, at: Option<LevelId>, text: &str, marker: &'static str) -> Option<Top> {
+    if file_records(doc, file, at).0.is_some_and(|top| doc.levels[top].section.is_some()) {
         return None;
     }
     let lines = Lines::new(text);

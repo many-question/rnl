@@ -68,7 +68,9 @@ Unselected library spans are stored separately with the file level that skipped 
 a selected section therefore does not make the selected section unwritable. Actual
 script, conditional and protection ranges still apply in every reading. A requested
 section that does not exist is diagnosed and refuses record insertion rather than
-placing output outside the selected text.
+placing output outside the selected text. Header movement keeps the target reading
+through destination selection and exclusion checks, so a whole-file include cannot
+move a selected section's header before its opening delimiter.
 [`writeback::record_line` / `free_place`](../crates/rnl-runtime/src/writeback.rs)
 find a legal insertion place in the same level; append, generated replacement,
 header creation/movement, and version insertion consult the same exclusion data.
@@ -82,7 +84,10 @@ reliability comments/quotes/nesting/continuations, main versus included `.newjob
 selected/inactive/unknown conditional branches, CPP continuations, encrypted envelopes,
 selected library insertion and commented section boundaries in both readers, LF/CRLF
 preservation, missing final newline, and rereading
-appended/generated output. The editor's
+appended/generated output. `selected_library_headers_move_before_subcircuits_with_real_reader_boundaries`
+checks late headers in selected-only and whole-plus-selected readings, both include
+orders, all three host paths, and readable protection regions; it covers the solver
+header prepass and combined generated writeback, rereading and repeated writes. The editor's
 [`editor_records_and_headers_stay_outside_unterminated_host_regions`](../crates/rnl-edit/src/tests.rs)
 and `the_editor_explains_when_a_conditional_subcircuit_has_no_safe_write_place` exercise
 its public write path. Existing `protected_regions` tests retain the distinction
