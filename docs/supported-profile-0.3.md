@@ -1,0 +1,125 @@
+# Toolkit support for RNL 0.3, revision 2
+
+This profile audits the toolkit at base commit `20c93440c314a8838e17cd8ae76b78fb9ae06ef0`
+plus the small fixes in this change, against the published English standard tagged
+[`spec-0.3-r2`](https://github.com/rich-netlist/rnl/tree/spec-0.3-r2/spec/0.3/en)
+(`0a308e55b74a7994202ff8cb061800ea04dcd2e8`), dated 2026-10-18.
+The English chapter files and `spec/rnl-words-0.3.json` in the audited checkout are
+identical to that tag. No standard text is changed.
+
+The toolkit implements all **46 standard keywords and their 98 fixed parameters**,
+as well as the record fields, style properties and other standard words. This does
+**not** make it fully conformant: the host-region, error-recovery, version-isolation,
+encoding and drawing limitations below remain. Language 0.2 is also read for compatibility;
+new solver/editor output uses 0.3, with a standard-package pin when upgrading 0.2.
+
+## How to read the evidence
+
+| Audit | Coverage |
+| --- | --- |
+| [Foundations and file boundaries](profile-foundations-audit.md) | Every subsection of chapters 1–8 and 16–17, plus annexes: normative effect, implementation file/function, existing test or explicit coverage gap. |
+| [Definitions, drawing and constraints](profile-semantics-audit.md) | Every subsection of chapters 9–15, with implementation and test anchors, limitations and policy choices. |
+| [Complete vocabulary inventory](profile-vocabulary-audit.md) | Every keyword/parameter, record field, style property, kind, slot category, sub-object, attribute and truth value. |
+| [Dedicated roundtrip corpus](../tests/roundtrip/README.md) | Six fixture-backed cases, reviewed records and effective models; 18 runs across LF, CRLF and missing-final-newline inputs. |
+
+“Implemented” in the matrices means the rule has an inspected implementation and the
+listed evidence; it does not assert exhaustive testing of every combination. “Partial”
+identifies a known missing behavior or boundary. “Choice” is behavior the standard leaves
+to implementations. “Informative” is explanatory text, examples or future work rather
+than another feature obligation. A test for a whole keyword is not a test of every one
+of its optional values. The vocabulary table says where only source evidence was found.
+The old conformance corpus explicitly reads 0.2; it is useful shared-code evidence and
+is distinguished from the 24 cases of 0.3 and dedicated 0.3 regression tests.
+
+## Supported paths and boundaries
+
+- Parsing, names, sets/selections, definitions/packages/aliases, numbered references,
+  appearance and constraint evaluation have implemented paths, with the exceptions in
+  the matrices. SPICE and Spectre adapters are partial netlist readers; they are not
+  complete simulator parsers.
+- The renderer/view layer displays explicit positions, symbols, wires, text and diagnostics.
+  Rendering defaults, font metrics and placement of text left free are implementation
+  policy; a view is not a proof that a solver has satisfied all constraints.
+- The native solver resolves ranked facts, reports discarded/undecided ones, and writes
+  its decisions as generated records. The writeback interface can express numbered
+  placements, keyed text and wire rewrites even where the built-in solver does not choose
+  those decisions yet. Automatic rewriting of authored auto wires, free-label optimization
+  and warm-start consumption remain outside the current solver's implemented feature set.
+- `rnl-edit` writes new netlists without existing RNL records and explicitly refuses
+  merging edits into records already present. The solver's generated-record replacement
+  is a separate supported path. This audit does not claim a complete editor.
+- UTF-8 (including BOM) and Latin-1 input are supported by the CLI provider. Arbitrary host
+  encodings, arbitrary precision numbers and unbounded nested-symbol extents are not.
+  Numeric conversion uses binary64; overflow and underflow to zero now fail explicitly.
+
+## Small fixes made during the audit
+
+| Requirement | Correction | Regression evidence |
+| --- | --- | --- |
+| 2.4, 3.5 | A record head separated from `@RNL` by whitespace/comment fails the whole record. | `syntax.rs::tests::a_record_head_separated_from_the_entry_fails_the_whole_record` |
+| 3.7 | Out-of-range numeric conversion reports an implementation limit instead of infinity or silently becoming zero. | `syntax.rs::tests::out_of_range_numbers_fail_the_member_without_becoming_infinite_or_zero` |
+| 5.3, 6.4, 9.2.4 | PIN validates every bus member and integral positive terminal index; SELECT-TERMINAL rejects invalid terminal types. | [`profile_validation.rs`](../crates/rnl-cli/tests/profile_validation.rs) |
+| 5.3, 6.12 | Header/package parameter types are checked before defaults; DEVICE rejects invalid terminal-name array entries. | `profile_validation.rs::header_parameters_reject_wrong_types_before_using_their_defaults`, `malformed_device_names_do_not_shift_or_rename_terminals` |
+| 16.4 | Keywords with no parameters reject supplied parameters before applying their effects. | `profile_validation.rs::parameterless_keywords_reject_parameters_before_changing_objects` |
+| 3.6, 6.4, 6.12 | Terminal selections respect Spectre case and each SPICE-mode instance's case rule. | [`profile_semantics.rs`](../crates/rnl-cli/tests/profile_semantics.rs) |
+| 9.2.5 | A Bezier arrow uses the next distinct control point when the adjacent control coincides with its endpoint. | `rnl-render/src/lib.rs::tests::bezier_arrows_skip_coincident_control_points` |
+| 11.8 | Shorter members of a heterogeneous bundle no longer cause out-of-bounds node access. Existing positional correspondence is retained; see the open name-correspondence issue below. | `profile_semantics.rs::a_shorter_bundle_member_contributes_only_its_existing_terminals` |
+
+## Remaining issues, in priority order
+
+These are open work, not silently accepted extensions. The [roadmap](roadmap.md) remains
+the central work list. P1 denotes wrong interpretation or file-preservation risk; P2
+is a bounded semantic/geometry defect; P3 is advisory behavior or assurance coverage.
+The linked matrices contain the exact source anchors.
+
+| Priority | Remaining issue | Evidence / practical limit |
+| --- | --- | --- |
+| P1 | **Excluded host regions (F-01, 2.2).** RNL inside Spectre `reliability {}` or SPICE `.verilog` is read; `.newjob` titles and preprocessing are not comprehensively classified. | CLI probes drew text inside both excluded regions. Host adapters need context-aware shielding and write-placement policy. |
+| P1 | **Unsupported ancestor version (F-03, 16.1).** An unsupported main-file version suppresses a supported included file too. | A 0.3 child's text draws when read directly but disappears beneath a 9.9 parent. Fix requires isolating version, inherited names/packages and diagnostics at file boundaries. |
+| P1 | **Encoding preservation (F-04, 3.1).** CLI writing can silently change Latin-1 to UTF-8 when new characters do not fit; strip-generated directly writes decoded text. | `solve.rs::encode_as` has an explicit UTF-8 fallback (even tested as current behavior). Desktop encoding checks differ. A consistent refusal/conversion policy needs an API decision. |
+| P2 | **Duplicate record-head fields (F-02, 2.8).** A duplicate field drops the whole record, instead of dropping that field and retaining the body. | CLI probe with duplicate `priority` loses its text. Parser recovery must preserve ordinary keyword duplicate-parameter failure. |
+| P2 | **Nested-symbol drawing order (9.2.1, 9.2.7, 11.6).** Separate primitive/nested arrays lose their declaration interleaving. | Renderer assigns ordinary order `k`, nested order `100+k`; requires carrying a common ordering through the symbol model and renderer. |
+| P2 | **Case-distinct named pins (3.6, 9.2.4).** Symbol pin-key merging collapses `P` and `p` before Spectre terminal matching. | A CLI probe of a symbol with two such named pins retained only one; numeric pins avoid this collision. Name-key merging must be reconciled with reuse across host dialects. |
+| P2 | **Bundle terminal correspondence (11.8).** Heterogeneous members use first-member terminal ordinals, not name-based correspondence when names/orders differ. | The crash is fixed; the broader mapping remains partial and needs regression cases for differing names/orders. |
+| P2 | **Deep nested symbols (9.2.3, 9.2.7, 13.3).** Extent/text traversals stop around depth 8 while geometry continues. | A valid deeper symbol can lose fixed text and inferred bounds silently. Explicit `box=` avoids extent inference but does not restore missing text. |
+| P3 | **Advisory diagnostics (F-08).** Non-ASCII simulator validation, some forward-name typo hints and Spectre SPICE-mode post-`.end` warnings are incomplete. | SHOULD/advisory behavior; see the foundations matrix, distinct from mandatory interpretation failures. |
+| P3 | **Coverage/parity assurance (F-05).** Runtime signatures still embed the differently shaped 0.2 data plus 0.3 additions; no maintained automatic parity check covers the published 0.3 vocabulary and output rules. | This audit found no missing keyword/parameter, but it does not prevent future drift. Several optional values/negative combinations lack dedicated assertions. |
+
+## Decisions and standard questions
+
+1. **Generated objects (10.5, 14.8):** standard fills exclude objects written explicitly;
+   arbitrary custom generators may generate another object on reread. The standard already
+   describes that result. Decide whether the solver should detect such cases and leave
+   their decisions unsolved, rather than promising a general idempotent writeback. Current
+   roundtrip fixtures intentionally use a wire that suppresses regeneration.
+2. **Preservation (16.4 versus 17):** clarify whether preserving unknown/failing statements
+   when rewriting owned records also applies when the solver replaces generated records
+   as a whole. Authored records and host text outside that replacement must be preserved.
+3. **Bundle mapping and computed boxes:** specify the desired behavior for absent/differently
+   named terminals in heterogeneous bundles, and whether conservative curve boxes satisfy
+   the computed-box wording. Keep these questions separate from the confirmed panic and
+   nested-order defects.
+4. **Prose/vocabulary alignment:** WIRE accepts a wire for rewriting in 13.1 while the
+   signature's net slot is typed as net; PIN's terminal type also accepts arrays as specified
+   by 9.2.4. Implementations must consult the normative prose as well as the JSON. No change
+   to the published standard is proposed by this PR.
+
+## Validation
+
+All checks passed on 2026-10-18:
+
+- `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`.
+- `cargo test --workspace`: 716 tests passed, none failed or ignored. This includes the
+  existing conformance corpus, all new regressions and the six roundtrip fixtures with
+  all 18 line-ending variants.
+- `node bindings/runtime-wasm/tests/core.mjs target/wasm-test`, after building with
+  `--features test-panic`: all 16 tests passed, including panic and out-of-memory recovery.
+- `node bindings/runtime-wasm/tests/equality.mjs` and its `--snapshot` mode, after a
+  normal Wasm build and `cargo build -p rnl-cli`: all 84 files and the complete catalog
+  matched native output in both modes (90 and 174 Wasm builds respectively).
+- `reuse lint` and `git diff --check`; all relative audit/roundtrip Markdown links resolve.
+
+All cargo operations run serially with `CARGO_BUILD_JOBS=4`, without `--release`, after
+checking for other cargo/rustc processes and at least 8 GiB of free physical memory.
+The WebAssembly builds use the repository's documented `wasm` profile. Browser tests
+are outside this change; no Playwright/browser installation is needed for these checks.
