@@ -63,7 +63,7 @@ test.describe("on the web", () => {
         title: "File",
         letter: "F",
         items: [
-          "Open File...Ctrl+O", "Include File...", "Include Folder...", "Include Package from Library...", "Open URL...", "Load from Clipboard...Ctrl+Shift+V", "ReloadF5",
+          "Open File...Ctrl+O", "Include File...", "Include Folder...", "Include Public Package…", "Open URL...", "Load from Clipboard...Ctrl+Shift+V", "ReloadF5",
           "", "SaveCtrl+S",
         ],
       },

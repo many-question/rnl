@@ -18,6 +18,7 @@ export default {
   bundledFiles: () => invoke("bundled_files"),
   include: async (kind) => (await invoke("pick_pool", { kind })).map((path) => ({ path, name: path, source: file(path) })),
   pickPath: () => invoke("pick_pool", { kind: "path" }).then((paths) => paths[0] || null),
+  pathPackages: (dir) => invoke("path_packages", { dir }),
   setPool: (items) => { pool = items.filter((item) => !item.builtin).map((item) => item.path); },
   nativeMenu: true,
   initial: () => invoke("initial_file").then(file),

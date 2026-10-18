@@ -11,6 +11,8 @@
  * @property {(kind: string) => Promise<object[]>} [include] Include files, a folder or a library package.
  * @property {(items: object[]) => void} [setPool] Replace the session's search pool.
  * @property {() => Promise<string | null>} [pickPath] Pick a desktop search directory.
+ * @property {(dir: string) => Promise<string[]>} [pathPackages] Package paths in a desktop PATH directory.
+ * @property {(source: Source) => object} [poolItem] A web source's entry as a searchable file.
  * @property {(legacy: object) => Promise<{ path: string, values: object }>} [loadSettings] Native settings and migration.
  * @property {(key: string, value: unknown) => Promise<void>} [saveSetting] Persist a native setting.
  * @property {boolean} nativeMenu Whether the platform shows the menu bar itself; if not, the page shows
@@ -153,6 +155,7 @@
  * @typedef {object} Source
  * @property {string} name How the page names it, such as a file's path.
  * @property {string} [text] The text itself, for a source that holds it.
+ * @property {boolean} [temporary] Content without a file, kept in the Library's single temporary slot.
  */
 
 /** @type {Shell | null} the shell chosen at start */

@@ -294,6 +294,7 @@ fn main() {
             settings::save_setting,
             pool::pick_pool,
             pool::bundled_files,
+            pool::path_packages,
             menu::set_view_check,
             solve::solve_preview,
             solve::solver_defaults,

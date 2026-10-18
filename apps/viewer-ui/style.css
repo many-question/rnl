@@ -1097,18 +1097,35 @@ body.dropping::after {
 .pick-row .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pick-row[aria-selected="true"] { background: var(--select-text); box-shadow: inset 3px 0 0 var(--select); }
 
-/* File pool and search paths, independent of the open document. */
+/* Library groups share one scroll area; actions, explanation and settings stay fixed. */
 .files-pane { display: flex; flex-direction: column; min-height: 0; }
 .files-pane[hidden] { display: none; }
 .pool-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; }
-.pool-list, .path-list { list-style: none; margin: 0; padding: 4px 10px; overflow: auto; }
-.pool-list { flex: 1; min-height: 100px; }
-.pool-row { display: flex; align-items: center; gap: 6px; padding: 5px 0; }
+.pool-actions, .files-pane > .pool-note { flex: none; }
+.library-groups { flex: 1; min-height: 0; overflow: auto; }
+.pool-list { list-style: none; margin: 0; padding: 0; }
+.pool-row { display: flex; align-items: center; gap: 6px; padding: 5px 10px 5px 26px; }
+.pool-row.current { background: var(--select-text); }
 .pool-open { flex: 1; min-width: 0; overflow-wrap: anywhere; text-align: left; }
 button.pool-open { background: transparent; border: 0; color: inherit; cursor: pointer; }
 button.pool-open:hover { text-decoration: underline; }
-.pool-badge { font-size: 10px; color: #687386; max-width: 80px; }
-.pool-note { font-size: 11px; color: #687386; margin: 4px 10px 10px; overflow-wrap: anywhere; }
-.path-section { border-top: 1px solid #d9dee7; max-height: 42%; overflow: auto; }
-.path-section .sub-head { justify-content: space-between; gap: 8px; }
+.pool-badge { font-size: 10px; color: var(--muted); max-width: 80px; }
+.pool-note { font-size: 11px; color: var(--muted); margin: 4px 10px 10px; overflow-wrap: anywhere; }
+.pool-temporary { padding-left: 10px; border-bottom: 1px solid var(--line); }
+.pool-temporary .pool-open { font-style: italic; }
+.pool-temporary .pool-badge { max-width: none; white-space: nowrap; }
+.lib-group-head { display: flex; align-items: center; gap: 4px; height: 28px; padding: 0 6px 0 4px; border-top: 1px solid var(--line); }
+.lib-group:first-of-type .lib-group-head { border-top: 0; }
+.lib-toggle { display: flex; flex: 1; align-items: center; gap: 6px; height: 100%; padding: 0 6px; background: transparent; border: 0; color: var(--fg); text-align: left; cursor: pointer; min-width: 0; }
+.lib-toggle:hover { background: var(--hover); }
+.lib-toggle[aria-expanded="false"] .chevron { transform: rotate(-90deg); }
+.lib-title { font-size: 12px; font-weight: 600; color: var(--fg); }
+.lib-ordinal { flex: none; font-size: 11px; font-weight: 600; color: var(--muted); }
+.lib-path { font-size: 12px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.lib-count { flex: none; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; line-height: 15px; }
+.lib-act { flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; }
+.lib-act:hover { background: var(--hover); color: var(--fg); }
+.lib-act:disabled { opacity: 0.35; cursor: default; }
+.lib-empty, .lib-warning { padding: 5px 10px 5px 26px; font-size: 11px; color: var(--muted); }
+.lib-warning { color: var(--warning); }
 .view-tabs { overflow-x: auto; }

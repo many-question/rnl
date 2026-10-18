@@ -8,6 +8,7 @@
 // saved.
 
 import { form, inform, modal } from "./dialog.js";
+import { sourceOpened } from "./pool.js";
 import { adoptBuffers, changes, resetBuffers } from "./edits.js";
 import { confirmLeave } from "./editor.js";
 import { shell } from "./shell.js";
@@ -45,6 +46,7 @@ export async function openSource(source, keep, edited) {
     if (edited) adoptBuffers(d);
     else resetBuffers(d);
     showBuilt(d, keep);
+    sourceOpened(source, d, !keep, !!edited);
   } catch (e) {
     if (keep && edited) {
       await inform({ title: "Rebuild", paragraphs: [`The document could not be rebuilt: ${e}. Your edits are still kept.`] });
@@ -58,6 +60,7 @@ export async function openSource(source, keep, edited) {
     renderHierarchy();
     renderDiagnostics([{ severity: "error", message: String(e), file: "", line: 0, col: 0, origin: "" }]);
     setProblems(true);
+    sourceOpened(source, null, false);
   } finally {
     loading = false;
     document.body.classList.remove("busy");
@@ -89,6 +92,7 @@ export async function applyEdits() {
     const d = await shell.build(lastSource, changes(false));
     adoptBuffers(d);
     showBuilt(d, true);
+    sourceOpened(lastSource, d, false, true);
   } catch (e) {
     failed = e instanceof Error ? e.message : String(e);
   } finally {
@@ -164,7 +168,7 @@ export async function loadClipboard() {
     return;
   }
   const kind = await preview(title, text);
-  if (kind) await openSource({ name: `clipboard.${kind}`, text }, false);
+  if (kind) await openSource({ name: `clipboard.${kind}`, text, temporary: true }, false);
 }
 
 /** Show the clipboard's text before it is loaded, and ask what to read it as; null when cancelled. */

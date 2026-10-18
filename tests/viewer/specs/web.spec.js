@@ -154,6 +154,9 @@ for (const file of SAMPLES) {
     expect(doc.path).toBe(`/samples/${file}`);
     sameAsRnl(doc, `tests/conformance/${file}`);
     await showsDocument(page, doc);
+    await page.locator("#tab-files").click();
+    await expect(page.locator("#pool-list .pool-row.current")).toHaveAttribute("data-path", `/samples/${file}`);
+    await expect(page.locator("#pool-list .pool-row.current")).toHaveAttribute("aria-current", "true");
     // the core builds in a Worker
     expect(page.workers().map((w) => new URL(w.url()).pathname)).toContain("/core/worker.js");
   });
@@ -296,6 +299,7 @@ test("files dropped on the page open as with Open", async ({ browserName, page }
     return transfer;
   }, files);
   const doc = await opened(page, () => page.dispatchEvent("#app", "drop", { dataTransfer }));
+  await expect(page.locator("#pool-list .pool-row.current")).toHaveCount(1);
   expect(doc.path).toBe("/top.sp");
   expect(doc.files.map((f) => f.path)).toEqual(["top.sp", "parts.inc"]);
   sameAsRnl(doc, path.join(folder(files), "top.sp"));
@@ -559,7 +563,7 @@ test("Include File resolves a package with a different filename and Exclude remo
     '* top\n* @RNL(type="header") { @VERSION("0.3"); @USE-PACKAGE(name="acme", version="1.0") }\nR1 a 0 1k\n.end\n') });
   await shown(page);
   await page.locator("#tab-files").click();
-  expect(await page.locator("#pool-list .pool-row:not(:has(.pool-badge))").count()).toBe(0);
+  expect(await page.locator("#pool-list .pool-row").count()).toBe(1);
   const d = await opened(page, () => page.locator("#include-input").setInputFiles({ name: "custom.rnl", mimeType: "text/plain", buffer: Buffer.from(
     '@RNL(type="header") { @VERSION("0.3"); @PACKAGE(name="acme", version="1.0") }\n') }));
   expect(d.diagnostics.some((d) => d.message.includes("acme 1.0 cannot be found"))).toBe(false);
@@ -570,8 +574,9 @@ test("Include File resolves a package with a different filename and Exclude remo
 test("the web library adds SKY130 without duplicating built-ins, which open read-only", async ({ page }) => {
   await start(page);
   await page.locator("#tab-files").click();
+  await page.locator('[data-group="builtin"] .lib-toggle').click();
   await expect(page.getByRole("button", { name: "Open 0.2/rnl-std.rnl", exact: true })).toBeVisible();
-  await expect(page.locator("#pool-list .pool-row").filter({ hasText: "Built-in" }).getByRole("button", { name: /Exclude/ })).toHaveCount(0);
+  await expect(page.locator('[data-group="builtin"]').getByRole("button", { name: /Exclude/ })).toHaveCount(0);
   await page.locator("#include-library").click();
   const dialog = page.locator("dialog.dialog");
   await expect(dialog.locator(".dialog-option")).toContainText(["rnl-pdk-sky130"]);
@@ -610,4 +615,63 @@ test("relative files win over pooled files with the same name, including deferre
   const remote = await opened(page, () => dialog.locator("input").press("Enter"));
   expect(remote.files[1].text).toContain("Rremote");
   expect(remote.diagnostics.some((d) => d.message.includes("resolved through"))).toBe(false);
+});
+
+/** Load actual clipboard content through the shared preview and the WebAssembly shell. */
+async function pasteText(page, text) {
+  await page.evaluate((text) => {
+    navigator.clipboard.readText = async () => text;
+    window.viewer.command("load-clipboard");
+  }, text);
+  await expect(page.locator("dialog.dialog .dialog-title")).toHaveText("Load from Clipboard");
+  return opened(page, () => page.locator("dialog.dialog").getByRole("button", { name: "Load", exact: true }).click());
+}
+
+test("opened web files join Files once; Exclude keeps the root open and removes package lookup", async ({ page }) => {
+  await start(page);
+  const pkg = { name: "custom.rnl", mimeType: "text/plain", buffer: Buffer.from(
+    '@RNL(type="header") { @VERSION("0.3"); @PACKAGE(name="acme-open", version="1.0") }\n') };
+  const top = { name: "top.sp", mimeType: "text/plain", buffer: Buffer.from(
+    '* top\n* @RNL(type="header") { @VERSION("0.3"); @USE-PACKAGE(name="acme-open", version="1.0") }\nR1 a 0 1k\n.end\n') };
+  await opened(page, () => page.locator("#file-input").setInputFiles(pkg));
+  await opened(page, () => page.locator("#file-input").setInputFiles(pkg));
+  await expect(page.locator("#pool-list .pool-row")).toHaveCount(1);
+  const loaded = await opened(page, () => page.locator("#file-input").setInputFiles(top));
+  expect(loaded.diagnostics.some((d) => d.message.includes("acme-open 1.0 cannot be found"))).toBe(false);
+  await page.locator("#tab-files").click();
+  await opened(page, () => page.getByRole("button", { name: "Open custom.rnl", exact: true }).click());
+  await page.locator("#tab-files").click();
+  const excluded = await opened(page, () => page.getByRole("button", { name: "Exclude custom.rnl", exact: true }).click());
+  expect(excluded.name).toBe("custom.rnl");
+  await expect(page.getByRole("button", { name: "Open custom.rnl", exact: true })).toHaveCount(0);
+  const missing = await opened(page, () => page.getByRole("button", { name: "Open top.sp", exact: true }).click());
+  expect(missing.diagnostics.some((d) => d.message.includes("acme-open 1.0 cannot be found"))).toBe(true);
+});
+
+test("temporary package is absent from include and USE-PACKAGE lookup; applied text survives switching", async ({ page }) => {
+  await start(page);
+  const pkg = '@RNL(type="header") { @VERSION("0.3"); @PACKAGE(name="acme-temp", version="1.0") }\n';
+  await pasteText(page, pkg);
+  await expect(page.locator(".pool-temporary.current")).toHaveAttribute("aria-current", "true");
+  await expect(page.locator("#pool-list .pool-row")).toHaveCount(0);
+  const text = '* top\n* @RNL(type="header") { @VERSION("0.3"); @USE-PACKAGE(name="acme-temp", version="1.0") }\n.include "clipboard.rnl"\n.end\n';
+  const top = { name: "other.sp", mimeType: "text/plain", buffer: Buffer.from(text) };
+  const missing = await opened(page, () => page.locator("#file-input").setInputFiles(top));
+  expect(missing.missing).toContain("/clipboard.rnl");
+  expect(missing.diagnostics.some((d) => d.message.includes("acme-temp 1.0 cannot be found"))).toBe(true);
+  await page.locator("#tab-files").click();
+  await opened(page, () => page.locator(".pool-temporary .pool-open").click());
+  await page.evaluate(() => window.viewer.command("toggle-edit"));
+  const edited = pkg.replace("1.0", "2.0");
+  await page.locator("#source textarea").fill(edited);
+  await opened(page, () => page.locator("#apply-edits").click());
+  await page.locator("#tab-files").click();
+  await page.getByRole("button", { name: "Open other.sp", exact: true }).click();
+  await opened(page, () => page.locator("dialog.dialog").getByRole("button", { name: "Discard Changes", exact: true }).click());
+  await page.locator("#tab-files").click();
+  const back = await opened(page, () => page.locator(".pool-temporary .pool-open").click());
+  expect(back.files[0].text).toBe(edited);
+  await pasteText(page, "* next paste\nR2 b 0 2k\n.end\n");
+  await expect(page.locator(".pool-temporary")).toHaveCount(1);
+  expect((await page.evaluate(() => window.viewer.doc)).files[0].text).toContain("R2 b 0 2k");
 });

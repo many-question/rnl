@@ -1,4 +1,4 @@
-//! File selection for the session's file pool. Opening a file does not add it here.
+//! File selection for the session's library, and enumeration of PATH packages.
 use std::path::Path;
 use tauri::WebviewWindow;
 use tauri_plugin_dialog::DialogExt;
@@ -54,9 +54,38 @@ pub fn bundled_files() -> std::collections::BTreeMap<String, String> {
     rnl_view::bundled().files
 }
 
+#[tauri::command]
+pub fn path_packages(dir: String) -> Result<Vec<String>, String> {
+    let path = Path::new(&dir);
+    // Report directory errors to the Library; enumeration itself uses the lookup provider's rule.
+    std::fs::read_dir(path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            "Directory not found.".to_owned()
+        } else {
+            e.to_string()
+        }
+    })?;
+    Ok(rnl_cli::provider::directory_packages(path))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn path_packages_matches_lookup_direct_and_version_directories_only() {
+        let dir = std::env::temp_dir().join(format!("rnl-path-packages-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("0.3")).unwrap();
+        std::fs::create_dir_all(dir.join("other")).unwrap();
+        for name in ["direct.rnl", "0.3/versioned.RNL", "other/ignored.rnl", "notes.txt"] {
+            std::fs::write(dir.join(name), "text").unwrap();
+        }
+        assert_eq!(
+            path_packages(rnl_cli::path_str(&dir)).unwrap(),
+            ["0.3/versioned.RNL", "direct.rnl"].map(|name| rnl_cli::path_str(&dir.join(name)))
+        );
+        assert_eq!(path_packages(rnl_cli::path_str(&dir.join("missing"))).unwrap_err(), "Directory not found.");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn include_folder_collects_nested_netlists_and_packages_in_stable_order() {
         let dir = std::env::temp_dir().join(format!("rnl-folder-{}", std::process::id()));
