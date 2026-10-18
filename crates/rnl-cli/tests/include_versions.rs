@@ -53,7 +53,7 @@ fn an_unread_middle_file_contributes_nothing_but_does_not_hide_supported_ancesto
     let files = MemoryProvider::new()
         .with("/w/top.sp", "* top\n* @RNL(type=\"header\") { @VERSION(\"0.3\"); @USE-PACKAGE(name=\"rnl-std-style\", version=\"0.3\") }\n* @RNL { $GOOD = @DEFINE-SYMBOL { (0,0) @TEXT(\"inherited\"); (0,0) @PIN(terminal=1) } }\n.include middle.inc\n.end\n")
         .with("/w/middle.inc", "* included file\n* @RNL(type=\"header\") { @USE-PACKAGE(name=\"missing\", path=\"missing.rnl\"); @VERSION(\"9.9\") }\n* @RNL { $BAD = @DEFINE-SYMBOL { (0,0) @PIN(terminal=1) }; $GOOD = @DEFINE-SYMBOL { (0,0) @TEXT(\"must not shadow\") } }\n.include child.inc\n")
-        .with("/w/child.inc", "* included file\n* @RNL(type=\"header\") { @VERSION(\"0.3\") }\n.subckt child p n\nR1 p n 1k\nR2 p n 1k\n* @RNL { #R1 @SET-SYMBOL $GOOD => @PLACE(0,0); #R2 @SET-SYMBOL $BAD => @PLACE(4,0) }\n.ends\n");
+        .with("/w/child.inc", "* included file\n* @RNL(type=\"header\") { @VERSION(\"0.3\") }\n.subckt child p n\nR1 p n 1k\nR2 p n 1k\n* @RNL { #R1 @SET-SYMBOL $GOOD => @PLACE(0,0); #R2 @SET-SYMBOL $BAD }\n.ends\n");
     let r = read(&files, false);
     let errs = errors(&r);
     assert_eq!(errs.len(), 2, "{errs:?}");
