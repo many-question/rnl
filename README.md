@@ -88,7 +88,7 @@ node apps/web/serve.mjs
 
 ## Next steps
 
-The [roadmap](docs/roadmap.md) is the list, and says what is done and what is not. What is next: the language 0.4, planned to let a rule choose a symbol by the number of a device's terminals and to let a netlist configure the solver; the second version of the solver's objectives, with the standard package's names moved out of the solver into its configuration; a WebAssembly binding for the solver, so that the web viewer can solve too; symbol packages for the devices of foundries' PDKs; releases of the desktop viewer for macOS and Linux, and signed releases for Windows; and a record of the profile of the standard that the toolkit supports, checked against the published text, with dedicated roundtrip cases. An editor that moves devices by dragging is set aside for now, and the roadmap says why.
+The [roadmap](docs/roadmap.md) is the list, and says what is done and what is not. What is next: the language 0.4, planned to let a rule choose a symbol by the number of a device's terminals and to let a netlist configure the solver; the second version of the solver's objectives, with the standard package's names moved out of the solver into its configuration; a WebAssembly binding for the solver, so that the web viewer can solve too; symbol packages for the devices of foundries' PDKs; releases of the desktop viewer for macOS, and signed releases for Windows; and a record of the profile of the standard that the toolkit supports, checked against the published text, with dedicated roundtrip cases. An editor that moves devices by dragging is set aside for now, and the roadmap says why.
 
 ## License
 

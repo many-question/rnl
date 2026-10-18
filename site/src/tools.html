@@ -95,7 +95,7 @@
         <div class="tb-main"><dt><zh>工具</zh><en>Tool</en></dt><dd>RNL Viewer</dd></div>
         <div><dt><zh>读取</zh><en>Reads</en></dt><dd><zh>带 RNL 记录的 SPICE、Spectre 网表</zh><en>SPICE and Spectre netlists with RNL records</en></dd></div>
         <div><dt><zh>网页版</zh><en>Web</en></dt><dd><zh>Chrome、Edge 109+ · Safari 16+ · Firefox 114+</zh><en>Chrome, Edge 109+ · Safari 16+ · Firefox 114+</en></dd></div>
-        <div><dt><zh>桌面版</zh><en>Desktop</en></dt><dd><!--release--><span class="mono">{{viewer-version}}</span> · Windows 10/11 x64<!--/release--><!--no-release--><zh>Windows 10/11 x64 · 即将发布</zh><en>Windows 10/11 x64 · coming soon</en><!--/no-release--></dd></div>
+        <div><dt><zh>桌面版</zh><en>Desktop</en></dt><dd><!--release--><span class="mono">{{viewer-version}}</span> · Windows 10/11 x64<!--/release--><!--linux-release--> · Linux x86_64<!--/linux-release--><!--no-release--><zh>Windows 10/11 x64 · 即将发布</zh><en>Windows 10/11 x64 · coming soon</en><!--/no-release--></dd></div>
         <div><dt><zh>语言</zh><en>Language</en></dt><dd>RNL 0.3</dd></div>
         <div><dt><zh>许可</zh><en>Licence</en></dt><dd><zh>MIT · 字体 OFL-1.1</zh><en>MIT · fonts OFL-1.1</en></dd></div>
       </dl>
@@ -228,7 +228,7 @@
   <div class="wrap">
     <header class="sheet-head">
       <p class="sheet-no"><zh>03 · 桌面版</zh><en>03 · Desktop viewer</en></p>
-      <h2><zh>桌面版：Windows 10 和 11。</zh><en>The desktop viewer for Windows 10 and 11.</en></h2>
+      <h2><zh>桌面版：Windows 和 Linux。</zh><en>The desktop viewer for Windows and Linux.</en></h2>
       <p class="lead"><zh>桌面版 RNL Viewer 按路径读写磁盘上的文件：网表 include 的文件放在哪里都能找到，文件改了按 F5 重新读取，改过的文本保存时写回原处，File › Save As 把网表另存为新文件。窗口里的页面和网页版相同，另外多一个 Solve 菜单，能<a href="#solve">求解</a>。</zh>
         <en>The desktop RNL Viewer reads and writes files on disk by their paths: the files a netlist includes are found wherever they are, F5 reads a changed file again, edited text is saved back where it was read, and File › Save As saves the netlist under a new name. Its window shows the same page as the web viewer, with a Solve menu besides, which <a href="#solve">solves</a>.</en></p>
     </header>
@@ -256,6 +256,28 @@
       </ul>
     </div>
 <!--/release-->
+<!--linux-release-->
+    <div class="panel dl">
+      <div class="ph"><svg class="ico"><use href="#i-download"/></svg><span class="ph-title">RNL Viewer {{viewer-version}} · Linux x86_64</span></div>
+      <ul class="dl-list">
+        <li>
+          <a class="dl-file" href="https://github.com/rich-netlist/rnl/releases/download/{{viewer-tag}}/RNL-Viewer-{{viewer-version}}-linux-x86_64.AppImage"><svg class="ico"><use href="#i-download"/></svg><span><b>AppImage</b><code>RNL-Viewer-{{viewer-version}}-linux-x86_64.AppImage</code></span></a>
+          <p><zh>Ubuntu 22.04 及更新版本的 x86_64 系统。在下载目录运行 <code>chmod +x RNL-Viewer-{{viewer-version}}-linux-x86_64.AppImage</code>，再运行 <code>./RNL-Viewer-{{viewer-version}}-linux-x86_64.AppImage</code>。若缺少 FUSE，使用 <code>./RNL-Viewer-{{viewer-version}}-linux-x86_64.AppImage --appimage-extract-and-run</code>。</zh><en>For x86_64 systems on Ubuntu 22.04 or newer. In the download directory, run <code>chmod +x RNL-Viewer-{{viewer-version}}-linux-x86_64.AppImage</code>, then <code>./RNL-Viewer-{{viewer-version}}-linux-x86_64.AppImage</code>. Without FUSE, use <code>./RNL-Viewer-{{viewer-version}}-linux-x86_64.AppImage --appimage-extract-and-run</code>.</en></p>
+        </li>
+        <li>
+          <a class="dl-file" href="https://github.com/rich-netlist/rnl/releases/download/{{viewer-tag}}/RNL-Viewer-{{viewer-version}}-linux-x86_64.deb"><svg class="ico"><use href="#i-download"/></svg><span><b><zh>Debian 安装包</zh><en>Debian package</en></b><code>RNL-Viewer-{{viewer-version}}-linux-x86_64.deb</code></span></a>
+          <p><zh>Ubuntu 22.04 及更新版本；其他 Debian 系发行版需要兼容的 glibc 和 WebKitGTK 4.1。在下载目录运行 <code>sudo apt install ./RNL-Viewer-{{viewer-version}}-linux-x86_64.deb</code>，从应用菜单打开 RNL Viewer，或运行 <code>rnl-viewer</code>。卸载用 <code>sudo apt remove rnl-viewer</code>。</zh><en>Ubuntu 22.04 or newer; other Debian-based distributions need compatible glibc and WebKitGTK 4.1. In the download directory, run <code>sudo apt install ./RNL-Viewer-{{viewer-version}}-linux-x86_64.deb</code>, then open RNL Viewer from the application menu or run <code>rnl-viewer</code>. Uninstall with <code>sudo apt remove rnl-viewer</code>.</en></p>
+        </li>
+        <li>
+          <a class="dl-file" href="https://github.com/rich-netlist/rnl/releases/download/{{viewer-tag}}/SHA256SUMS.txt"><svg class="ico"><use href="#i-check"/></svg><span><b><zh>校验和</zh><en>Checksums</en></b><code>SHA256SUMS.txt</code></span></a>
+          <p><zh>下载校验和与要使用的包，在同一目录运行 <code>sha256sum --check --ignore-missing SHA256SUMS.txt</code>。</zh><en>Download the checksums and the package you want into one directory, then run <code>sha256sum --check --ignore-missing SHA256SUMS.txt</code>.</en></p>
+        </li>
+      </ul>
+    </div>
+<!--/linux-release-->
+<!--no-linux-release-->
+    <p><zh>当前发布尚无 Linux 安装包；下一个包含 Linux 构建的 <code>viewer-v</code> 正式标签发布后，这里会显示下载链接。</zh><en>The current release has no Linux packages yet. Download links appear here after the next stable <code>viewer-v</code> tag with Linux builds is released.</en></p>
+<!--/no-linux-release-->
 <!--no-release-->
     <div class="panel dl dl-soon">
       <p><svg class="ico"><use href="#i-info"/></svg><span><zh>第一个版本即将发布。发布以后，安装程序和免安装版的下载链接会出现在这里，也可以在 <a href="https://github.com/rich-netlist/rnl/releases">GitHub Releases</a> 找到。</zh>
@@ -267,7 +289,7 @@
       <li><b>WebView2</b><span><zh>桌面版需要 Microsoft Edge WebView2 运行时，Windows 10 和 11 一般都自带。如果没有，可以从<a href="https://developer.microsoft.com/microsoft-edge/webview2/">微软的网站</a>下载。</zh><en>The desktop viewer needs the Microsoft Edge WebView2 runtime, which Windows 10 and 11 have. Where it is missing, it can be downloaded from <a href="https://developer.microsoft.com/microsoft-edge/webview2/">Microsoft</a>.</en></span></li>
       <li><b><zh>SmartScreen 提示</zh><en>SmartScreen</en></b><span><zh>这些文件还没有代码签名，运行时 Windows SmartScreen 可能提示“Windows 已保护你的电脑”：点“更多信息”，再点“仍要运行”。</zh><en>The files are not code-signed yet, so Windows SmartScreen may say that it protected your PC: choose More info, then Run anyway.</en></span></li>
       <li><b><zh>更新</zh><en>Updates</en></b><span><zh>菜单 Help › Check for Updates 检查有没有更新的版本。</zh><en>Help › Check for Updates looks for a newer release.</en></span></li>
-      <li><b>macOS · Linux</b><span><zh>还没有现成的安装包，可以从源代码构建，见 <a href="https://github.com/rich-netlist/rnl/blob/main/apps/desktop/README.md"><code>apps/desktop/README.md</code></a>。</zh><en>No builds yet: build it from the source, as <a href="https://github.com/rich-netlist/rnl/blob/main/apps/desktop/README.md"><code>apps/desktop/README.md</code></a> describes.</en></span></li>
+      <li><b>macOS</b><span><zh>还没有现成的安装包，可以从源代码构建，见 <a href="https://github.com/rich-netlist/rnl/blob/main/apps/desktop/README.md"><code>apps/desktop/README.md</code></a>。</zh><en>No builds yet: build it from the source, as <a href="https://github.com/rich-netlist/rnl/blob/main/apps/desktop/README.md"><code>apps/desktop/README.md</code></a> describes.</en></span></li>
     </ul>
     <h3 class="sub-h" id="solve"><zh>求解，先作为预览</zh><en>Solving, as a preview</en></h3>
     <p class="sub-lead"><zh>桌面版的 Solve 菜单用 <code>rnl solve</code> 的求解器排出没写位置的对象。结果只在窗口里显示，文件不变。</zh>

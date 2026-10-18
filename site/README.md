@@ -73,6 +73,8 @@ The page and both `llms` files name every file of the package, so that they cann
 
 ## Building and viewing
 
+The tools page offers Windows downloads and, for tags that include `apps/desktop/tauri.linux.conf.json` with both Linux bundle targets, Linux AppImage and deb downloads. `build.py` checks the configuration at the selected `viewer-v*` tag, so old Windows-only tags do not acquire broken Linux links. `<!--linux-release-->` and `<!--no-linux-release-->` are top-level conditional blocks alongside the existing release blocks. Run `python -m unittest discover -s site -p 'test_*.py'` to check old releases, Linux releases, and the bilingual and standalone pages; `pages.yml` runs these checks too.
+
 From the repository root, with Python 3 and nothing else (and git, for the tags):
 
 ```bash
