@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 
-use rnl_cli::preview::{one_file, preview, save_copy, Copy, Report, StoppableClock};
+use rnl_cli::preview::{one_file, preview, save_copy_with_encoding, Copy, Report, StoppableClock};
 use rnl_cli::solve::{Progress, SolveOptions};
 use rnl_cli::FsProvider;
 use rnl_solver::{SolverOptions, OBJECTIVES};
@@ -27,7 +27,14 @@ pub struct Solves {
     /// The stop of the solve under way, if any.
     running: Arc<Mutex<Option<Arc<AtomicBool>>>>,
     /// What a copy of the last solve shown saves.
-    last: Arc<Mutex<Option<Copy>>>,
+    last: Arc<Mutex<Option<SavedCopy>>>,
+}
+
+/// A copy and its source provenance: a memory source has UTF-8 text and no original disk bytes.
+#[derive(Clone)]
+struct SavedCopy {
+    copy: Copy,
+    in_memory: bool,
 }
 
 /// What a solve gives the page: the netlist drawn as solved, and the report.
@@ -117,6 +124,7 @@ pub async fn solve_preview(
     settings: Option<Settings>,
     edits: Option<Edits>,
 ) -> Result<Solved, String> {
+    let in_memory = path.is_none();
     let options = SolveOptions { solver: settings.unwrap_or_default().solver()?, ..SolveOptions::default() };
     let stop = Arc::new(AtomicBool::new(false));
     if let Some(before) = solves.running.lock().map_err(|e| e.to_string())?.replace(stop.clone()) {
@@ -156,7 +164,7 @@ pub async fn solve_preview(
         }
     }
     let shown = shown?;
-    *solves.last.lock().map_err(|e| e.to_string())? = Some(shown.copy);
+    *solves.last.lock().map_err(|e| e.to_string())? = Some(SavedCopy { copy: shown.copy, in_memory });
     Ok(Solved { document: shown.document, report: shown.report })
 }
 
@@ -175,9 +183,18 @@ pub fn cancel_solve(solves: State<'_, Solves>) {
 /// that would replace a file that was read is refused. None when the dialog is cancelled; else
 /// what was saved, for the page to say.
 #[tauri::command]
-pub async fn save_solved_copy(window: WebviewWindow, solves: State<'_, Solves>) -> Result<Option<String>, String> {
+pub async fn save_solved_copy(
+    window: WebviewWindow,
+    solves: State<'_, Solves>,
+    encoding: Option<rnl_cli::codec::OutputEncoding>,
+) -> Result<Option<String>, String> {
     let run = solves.last.lock().map_err(|e| e.to_string())?.clone();
-    let Some(run) = run else { return Err("solve the netlist first: there is no solve to save".to_string()) };
+    let Some(SavedCopy { copy: run, in_memory }) = run else {
+        return Err("solve the netlist first: there is no solve to save".to_string());
+    };
+    // A clipboard source has no original bytes. Preserve means its native UTF-8 text; a named
+    // disk source must remain distinguishable from one that has disappeared since the preview.
+    let encoding = if in_memory { rnl_cli::codec::OutputEncoding::Utf8 } else { encoding.unwrap_or_default() };
     let entry = PathBuf::from(&run.entry);
     let dialog = window.dialog().file().set_parent(&window);
     let dialog = match entry.parent().filter(|p| p.is_dir()) {
@@ -196,9 +213,10 @@ pub async fn save_solved_copy(window: WebviewWindow, solves: State<'_, Solves>) 
     .map_err(|e| e.to_string())?;
     let Some(chosen) = chosen else { return Ok(None) };
     let to = chosen.into_path().map_err(|e| e.to_string())?;
-    let saved = tauri::async_runtime::spawn_blocking(move || save_copy(&run, &to).map(|w| (w, to)))
-        .await
-        .map_err(|e| e.to_string())??;
+    let saved =
+        tauri::async_runtime::spawn_blocking(move || save_copy_with_encoding(&run, &to, encoding).map(|w| (w, to)))
+            .await
+            .map_err(|e| e.to_string())??;
     Ok(Some(said(&saved.0, &saved.1)))
 }
 

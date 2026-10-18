@@ -240,18 +240,18 @@ function filesToSave() {
  * it, is not written, nor are the others: the user is asked, and with `overwrite` they have said.
  * True when saved.
  */
-export async function save(overwrite = false) {
+export async function save(overwrite = false, encoding = "preserve") {
   if (!doc || modal()) return false;
   const opened = currentSource();
-  if (shell.saveAs && opened && opened.text !== undefined) return saveAs();
+  if (shell.saveAs && opened && opened.text !== undefined) return saveAs(encoding);
   const files = filesToSave();
   if (files.length === 0) {
     note(edits.dirtyPaths().length === 0 ? "No changes to save." : "");
     return true;
   }
   try {
-    const result = await shell.save(opened, files, overwrite);
-    if (result !== null && typeof result === "object") return changedOnDisk(result.changed);
+    const result = await shell.save(opened, files, overwrite, encoding);
+    if (result !== null && typeof result === "object") return changedOnDisk(result.changed, encoding);
     edits.markSaved(files.map((f) => f.path));
     refreshEditing();
     note(result || "Saved.");
@@ -267,7 +267,7 @@ export async function save(overwrite = false) {
  * written. The user says: Overwrite them, Reload the files, which drops the changes made here, or
  * Cancel and look at what is on disk first.
  */
-async function changedOnDisk(names) {
+async function changedOnDisk(names, encoding) {
   const many = names.length > 1;
   const choice = await decide({
     title: "File Changed on Disk",
@@ -278,7 +278,7 @@ async function changedOnDisk(names) {
     action: "Overwrite",
     others: ["Reload"],
   });
-  if (choice === "Overwrite") return save(true);
+  if (choice === "Overwrite") return save(true, encoding);
   if (choice === "Reload") {
     const opened = currentSource();
     if (opened) await openSource(opened, true);
@@ -291,7 +291,7 @@ async function changedOnDisk(names) {
  * and open the file written as the document. Another file with changes not saved is saved first, with Save: it
  * belongs to the directory of the netlist as it was. True when it was saved.
  */
-export async function saveAs() {
+export async function saveAs(encoding = "preserve") {
   if (!doc || !shell.saveAs || modal()) return false;
   const entry = doc.files[0];
   const title = "Save As";
@@ -312,7 +312,7 @@ export async function saveAs() {
     return false;
   }
   try {
-    const written = await shell.saveAs(currentSource(), { path: entry.path, name: entry.name, text: edits.fileText(entry.path) });
+    const written = await shell.saveAs(currentSource(), { path: entry.path, name: entry.name, text: edits.fileText(entry.path) }, encoding);
     if (!written) return false;
     edits.markSaved([entry.path]);
     await openSource(written, false);

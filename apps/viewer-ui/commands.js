@@ -44,6 +44,8 @@ export function command(id) {
     case "reload": reload(); break;
     case "save": save(); break;
     case "save-as": saveAs(); break;
+    case "save-utf8": save(false, "utf8"); break;
+    case "save-as-utf8": saveAs("utf8"); break;
     case "toggle-edit": toggleEdit(); break;
     case "apply-edits": applyChanges(); break;
     case "fit": fit(); break;
@@ -63,6 +65,7 @@ export function command(id) {
     case "solve": solve(); break;
     case "solve-close": closePreview(); break;
     case "solve-save": saveSolved(); break;
+    case "solve-save-utf8": saveSolved("utf8"); break;
     case "solve-settings": settings(); break;
     case "check-updates": checkForUpdates(); break;
     case "about": about(); break;
