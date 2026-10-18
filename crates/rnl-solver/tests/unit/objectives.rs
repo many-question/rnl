@@ -395,29 +395,69 @@ fn symbol_direction_eligibility_and_reference_status_agree_on_boundary_inputs() 
     let g = &resolved.witness.geometry;
     let at = s.origins(p, g);
     let original = options.objectives.layers[0].items[0].clone();
-    let check = |s: &Structure, term: &Term, expected: i64, inactive: bool, diagnostics: usize| {
+    let check = |case: &str, s: &Structure, term: &Term, expected: i64, inactive: bool, diagnostics: &[&str]| {
         let view = View { s, at: &at, orient: &g.orient };
-        assert_eq!(symbol_term(term, &view), int(expected));
+        assert_eq!(symbol_term(term, &view), int(expected), "{case}: raw score");
         let status = term_status(term, &view);
-        assert_eq!(status.0, inactive);
-        assert_eq!(status.1.len(), diagnostics);
+        assert_eq!(status.0, inactive, "{case}: inactive");
+        let mut actual_diagnostics: Vec<&str> = status.1.iter().map(String::as_str).collect();
+        actual_diagnostics.sort_unstable();
+        let mut expected_diagnostics = diagnostics.to_vec();
+        expected_diagnostics.sort_unstable();
+        assert_eq!(actual_diagnostics, expected_diagnostics, "{case}: diagnostic identities and reasons");
     };
-    check(&s, &original, 1, false, 0);
+    check("common reference", &s, &original, 1, false, &[]);
     let mut per_name = original.clone();
     per_name.references.insert("$BADGE_SYMBOL".into(), Direction::Down);
-    check(&s, &per_name, 0, false, 0); // per-symbol reference wins over the common up reference
+    check("per-symbol overrides common reference", &s, &per_name, 0, false, &[]);
     per_name.reference = None;
     per_name.references.insert("$BADGE_SYMBOL".into(), Direction::Up);
-    check(&s, &per_name, 1, false, 0);
+    check("per-symbol reference without common reference", &s, &per_name, 1, false, &[]);
     let mut missing_reference = original.clone();
     missing_reference.reference = None;
-    check(&s, &missing_reference, 0, true, 1); // pinless has no inferred direction
+    check(
+        "pinless missing reference",
+        &s,
+        &missing_reference,
+        0,
+        true,
+        &[
+            "symbol %badge requires a cardinal reference direction",
+            "this term has no eligible objects in this level",
+        ],
+    );
     let mut absent = original.clone();
     absent.symbols = vec!["$MISSING_SYMBOL".into()];
-    check(&s, &absent, 0, true, 0); // a missing configured name is inactive, not an error
+    check(
+        "configured symbol absent",
+        &s,
+        &absent,
+        0,
+        true,
+        &["this term has no eligible objects in this level"],
+    );
     let mut natural_zero = missing_reference;
     natural_zero.symbols = vec!["$PIN_SYMBOL".into()];
-    check(&s, &natural_zero, 0, true, 3); // each pin is at its symbol centre; no cardinal reference
+    check(
+        "three centre-pin symbols without reference",
+        &s,
+        &natural_zero,
+        0,
+        true,
+        &[
+            "symbol #XH requires a cardinal reference direction",
+            "symbol #XA requires a cardinal reference direction",
+            "symbol #XB requires a cardinal reference direction",
+            "this term has no eligible objects in this level",
+        ],
+    );
     s.objects[badge].left_free = true;
-    check(&s, &original, 0, true, 0); // the same drawn predicate is used by score and status
+    check(
+        "left-free symbol excluded from score and status",
+        &s,
+        &original,
+        0,
+        true,
+        &["this term has no eligible objects in this level"],
+    );
 }
