@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use crate::geom::Orient;
 use crate::syntax::{Member, ObjExpr, Segment, SetExpr, Value};
-use crate::words::{words, ParamSpec, ParamType, PositionSpec, Takes};
+use crate::words::{words, ParamSpec, ParamType, ParamsSpec, PositionSpec, Takes};
 
 use super::ctx::{Ctx, Frame, FrameKind, FrameRef, Nested, StmtSpan};
 use super::eval::{get, ArgV, Stop, R};
@@ -65,6 +65,14 @@ impl Interp<'_> {
         ctx: &Ctx,
         member: &Rc<Member>,
     ) -> R<(ObjId, bool)> {
+        // A signature with no parameters still rejects parameters written on the call (16.4).
+        // Style and general definitions have open signatures and validate their own parameters.
+        if words()
+            .keyword(kw)
+            .is_some_and(|sig| matches!(&sig.params, ParamsSpec::List(p) if p.is_empty()) && sig.style.is_none())
+        {
+            self.params(kw, seg, ctx, &[], None, false, None)?;
+        }
         match kw {
             "DEFINE-SYMBOL" => self.kw_define_symbol(kw, &args, seg, ctx, member),
             "DEFINE-STYLE" => self.kw_define_style(kw, &args, seg, ctx, member),

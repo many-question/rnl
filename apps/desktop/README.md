@@ -22,6 +22,27 @@ RNL Viewer, a small desktop application that opens a netlist and draws it. It ca
 
 ## Running
 
+Download the files from a [viewer release](https://github.com/rich-netlist/rnl/releases?q=viewer-v), or the [tools page](https://rich-netlist.github.io/rnl/en/tools.html#desktop). Windows x64 has the NSIS installer, MSI and portable executable described below; run the installer or the portable `.exe`. Windows 10 and 11 normally include WebView2. The files are unsigned: if SmartScreen warns, choose **More info › Run anyway**.
+
+Linux x86_64 packages start with the next `viewer-v*` tag that includes the Linux build. They are built and tested on Ubuntu 22.04, the minimum supported Ubuntu; newer Ubuntu versions are supported too. Other distributions need compatible glibc and WebKitGTK 4.1. AppImage bundles most dependencies but cannot make an older glibc compatible. Replace `X.Y.Z` below with the downloaded version:
+
+```bash
+chmod +x RNL-Viewer-X.Y.Z-linux-x86_64.AppImage
+./RNL-Viewer-X.Y.Z-linux-x86_64.AppImage
+# Without FUSE, extract and run instead:
+./RNL-Viewer-X.Y.Z-linux-x86_64.AppImage --appimage-extract-and-run
+
+# Debian/Ubuntu: apt installs the required system libraries too.
+sudo apt install ./RNL-Viewer-X.Y.Z-linux-x86_64.deb
+rnl-viewer # or choose RNL Viewer in the application menu
+sudo apt remove rnl-viewer
+
+# Download SHA256SUMS.txt beside the package(s) to verify them:
+sha256sum --check --ignore-missing SHA256SUMS.txt
+```
+
+Both Linux formats accept a netlist path after the executable, or **File › Open** after launch. The AppImage needs no installation; remove that file to uninstall it. macOS packages remain future work; build from source there.
+
 From the repository root:
 
 ```bash
@@ -54,6 +75,8 @@ npx tauri build
 
 It builds the executable as above, with Tauri's `custom-protocol` feature as for production, and then the installers that the bundle settings of `tauri.conf.json` ask for, in `target/release/bundle/`; the first time, it downloads NSIS and WiX into `%LOCALAPPDATA%\tauri`. `npx tauri build --no-bundle` builds only the executable, and `--bundles nsis` or `--bundles msi` one of the installers.
 
+On Linux, Tauri also reads [`tauri.linux.conf.json`](tauri.linux.conf.json), which selects AppImage and deb without changing the Windows settings. `npx tauri build --bundles appimage,deb` writes both to `target/release/bundle/`. The release workflow installs the build libraries, `patchelf` and FUSE support on Ubuntu 22.04, writes the same pinned fonts as Windows, and uses the pinned Tauri CLI.
+
 - `nsis/RNL Viewer_VERSION_x64-setup.exe`, about 20 MB, installs for the current user without administrator rights, into `%LOCALAPPDATA%\RNL Viewer`, in English or Simplified Chinese as Windows is set. It adds shortcuts in the Start menu and on the desktop, and an entry among the installed apps, which uninstalls it. Tauri's uninstaller would keep in the registry where the app was installed, unless its *Delete the application data* box is checked, which a silent uninstall cannot do; [`nsis-hooks.nsh`](nsis-hooks.nsh) removes that too, except when an update runs the uninstaller.
 - `msi/RNL Viewer_VERSION_x64_en-US.msi`, about 22 MB, installs for all users of the computer, into Program Files, and needs administrator rights. It is in English only, as one MSI is built per language. Its upgrade code is fixed in `tauri.conf.json`, so that a later version replaces this one even if the product is renamed.
 
@@ -72,13 +95,24 @@ msiexec /x RNL-Viewer-0.1.1-windows-x64.msi /qn
 
 ## Releasing
 
-[`viewer-release.yml`](../../.github/workflows/viewer-release.yml) builds and releases the viewer for Windows on GitHub's runner. To release version X.Y.Z:
+[`viewer-release.yml`](../../.github/workflows/viewer-release.yml) builds and releases the viewer for Windows x64 and Linux x86_64 on GitHub's runners. To release version X.Y.Z:
 
 1. Set the version in `Cargo.toml` and `tauri.conf.json` here and in `[workspace.package]` of the root `Cargo.toml`, which the web viewer's About box shows, and update both lock files (`cargo update --workspace`, here with `--manifest-path apps/desktop/Cargo.toml`). The tests here fail while the three differ.
 2. Write the release's notes in `release-notes/X.Y.Z.md`.
 3. Push the tag `viewer-vX.Y.Z` of the commit to GitHub.
 
-The workflow stops when the tag is not the app's version or the notes are missing. It builds with the MSVC toolchain, checks with `dumpbin` that the executable imports no `WebView2Loader.dll`, smoke-tests the executable alone in a directory, installs each installer silently, smoke-tests the installed app and uninstalls it. Then it makes the GitHub release *RNL Viewer X.Y.Z* with the notes and four files: `RNL-Viewer-X.Y.Z-windows-x64-setup.exe`, `RNL-Viewer-X.Y.Z-windows-x64.msi`, `RNL-Viewer-X.Y.Z-windows-x64.exe`, the single executable, and `SHA256SUMS.txt`. The release is not marked as the repository's latest, which stays the language standard's release, so the viewer's releases are told apart by their tags. A version with a prerelease part, such as `0.2.0-rc.1`, makes a prerelease, which Check for Updates passes over. Run by hand, from the Actions tab, the workflow only builds and checks, and keeps the four files as the run's artifact.
+The workflow stops when the tag is not the app's version or the notes are missing. On Windows it builds with MSVC, checks with `dumpbin` that the executable imports no `WebView2Loader.dll`, smoke-tests the executable alone in a directory, installs each installer silently, smoke-tests the installed app and uninstalls it. On Linux it builds the AppImage and deb, smoke-tests the AppImage alone in a directory under Xvfb, installs the deb, smoke-tests `/usr/bin/rnl-viewer`, uninstalls it and checks that the binary and desktop entry are gone. The tests use a D-Bus session, software rendering and isolated profiles, and keep screenshots as Actions artifacts.
+
+After both platforms succeed, the workflow verifies each platform's checksums and writes one combined `SHA256SUMS.txt`. The GitHub release *RNL Viewer X.Y.Z* contains six files:
+
+- `RNL-Viewer-X.Y.Z-windows-x64-setup.exe`
+- `RNL-Viewer-X.Y.Z-windows-x64.msi`
+- `RNL-Viewer-X.Y.Z-windows-x64.exe`
+- `RNL-Viewer-X.Y.Z-linux-x86_64.AppImage`
+- `RNL-Viewer-X.Y.Z-linux-x86_64.deb`
+- `SHA256SUMS.txt`
+
+The release is not marked as the repository's latest, which stays the language standard's release, so the viewer's releases are told apart by their tags. A version with a prerelease part, such as `0.2.0-rc.1`, makes a prerelease, which Check for Updates passes over. Run by hand from the Actions tab on a branch, the workflow builds and checks both platforms and keeps the platform artifacts and combined six-file artifact; it never publishes. Before pushing a release tag, run it on the intended commit, check both build jobs and the combined checksums, inspect the Linux screenshots, and confirm the versions and notes above. The site only links Linux files when the selected release tag contains the Linux bundle configuration, so earlier Windows-only releases keep valid download links.
 
 ## Checking for updates
 
@@ -95,6 +129,14 @@ node apps/desktop/tests/smoke.mjs [--port PORT] [--no-build | --exe PATH]
 ```
 
 The app runs with a WebView2 profile of its own in a temporary directory, so the layout kept in your profile is left as it was, and is stopped by its process ID. The test fails at once when the app ends early, and a step fails when the page stops answering; when the WebView's DevTools port does not answer, it says what there is of the WebView: its processes, with their arguments, and its profile. `--exe` starts the app at PATH instead of building one, such as `target/release/rnl-viewer.exe` or an installed app. The page itself is tested in three browsers against a fake shell in [`tests/viewer`](../../tests/viewer/README.md).
+
+On Linux, install `webkit2gtk-driver`, `xvfb`, `xdotool` and `dbus-x11`, build the app, and run:
+
+```bash
+dbus-run-session -- xvfb-run -a node apps/desktop/tests/linux-smoke.mjs --exe apps/desktop/target/debug/rnl-viewer
+```
+
+This test uses WebKitGTK's native WebDriver directly, with the same capabilities and automation environment as Tauri's driver. It opens a temporary copy of `04-hierarchy.sp` and its include, checks the visible window's title, the rendered SVG, the loaded `amp` subcircuit and the absence of document errors, and checks the netlist was not written. It builds nothing and also accepts a release AppImage or an installed binary. Set `SMOKE_OUTPUT_DIR` to keep screenshots. CI runs it against the debug app in `desktop.yml` and both packaged forms in `viewer-release.yml`.
 
 The installers' test installs an installer silently, checks its files, its shortcuts and its entry among the installed apps, smoke-tests the installed app, uninstalls it silently and checks that nothing of it is left:
 
@@ -117,6 +159,7 @@ The app runs on the WebView2 Runtime, which Windows 10 and 11 come with and the 
 | `src/files.rs` | The edits built over the files on disk, and writing the files the user saved: each in its encoding. |
 | [`../viewer-ui/`](../viewer-ui/README.md) | The page, which the web viewer shares: plain HTML, CSS and ES modules with no build step. It reaches the app only through its desktop shell, `shells/desktop.js`. |
 | `tests/smoke.mjs` | The smoke test, for Windows. |
+| `tests/linux-smoke.mjs` | The Linux smoke test, for the debug app, AppImage and installed deb. |
 | `tests/installers.mjs` | The installers' test, for Windows. |
 | `tests/webview2.mjs` | The WebView2 Runtime's version, and its installation where it is missing. |
 | `tauri.conf.json`, `capabilities/` | The window, where the page is, the content security policy, what the page may call, and the installers' settings. |
@@ -126,6 +169,6 @@ The app runs on the WebView2 Runtime, which Windows 10 and 11 come with and the 
 | `release-notes/` | The notes of each release, by version, which the release workflow publishes. |
 | `icons/` | The application icon. |
 
-This directory is a Cargo workspace of its own, so the WebView dependencies stay out of the library crates' builds; [`desktop.yml`](../../.github/workflows/desktop.yml) builds it on Linux, Windows and macOS, and [`viewer-release.yml`](../../.github/workflows/viewer-release.yml) releases it for Windows.
+This directory is a Cargo workspace of its own, so the WebView dependencies stay out of the library crates' builds; [`desktop.yml`](../../.github/workflows/desktop.yml) builds it on Linux, Windows and macOS, and [`viewer-release.yml`](../../.github/workflows/viewer-release.yml) releases it for Windows and Linux.
 
 The viewer calls the shared Rust core natively, through `rnl-view`, as [decision 0008](../../docs/decisions/0008-shared-core-per-platform-frontends.md) decides; the [web viewer](../web/README.md) calls the same core through WebAssembly and shares the page in [`apps/viewer-ui`](../viewer-ui/README.md).

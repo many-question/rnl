@@ -70,7 +70,7 @@ cargo run --release -p rnl-cli -- check tests/conformance/cases/03-five-transist
 cargo run --release -p rnl-cli -- render tests/conformance/cases/03-five-transistor-ota.sp -o target/svg
 ```
 
-See [`crates/rnl-cli`](crates/rnl-cli/README.md) for the other commands. The desktop viewer for Windows has installers on the [releases](https://github.com/rich-netlist/rnl/releases) page (the newest tag `viewer-v…`), and the core is on npm: `npm i @rich-netlist/runtime@next`. To run the desktop viewer from the source instead, as on macOS or Linux, and look at a netlist in it:
+See [`crates/rnl-cli`](crates/rnl-cli/README.md) for the other commands. The desktop viewer for Windows has installers on the [releases](https://github.com/rich-netlist/rnl/releases) page (the newest tag `viewer-v…`), and the core is on npm: `npm i @rich-netlist/runtime@next`. The next viewer tag that includes the Linux build also provides AppImage and deb packages for Linux x86_64. To run the desktop viewer from source, including on macOS, and look at a netlist in it:
 
 ```bash
 cargo run --manifest-path apps/desktop/Cargo.toml -- tests/conformance/cases/03-five-transistor-ota.sp
@@ -88,7 +88,7 @@ node apps/web/serve.mjs
 
 ## Next steps
 
-The [roadmap](docs/roadmap.md) is the list, and says what is done and what is not. What is next: the language 0.4, planned to let a rule choose a symbol by the number of a device's terminals and to let a netlist configure the solver; the second version of the solver's objectives, with the standard package's names moved out of the solver into its configuration; a WebAssembly binding for the solver, so that the web viewer can solve too; symbol packages for the devices of foundries' PDKs; releases of the desktop viewer for macOS and Linux, and signed releases for Windows; and a record of the profile of the standard that the toolkit supports, checked against the published text, with dedicated roundtrip cases. An editor that moves devices by dragging is set aside for now, and the roadmap says why.
+The [roadmap](docs/roadmap.md) is the list, and says what is done and what is not. What is next: the language 0.4, planned to let a rule choose a symbol by the number of a device's terminals and to let a netlist configure the solver; the second version of the solver's objectives, with the standard package's names moved out of the solver into its configuration; a WebAssembly binding for the solver, so that the web viewer can solve too; symbol packages for the devices of foundries' PDKs; releases of the desktop viewer for macOS, and signed releases for Windows; and a record of the profile of the standard that the toolkit supports, checked against the published text, with dedicated roundtrip cases. An editor that moves devices by dragging is set aside for now, and the roadmap says why.
 
 ## License
 

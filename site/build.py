@@ -19,7 +19,9 @@ a release candidate's, does not count), or from --viewer-version. The parts of a
 <!--release--> and <!--/release--> are kept when there is a release, with {{viewer-version}} (such
 as 0.1.0) and {{viewer-tag}} (viewer-v0.1.0) filled in; the parts between <!--no-release--> and
 <!--/no-release--> are kept when there is none. The build checks that these blocks close and do not
-nest, and that the fields are only used in <!--release--> blocks.
+nest, and that the fields are only used in <!--release--> or <!--linux-release--> blocks.
+Linux download blocks are kept only when the selected tag contains tauri.linux.conf.json with both
+Linux bundle targets; <!--no-linux-release--> is kept otherwise, including for older Windows-only tags.
 
 Output (site/dist/ by default, ignored by Git), for each page in PAGES:
     zh/index.html, zh/language.html, zh/tools.html, zh/packages.html, zh/assets/, zh/*-standalone.html   Chinese
@@ -46,6 +48,7 @@ Usage, from the repository root (standard library only, and git for the tags):
                                       viewer, whatever the tags say; "none" for no release yet
 """
 import argparse
+import json
 import re
 import shutil
 import subprocess
@@ -99,8 +102,8 @@ VIEWER_TAG = re.compile(r"viewer-v(\d+)\.(\d+)\.(\d+)")
 VERSION = re.compile(r"\d+\.\d+\.\d+")
 # The parts of a page kept with a release of the desktop viewer, or without one, and the fields
 # filled in from the release.
-RELEASE = re.compile(r"<!--(release|no-release)-->(.*?)<!--/\1-->", re.S)
-RELEASE_MARK = re.compile(r"<!--/?(?:no-)?release-->")
+RELEASE = re.compile(r"<!--((?:no-)?(?:linux-)?release)-->(.*?)<!--/\1-->", re.S)
+RELEASE_MARK = re.compile(r"<!--/?(?:no-)?(?:linux-)?release-->")
 FIELD = re.compile(r"\{\{(viewer-[a-z-]+)\}\}")
 FIELDS = ("viewer-version", "viewer-tag")
 
@@ -143,16 +146,18 @@ def check_release(text, name):
         if m.group(1) not in FIELDS:
             errors.append("%s:%d: {{%s}} is not a field; the fields are %s"
                           % (name, line_of(text, m.start()), m.group(1), ", ".join("{{%s}}" % f for f in FIELDS)))
-    kept = RELEASE.sub(lambda m: blank(m) if m.group(1) == "release" else m.group(0), text)
+    kept = RELEASE.sub(lambda m: blank(m) if m.group(1) in ("release", "linux-release") else m.group(0), text)
     for m in FIELD.finditer(kept):
         errors.append("%s:%d: {{%s}} outside a <!--release--> block" % (name, line_of(kept, m.start()), m.group(1)))
     return errors
 
 
-def release(text, version):
+def release(text, version, linux=False):
     """Keep the release blocks that apply to `version`, None for no release, with the fields filled in."""
     with_release = version is not None
-    text = RELEASE.sub(lambda m: m.group(2) if (m.group(1) == "release") == with_release else "", text)
+    enabled = {"release": with_release, "no-release": not with_release,
+               "linux-release": with_release and linux, "no-linux-release": not (with_release and linux)}
+    text = RELEASE.sub(lambda m: m.group(2) if enabled[m.group(1)] else "", text)
     if not with_release:
         return text
     values = {"viewer-version": version, "viewer-tag": "viewer-v" + version}
@@ -168,6 +173,20 @@ def newest_viewer_release():
         return None
     versions = [tuple(int(n) for n in m.groups()) for m in map(VIEWER_TAG.fullmatch, listed.stdout.split()) if m]
     return "%d.%d.%d" % max(versions) if versions else None
+
+
+def has_linux_release(version):
+    """Only link Linux files when the selected tag includes the Linux bundle configuration.
+    Earlier Windows-only tags must keep working even after this site change is deployed."""
+    if version is None:
+        return False
+    try:
+        config = subprocess.run(
+            ["git", "show", f"viewer-v{version}:apps/desktop/tauri.linux.conf.json"],
+            cwd=ROOT, capture_output=True, text=True, check=True)
+        return set(json.loads(config.stdout)["bundle"]["targets"]) >= {"appimage", "deb"}
+    except (OSError, subprocess.CalledProcessError, ValueError, KeyError, TypeError):
+        return False
 
 
 def localize(text, index):
@@ -190,7 +209,7 @@ def sources():
     return files
 
 
-def build_language(files, index, version):
+def build_language(files, index, version, linux=False):
     """Return {relative path: text} for one language, including the standalone pages. Both kinds
     of release block are checked for Chinese before the ones that do not apply are dropped."""
     code, prefix = LANGS[index]
@@ -201,7 +220,7 @@ def build_language(files, index, version):
             errors += check_leaks(text, "%s (%s)" % (path, code))
     if errors:
         raise BuildError("\n".join(errors))
-    out = {path: release(text, version) for path, text in out.items()}
+    out = {path: release(text, version, linux) for path, text in out.items()}
     for page, single in PAGES.items():
         out[page] = out[page].replace("<!doctype html>\n", "<!doctype html>\n" + NOTICE, 1)
         if single:
@@ -294,8 +313,9 @@ def build(version=None):
     if errors:
         raise BuildError("\n".join(errors))
     result = {}
+    linux = has_linux_release(version)
     for index, (code, prefix) in enumerate(LANGS):
-        for path, text in build_language(files, index, version).items():
+        for path, text in build_language(files, index, version, linux).items():
             result[prefix + path] = text
     result.update(redirects())
     return result

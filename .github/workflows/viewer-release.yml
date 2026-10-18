@@ -1,4 +1,4 @@
-# Builds the desktop viewer of apps/desktop for Windows and releases it: the app as a single
+# Builds the desktop viewer of apps/desktop for Windows and Linux and releases it: on Windows, a single
 # executable, an NSIS installer for the current user and an MSI for the machine. The Tauri command
 # line that apps/desktop/package.json pins builds them on GitHub's Windows runner, whose MSVC
 # toolchain links the WebView2 loader into the executable. The workflow checks that the executable
@@ -137,9 +137,140 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: node apps/desktop/tests/installers.mjs --msi "$RUNNER_TEMP/assets/RNL-Viewer-$VERSION-windows-x64.msi"
 
+  build-linux:
+    # Build on the oldest supported Ubuntu, so the AppImage also runs on newer glibc systems.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The version
+        id: version
+        run: |
+          python - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          app = Path('apps/desktop')
+          version = json.loads((app / 'tauri.conf.json').read_text())['version']
+          crate = re.search(r'^version = "(.+)"', (app / 'Cargo.toml').read_text(), re.M)[1]
+          assert crate == version, f'Crate version {crate} differs from {version}'
+          if os.environ['GITHUB_REF_TYPE'] == 'tag':
+              assert os.environ['GITHUB_REF_NAME'] == f'viewer-v{version}', 'Tag differs from app version'
+              assert (app / f'release-notes/{version}.md').is_file(), 'Release notes are missing'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              print(f'version={version}', file=out)
+          PY
+      - name: Install the Linux build and smoke-test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev patchelf libfuse2 webkit2gtk-driver xvfb xdotool dbus-x11
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Write the web fonts
+        run: |
+          pip install fonttools==4.58.0 brotli==1.2.0
+          python scripts/fonts.py web
+      - name: Install the Tauri command line
+        working-directory: apps/desktop
+        run: npm ci
+      - name: Build the AppImage and Debian package
+        working-directory: apps/desktop
+        env:
+          # linuxdeploy's own AppImage can extract itself on runners without a FUSE mount.
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: npx tauri build --bundles appimage,deb
+      - name: The Linux release files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/assets"
+          built=apps/desktop/target/release/bundle
+          cp "$built/appimage/RNL Viewer_${VERSION}_amd64.AppImage" "$RUNNER_TEMP/assets/RNL-Viewer-$VERSION-linux-x86_64.AppImage"
+          cp "$built/deb/RNL Viewer_${VERSION}_amd64.deb" "$RUNNER_TEMP/assets/RNL-Viewer-$VERSION-linux-x86_64.deb"
+          chmod +x "$RUNNER_TEMP/assets/"*.AppImage
+          cd "$RUNNER_TEMP/assets"
+          sha256sum RNL-Viewer-* > SHA256SUMS.txt
+      - name: Smoke-test the AppImage in its own directory
+        timeout-minutes: 5
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SMOKE_OUTPUT_DIR: ${{ runner.temp }}/smoke-linux
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          mkdir -p "$RUNNER_TEMP/single"
+          cp "$RUNNER_TEMP/assets/RNL-Viewer-$VERSION-linux-x86_64.AppImage" "$RUNNER_TEMP/single/"
+          dbus-run-session -- xvfb-run -a node apps/desktop/tests/linux-smoke.mjs --exe "$RUNNER_TEMP/single/RNL-Viewer-$VERSION-linux-x86_64.AppImage"
+      - name: Install the Debian package, smoke-test it and uninstall it
+        timeout-minutes: 5
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SMOKE_OUTPUT_DIR: ${{ runner.temp }}/smoke-linux
+        run: |
+          deb="$RUNNER_TEMP/assets/RNL-Viewer-$VERSION-linux-x86_64.deb"
+          package=$(dpkg-deb --field "$deb" Package)
+          trap 'sudo apt-get remove -y "$package"' EXIT
+          sudo apt-get install -y "$deb"
+          test -f "/usr/share/applications/RNL Viewer.desktop"
+          dbus-run-session -- xvfb-run -a node apps/desktop/tests/linux-smoke.mjs --exe /usr/bin/rnl-viewer
+          sudo apt-get remove -y "$package"
+          trap - EXIT
+          test ! -e /usr/bin/rnl-viewer
+          test ! -e "/usr/share/applications/RNL Viewer.desktop"
+      - name: Keep the Linux smoke-test screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rnl-viewer-linux-smoke
+          path: ${{ runner.temp }}/smoke-linux/
+          if-no-files-found: ignore
+          retention-days: 14
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rnl-viewer-${{ steps.version.outputs.version }}-linux-x86_64
+          path: ${{ runner.temp }}/assets/
+          if-no-files-found: error
+          retention-days: 14
+
+  assets:
+    needs: [build, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: rnl-viewer-${{ needs.build.outputs.version }}-*
+          path: incoming
+      - name: Verify both platforms and combine their checksums
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          mkdir assets
+          for platform in windows-x64 linux-x86_64; do
+            dir="incoming/rnl-viewer-$VERSION-$platform"
+            (cd "$dir" && sha256sum --check SHA256SUMS.txt)
+            find "$dir" -maxdepth 1 -type f ! -name SHA256SUMS.txt -exec cp {} assets/ \;
+          done
+          cd assets
+          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 5
+          sha256sum RNL-Viewer-* > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rnl-viewer-${{ needs.build.outputs.version }}
+          path: assets/
+          if-no-files-found: error
+          retention-days: 14
+
   release:
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: build
+    needs: [build, assets]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -147,7 +278,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: rnl-viewer-${{ needs.build.outputs.version }}-windows-x64
+          name: rnl-viewer-${{ needs.build.outputs.version }}
           path: assets
       - name: Check the files against their sums
         working-directory: assets

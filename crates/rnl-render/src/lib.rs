@@ -302,7 +302,7 @@ impl Out {
                     segs.push(PathSeg::Close);
                 }
                 self.path(owner, segs, strokes, fill, layer, order.clone(), pts);
-                self.arrows(owner, pts, params, &e, layer, order, false);
+                self.arrows(owner, pts, params, &e, layer, order, shape);
             }
             Shape::Rectangle => {
                 let (a, b) = if pts.len() == 1 {
@@ -350,7 +350,7 @@ impl Out {
             Shape::Arc => {
                 let segs = arc_segs(pts[0], pts[1], pts[2]);
                 self.path(owner, segs, strokes, fill, layer, order.clone(), pts);
-                self.arrows(owner, pts, params, &e, layer, order, true);
+                self.arrows(owner, pts, params, &e, layer, order, shape);
             }
             Shape::Bezier => {
                 let mut segs = vec![PathSeg::Move(pts[0])];
@@ -361,7 +361,7 @@ impl Out {
                 }
 
                 self.path(owner, segs, strokes, fill, layer, order.clone(), pts);
-                self.arrows(owner, pts, params, &e, layer, order, false);
+                self.arrows(owner, pts, params, &e, layer, order, shape);
             }
             Shape::Text => {}
         }
@@ -394,7 +394,7 @@ impl Out {
         e: &Eff,
         layer: Layer,
         order: Vec<f64>,
-        arc: bool,
+        shape: Shape,
     ) {
         if e.linestyle == "none" {
             return; // the heads belong to the line (9.3)
@@ -409,7 +409,18 @@ impl Out {
         for end in ends {
             let (tip, mut prev) =
                 if *end == "end" { (pts[pts.len() - 1], pts[pts.len() - 2]) } else { (pts[0], pts[1]) };
-            if arc {
+            if shape == Shape::Bezier && prev == tip {
+                // A coincident control point gives no tangent; use the next distinct point (9.2.5).
+                let next = if *end == "end" {
+                    pts.iter().rev().copied().skip(1).find(|p| *p != tip)
+                } else {
+                    pts.iter().copied().skip(1).find(|p| *p != tip)
+                };
+                if let Some(next) = next {
+                    prev = next;
+                }
+            }
+            if shape == Shape::Arc {
                 if let Some((c, _r)) = circle3(pts[0], pts[1], pts[2]) {
                     let (rx, ry) = (tip.0 - c.0, tip.1 - c.1);
                     let mut t1 = (-ry, rx);
@@ -726,4 +737,37 @@ pub fn primitives(lv: &LevelView, o: &RenderOptions) -> Vec<Primitive> {
         a.layer.cmp(&b.layer).then_with(|| a.order.partial_cmp(&b.order).unwrap_or(std::cmp::Ordering::Equal))
     });
     prims
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bezier_arrows_skip_coincident_control_points() {
+        for points in [
+            [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)],
+            [(0.0, 0.0), (0.0, 0.0), (3.0, 0.0), (3.0, 0.0)],
+            [(0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (3.0, 0.0)],
+            [(0.0, 0.0), (3.0, 0.0), (3.0, 0.0), (3.0, 0.0)],
+        ] {
+            let mut out = Out { prims: Vec::new(), scale: 14.0 };
+            let params = PrimParams { arrow: Some("both".into()), ..PrimParams::default() };
+            out.shape("curve", Shape::Bezier, &points, &params, &Style::default(), Layer::Middle, vec![]);
+            assert_eq!(out.prims.len(), 3, "{points:?}");
+            // Both endpoint triangles retain their full length and width and point away from the curve.
+            for (arrow, tip, bounds) in [
+                (&out.prims[1], (0.0, 0.0), [0.0, -0.21, 0.6, 0.21]),
+                (&out.prims[2], (3.0, 0.0), [2.4, -0.21, 3.0, 0.21]),
+            ] {
+                let Kind::Path { segs, strokes, fill } = &arrow.kind else { panic!("arrow must be a path") };
+                assert_eq!(segs[0], PathSeg::Move(tip));
+                assert!(strokes.is_empty());
+                assert!(fill.is_some());
+                for (actual, expected) in arrow.bbox.into_iter().zip(bounds) {
+                    assert!((actual - expected).abs() < 1e-12, "{points:?}: {:?}", arrow.bbox);
+                }
+            }
+        }
+    }
 }

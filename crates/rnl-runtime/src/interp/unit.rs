@@ -449,6 +449,16 @@ pub(crate) fn params_by_name(
         if q.required && !out.contains_key(&q.name) {
             return Err(format!("@{kw} lacks the parameter {} (5.3)", q.name));
         }
+        if let Some(value) = out.get(&q.name) {
+            let valid = match q.ty {
+                ParamType::String => matches!(value, Value::Str(_)),
+                ParamType::Array => matches!(value, Value::Arr(_)),
+                _ => true,
+            };
+            if !valid {
+                return Err(format!("the {} of @{kw} has the wrong type (5.3)", q.name));
+            }
+        }
     }
     Ok(out)
 }
@@ -973,12 +983,20 @@ impl Interp<'_> {
                         self.diag_in(Severity::Error, "@DEVICE takes name and terminals (6.12)", Some(loc), &pkg);
                         continue;
                     };
+                    if terms.iter().any(|t| !matches!(t, Value::Str(_))) {
+                        self.diag_in(
+                            Severity::Error,
+                            "the terminals of @DEVICE must be an array of names (strings) (6.12)",
+                            Some(loc),
+                            &pkg,
+                        );
+                        continue;
+                    }
                     let model = str_val(p.get("model"));
                     let terminals = terms
                         .iter()
                         .filter_map(|x| match x {
                             Value::Str(s) => Some(Lit::Str(super::obj::WStr::new(s, None))),
-                            Value::Num { value, .. } => Some(Lit::Num(*value)),
                             _ => None,
                         })
                         .collect();

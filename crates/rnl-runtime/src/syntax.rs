@@ -453,6 +453,9 @@ impl Parser {
         let r = (|| -> PResult<Rc<SetExpr>> {
             self.skip_ws()?;
             if self.peek() == Some('(') {
+                if self.i != 4 {
+                    return self.err("the record head must touch @RNL; remove the white space or comment (2.4)");
+                }
                 header = Some(self.params()?);
             }
             self.skip_ws()?;
@@ -1214,8 +1217,10 @@ impl Parser {
         }
         let text: String = self.t[s..j].iter().collect();
         self.i = j;
+        let nonzero = text.split(['e', 'E']).next().unwrap().chars().any(|c| matches!(c, '1'..='9'));
         match text.parse::<f64>() {
-            Ok(v) => Ok((v, text)),
+            Ok(v) if v.is_finite() && (v != 0.0 || !nonzero) => Ok((v, text)),
+            Ok(_) => self.err_at("the number is outside this implementation's finite numeric range (3.7)", s),
             Err(_) => self.err_at("expected a number here", s),
         }
     }
@@ -1664,9 +1669,48 @@ mod tests {
     }
 
     #[test]
+    fn a_record_head_separated_from_the_entry_fails_the_whole_record() {
+        for text in [
+            "@RNL (priority=\"low\") {#M1 @PLACE(1, 2)}",
+            "@RNL\t(priority=\"low\") {#M1 @PLACE(1, 2)}",
+            "@RNL/* gap */(priority=\"low\") {#M1 @PLACE(1, 2)}",
+        ] {
+            let r = parse_record(text);
+            assert!(r.error.as_ref().unwrap().0.contains("must touch @RNL"));
+            assert!(r.body.is_none());
+        }
+        assert!(parse_record("@RNL(priority=\"low\") {#M1 @PLACE(1, 2)}").error.is_none());
+        assert!(parse_record("@RNL {#M1 @PLACE(1, 2)}").error.is_none());
+    }
+
+    #[test]
     fn unclosed_record_body() {
         let r = parse_record("@RNL {#M1 @PLACE(1, 2)");
         assert!(r.error.is_some());
+    }
+
+    #[test]
+    fn out_of_range_numbers_fail_the_member_without_becoming_infinite_or_zero() {
+        let b = body(concat!(
+            "@RNL {#M1 @PLACE(1e999, 0); %p = (-1e999, 0); ",
+            "#M1 @PLACE(1e-999, 0); %q = (-1e-999, 0); ",
+            "#M2 @PLACE(1e-300, -1e-300); #M3 @PLACE(0e999, -0e-999); #M4 @PLACE(5e-324, -5e-324)}"
+        ));
+        for m in &b.members[..4] {
+            let error = m.error.as_ref().unwrap();
+            assert!(error.contains("implementation") && error.contains("numeric range"), "{error}");
+        }
+        for (m, expected) in b.members[4..].iter().zip([
+            [(1e-300, "1e-300"), (-1e-300, "-1e-300")],
+            [(0.0, "0e999"), (-0.0, "-0e-999")],
+            [(5e-324, "5e-324"), (-5e-324, "-5e-324")],
+        ]) {
+            assert!(m.error.is_none());
+            let p = m.segments[0].call.as_ref().unwrap().params.as_ref().unwrap();
+            for (value, (number, text)) in p.positional.iter().zip(expected) {
+                assert_eq!(*value, Value::Num { value: number, text: text.into() });
+            }
+        }
     }
 
     #[test]
