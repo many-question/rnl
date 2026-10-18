@@ -424,7 +424,9 @@ impl Interp<'_> {
         let prims = sd
             .prims
             .iter()
-            .map(|p| SymbolPrim {
+            .enumerate()
+            .map(|(i, p)| SymbolPrim {
+                order: sd.prim_order[i],
                 shape: p.shape,
                 points: p.points.clone(),
                 params: p.params.clone(),
@@ -452,7 +454,7 @@ impl Interp<'_> {
             })
             .collect();
         let mut nested = Vec::new();
-        for a in &sd.usages {
+        for (i, a) in sd.usages.iter().enumerate() {
             let u = self.usage(*a).clone();
             let Some(inner) = u.sym_symbol else { continue };
             if !matches!(self.o(inner), ObjData::Symbol(_)) {
@@ -461,7 +463,7 @@ impl Interp<'_> {
             let Some((_, pt)) = u.roles.first() else { continue };
             let ObjData::Point { x: Some(x), y: Some(y), .. } = self.o(*pt).clone() else { continue };
             let ik = self.symbol_view(inner, table, out);
-            nested.push(NestedView { symbol: ik, at: (x, y), orient: u.sym_orient });
+            nested.push(NestedView { order: sd.usage_order[i], symbol: ik, at: (x, y), orient: u.sym_orient });
         }
         out[k].prims = prims;
         out[k].pins = pins;
