@@ -1,7 +1,7 @@
 # Toolkit support for RNL 0.3, revision 2
 
-This profile audits the toolkit at base commit `20c93440c314a8838e17cd8ae76b78fb9ae06ef0`
-plus the small fixes in this change, against the published English standard tagged
+The initial audit covered the toolkit at base commit `20c93440c314a8838e17cd8ae76b78fb9ae06ef0`
+plus the audit fixes, against the published English standard tagged
 [`spec-0.3-r2`](https://github.com/rich-netlist/rnl/tree/spec-0.3-r2/spec/0.3/en)
 (`0a308e55b74a7994202ff8cb061800ea04dcd2e8`), dated 2026-10-18.
 The English chapter files and `spec/rnl-words-0.3.json` in the audited checkout are
@@ -52,10 +52,11 @@ is distinguished from the 24 cases of 0.3 and dedicated 0.3 regression tests.
   encodings, arbitrary precision numbers and unbounded nested-symbol extents are not.
   Numeric conversion uses binary64; overflow and underflow to zero now fail explicitly.
 
-## Small fixes made during the audit
+## Corrections and regression evidence
 
 | Requirement | Correction | Regression evidence |
 | --- | --- | --- |
+| 2.8 (F-02) | Repeated known record-head fields are diagnosed once and treated as absent; the body and other fields survive. Ordinary keyword duplicates still fail their member. Classification and writeback use the same absent-field rule. | `header.rs::{repeated_record_head_fields_are_absent_without_losing_the_body,a_repeated_head_field_keeps_other_fields_and_keyword_duplicates_still_fail}` |
 | 2.4, 3.5 | A record head separated from `@RNL` by whitespace/comment fails the whole record. | `syntax.rs::tests::a_record_head_separated_from_the_entry_fails_the_whole_record` |
 | 3.7 | Out-of-range numeric conversion reports an implementation limit instead of infinity or silently becoming zero. | `syntax.rs::tests::out_of_range_numbers_fail_the_member_without_becoming_infinite_or_zero` |
 | 5.3, 6.4, 9.2.4 | PIN validates every bus member and integral positive terminal index; SELECT-TERMINAL rejects invalid terminal types. | [`profile_validation.rs`](../crates/rnl-cli/tests/profile_validation.rs) |
@@ -77,7 +78,6 @@ The linked matrices contain the exact source anchors.
 | P1 | **Excluded host regions (F-01, 2.2).** RNL inside Spectre `reliability {}` or SPICE `.verilog` is read; `.newjob` titles and preprocessing are not comprehensively classified. | CLI probes drew text inside both excluded regions. Host adapters need context-aware shielding and write-placement policy. |
 | P1 | **Unsupported ancestor version (F-03, 16.1).** An unsupported main-file version suppresses a supported included file too. | A 0.3 child's text draws when read directly but disappears beneath a 9.9 parent. Fix requires isolating version, inherited names/packages and diagnostics at file boundaries. |
 | P1 | **Encoding preservation (F-04, 3.1).** CLI writing can silently change Latin-1 to UTF-8 when new characters do not fit; strip-generated directly writes decoded text. | `solve.rs::encode_as` has an explicit UTF-8 fallback (even tested as current behavior). Desktop encoding checks differ. A consistent refusal/conversion policy needs an API decision. |
-| P2 | **Duplicate record-head fields (F-02, 2.8).** A duplicate field drops the whole record, instead of dropping that field and retaining the body. | CLI probe with duplicate `priority` loses its text. Parser recovery must preserve ordinary keyword duplicate-parameter failure. |
 | P2 | **Nested-symbol drawing order (9.2.1, 9.2.7, 11.6).** Separate primitive/nested arrays lose their declaration interleaving. | Renderer assigns ordinary order `k`, nested order `100+k`; requires carrying a common ordering through the symbol model and renderer. |
 | P2 | **Case-distinct named pins (3.6, 9.2.4).** Symbol pin-key merging collapses `P` and `p` before Spectre terminal matching. | A CLI probe of a symbol with two such named pins retained only one; numeric pins avoid this collision. Name-key merging must be reconciled with reuse across host dialects. |
 | P2 | **Bundle terminal correspondence (11.8).** Heterogeneous members use first-member terminal ordinals, not name-based correspondence when names/orders differ. | The crash is fixed; the broader mapping remains partial and needs regression cases for differing names/orders. |
@@ -106,7 +106,8 @@ The linked matrices contain the exact source anchors.
 
 ## Validation
 
-All checks passed on 2026-10-18:
+The initial audit checks passed on 2026-10-18 (follow-up PRs add their own
+regressions and run the Rust CI gates):
 
 - `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`.
 - `cargo test --workspace`: 716 tests passed, none failed or ignored. This includes the

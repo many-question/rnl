@@ -781,6 +781,22 @@ impl Interp<'_> {
                 );
                 continue;
             };
+            let mut occurrences = params.named.iter().filter(|field| field.name == n.name);
+            let first = occurrences.next().unwrap();
+            if let Some(second) = occurrences.next() {
+                if n.off == first.off {
+                    self.diag_in(
+                        Severity::Error,
+                        format!(
+                            "record header field {} is written more than once; treated as not written (2.8)",
+                            n.name
+                        ),
+                        Some(self.recs[rec].loc(second.off)),
+                        &pkg,
+                    );
+                }
+                continue;
+            }
             let Value::Str(v) = &n.value else {
                 self.diag_in(
                     Severity::Error,

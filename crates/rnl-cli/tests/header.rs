@@ -189,3 +189,48 @@ fn a_section_of_lib_counts_as_a_file() {
     let r = read(&MemoryProvider::new().with("t.sp", main).with("models.lib", lib), &Options::default());
     assert_eq!(said(&r, Severity::Error), [("models.lib".to_string(), 13, AFTER.to_string())]);
 }
+
+#[test]
+fn repeated_record_head_fields_are_absent_without_losing_the_body() {
+    for (name, values) in [
+        ("type", "\"generated\""),
+        ("priority", "\"disabled\""),
+        ("scope", "\"missing\""),
+        ("numbering", "\"0000000000000000\""),
+        ("author", "\"tool\""),
+        ("hash", "\"stale\""),
+        ("modified", "\"2026-10-18T00:00:00Z\""),
+    ] {
+        let text = format!(
+            "* t\n* @RNL(type=\"header\") {{ @VERSION(\"0.3\") }}\n\
+             * @RNL({name}={values}, {name}={values}, {name}={values}) {{ (1, 2) @TEXT(\"kept\") }}\n.end\n"
+        );
+        // In particular, two generated types fall back to authored, so the solver reads the body.
+        let r = read(&MemoryProvider::new().with("t.sp", &text), &Options { std: false, ..Options::solver() });
+        let errors = said(&r, Severity::Error);
+        assert_eq!(errors.len(), 1, "{name}: {errors:?}");
+        assert!(errors[0].2.contains(&format!("field {name} is written more than once")), "{errors:?}");
+        assert_eq!(r.model.levels[0].texts.iter().filter(|t| t.markup == "kept").count(), 1, "{name}");
+        let record = r.doc.levels[0].records.last().unwrap();
+        assert_eq!(rnl_runtime::writeback::field(record, name), None, "{name}");
+        assert_eq!(rnl_runtime::writeback::record_type(record), "authored", "{name}");
+        assert_eq!(rnl_runtime::writeback::strip_generated(&r.doc, "t.sp", &text), text, "{name}");
+    }
+}
+
+#[test]
+fn a_repeated_head_field_keeps_other_fields_and_keyword_duplicates_still_fail() {
+    let text = "* t\n* @RNL(type=\"header\") { @VERSION(\"0.3\") }\n\
+                * @RNL(priority=\"low\", priority=\"high\", author=\"kept\") {\n\
+                * (1, 2) @TEXT(\"body\"); (3, 4) @TEXT(\"bad\", key=\"a\", key=\"b\"); (5, 6) @TEXT(\"after\")\n\
+                * }\n.end\n";
+    let r = read(&MemoryProvider::new().with("t.sp", text), &Options { std: false, ..Options::default() });
+    let errors = said(&r, Severity::Error);
+    assert_eq!(errors.len(), 2, "{errors:?}");
+    assert!(errors.iter().any(|e| e.2.contains("parameter key is written twice")), "{errors:?}");
+    let texts: Vec<_> = r.model.levels[0].texts.iter().map(|t| t.markup.as_str()).collect();
+    assert_eq!(texts, ["body", "after"]);
+    let record = r.doc.levels[0].records.last().unwrap();
+    assert_eq!(rnl_runtime::writeback::field(record, "author").as_deref(), Some("kept"));
+    assert_eq!(rnl_runtime::writeback::field(record, "priority"), None);
+}

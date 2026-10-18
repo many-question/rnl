@@ -65,7 +65,7 @@ Every keyword is recognized and has an implementation. This is not complete sema
 
 ## Record fields
 
-**Partial failure recovery:** the behaviors below are implemented, but a duplicate record-head field currently makes the parser discard the whole record instead of treating only that field as absent (§2.8). See the main profile; this applies across the field table.
+**Field-local failure recovery:** duplicate known record-head fields are diagnosed and treated as absent (§2.8), while other fields and the record body remain effective. Generated-record classification and metadata readers use the same rule. Ordinary keyword parameter duplicates still fail their member. See `header.rs::repeated_record_head_fields_are_absent_without_losing_the_body` and `a_repeated_head_field_keeps_other_fields_and_keyword_duplicates_still_fail`.
 
 | Field | Status / values / defaults | Implementation and evidence |
 | --- | --- | --- |
