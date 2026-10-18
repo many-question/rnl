@@ -10,7 +10,7 @@ use rnl_runtime::{Interpretation, Options};
 fn read(path: &str, text: &str, extra: &[(&str, &str)]) -> Interpretation {
     let mut files = MemoryProvider::new().with(path, text);
     for (name, body) in extra {
-        files = files.with(*name, *body);
+        files = files.with(name, body);
     }
     let r = interpret_file(Path::new(path), None, &files, &Options { std: false, ..Options::default() }).unwrap();
     let errors: Vec<_> =
