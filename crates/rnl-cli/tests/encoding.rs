@@ -197,16 +197,26 @@ fn strip_generated_uses_actual_disk_or_bundled_origin_not_the_display_name() {
     assert_eq!(std::fs::read(&output).unwrap(), expected.as_bytes());
 
     // A real file with the same displayed basename is still a Latin-1 disk source.
+    // This .rnl name intentionally holds host text to simulate a disk shadow. strip-generated
+    // uses host carriers; a package itself cannot contain generated records. The ordinary
+    // comment prefix must survive removal. Exercise this on every platform, not only Unix.
     let physical = dir.join("rnl-std.rnl");
-    let disk =
-        b"/* caf\xe9 */\r\n@RNL(type=\"header\") { @VERSION(\"0.3\"); @PACKAGE(name=\"local\", version=\"1\") }\r\n";
-    std::fs::write(&physical, disk).unwrap();
+    let disk = b"* caf\xe9\r\n* @RNL(type=\"header\") { @VERSION(\"0.3\") }\r\n* retained note\r\n";
+    let with_generated = [disk.strip_suffix(b"\r\n").unwrap(), b" @RNL(type=\"generated\") { }\r\n"].concat();
+    std::fs::write(&physical, &with_generated).unwrap();
     let result = Command::new(env!("CARGO_BIN_EXE_rnl"))
         .args(["strip-generated", physical.to_str().unwrap(), "-o", output.to_str().unwrap()])
         .output()
         .unwrap();
     assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
     assert_eq!(std::fs::read(&output).unwrap(), disk);
+    let result = Command::new(env!("CARGO_BIN_EXE_rnl"))
+        .args(["strip-generated", physical.to_str().unwrap(), "-o", output.to_str().unwrap(), "--encoding", "utf8"])
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    assert_eq!(std::fs::read(&output).unwrap(), decode(disk).as_bytes());
+    assert_eq!(std::fs::read(&physical).unwrap(), with_generated);
 
     // On platforms where angle brackets are legal in paths, disk also wins at the exact
     // virtual-package name. Windows cannot create this filename.
@@ -214,7 +224,6 @@ fn strip_generated_uses_actual_disk_or_bundled_origin_not_the_display_name() {
     {
         let shadow = dir.join(entry);
         std::fs::create_dir_all(shadow.parent().unwrap()).unwrap();
-        let with_generated = [disk.as_slice(), b"@RNL(type=\"generated\") { }\r\n"].concat();
         std::fs::write(&shadow, &with_generated).unwrap();
         let result = Command::new(env!("CARGO_BIN_EXE_rnl"))
             .current_dir(&dir)
