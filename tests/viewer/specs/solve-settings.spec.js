@@ -79,6 +79,28 @@ test.describe("desktop scalar rules and TOML selection", () => {
     expect(await solved(page, viewer)).toEqual({ options: "beam=2", hintsForLow: false });
   });
 
+  test("a pending objective migration notice survives native settings migration only once", async ({ page, viewer }) => {
+    await page.evaluate(() => {
+      localStorage.setItem("solve-options", JSON.stringify({ beam: "8" }));
+      localStorage.setItem("solve-objectives-migration-notice", JSON.stringify(true));
+    });
+    await viewer.open("T4-miller-conflicts", { platform: "desktop", settings: "1" });
+    expect(await page.evaluate(() => window.fakeShell.legacy["solve-objectives-migration-notice"])).toBe(true);
+    expect(await page.evaluate(() => localStorage.getItem("solve-objectives-migration-notice"))).toBeNull();
+    expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("fake-settings"))["solve-objectives-migration-notice"])).toBe(true);
+    await open(page);
+    await expect(dialog(page).locator(".settings-migration")).toContainText("Old solver objective settings were removed");
+    await expect(field(page, "Beam")).toHaveValue("8");
+    await ok(page);
+    await expect.poll(async () => page.evaluate(() => JSON.parse(sessionStorage.getItem("fake-settings"))["solve-objectives-migration-notice"])).toBe(false);
+    await viewer.open("T4-miller-conflicts", { platform: "desktop", settings: "1" });
+    await open(page);
+    await expect(dialog(page).locator(".settings-migration")).toHaveCount(0);
+    await expect(field(page, "Beam")).toHaveValue("8");
+    expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("fake-settings"))["solve-options"])).toEqual({ beam: "8" });
+    await ok(page);
+  });
+
   test("changing configuration reloads defaults and preserves only explicit overrides", async ({ page, viewer }) => {
     await page.evaluate(() => {
       window.fakeShell.configDefaults = {
