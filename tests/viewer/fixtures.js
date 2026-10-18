@@ -323,6 +323,9 @@ function view(rnl, file, cwd) {
  * writes under `solved` in `dir`; and those of PREVIEWS.
  */
 export function writeFixtures(rnl, dir) {
+  // No standard package stylesheet: exercise the renderer's omitted-width default itself.
+  fs.writeFileSync(path.join(dir, "view-hairlines.json"), execFileSync(rnl,
+    ["view", "tests/viewer/inputs/default-hairlines.sp", "--no-std"], { cwd: root, encoding: "utf8" }));
   for (const [name, file] of Object.entries(FILES)) {
     fs.writeFileSync(path.join(dir, `${name}.json`), view(rnl, file, root));
   }

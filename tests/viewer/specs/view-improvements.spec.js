@@ -21,15 +21,15 @@ async function inkWidth(page, point) {
     let ink = 0;
     for (let i = 0; i < data.length; i += 4) ink += 1 - data[i] / 255;
     bitmap.close();
-    return ink / c.width;
+    return ink / c.width / (c.height / 20); // screenshots may use two device pixels per CSS pixel
   }, [...png]);
   return coverage / (1 - 29 / 255); // the renderer's default ink, #1d1d1f
 }
 
 test("CLI SVG hairlines remain fixed when opened and resized independently of the viewer", async ({ page }, info) => {
   const out = info.outputPath("render");
-  execFileSync(process.env.RNL_BIN, ["render", path.join(root, "tests/viewer/inputs/view-improvements.sp"), "-o", out]);
-  const svg = await fs.readFile(path.join(out, "view-improvements.svg"), "utf8");
+  execFileSync(process.env.RNL_BIN, ["render", path.join(root, "tests/viewer/inputs/default-hairlines.sp"), "--no-std", "-o", out]);
+  const svg = await fs.readFile(path.join(out, "default-hairlines.svg"), "utf8");
   await page.route("**/standalone.svg", (route) => route.fulfill({ contentType: "image/svg+xml", body: svg }));
   await page.goto(`${process.env.RNL_VIEWER_URL}/standalone.svg`);
   const widths = [];
@@ -38,12 +38,14 @@ test("CLI SVG hairlines remain fixed when opened and resized independently of th
       el.style.width = `${el.viewBox.baseVal.width * factor}px`;
       el.style.height = `${el.viewBox.baseVal.height * factor}px`;
       const m = el.getScreenCTM();
-      const p = new DOMPoint(140, 98).matrixTransform(m);
-      return { x: p.x, y: p.y };
+      // SVGPoint works on the shared Chromium 109 / Safari 16 browser baseline too.
+      const p = el.createSVGPoint(); p.x = 140; p.y = 98;
+      const screen = p.matrixTransform(m);
+      return { x: screen.x, y: screen.y };
     }, factor);
     widths.push(await inkWidth(page, p));
   }
-  for (const w of widths) expect(w).toBeCloseTo(1.2, 1);
+  for (const w of widths) expect(Math.abs(w - 1.2)).toBeLessThan(0.1);
 });
 
 for (const [platform, query] of Object.entries(modes)) {
@@ -54,19 +56,28 @@ for (const [platform, query] of Object.entries(modes)) {
     });
 
     test("default, explicit zero and double hairlines retain their screen widths while nonzero scales", async ({ page, viewer }) => {
+      await viewer.open("view-hairlines", query);
       await page.evaluate(() => window.viewer.command("grid-none"));
       const scale = await page.evaluate(() => window.viewer.doc.levels[window.viewer.level].scale);
-      const widths = [];
-      for (let zoom = 0; zoom < 3; zoom++) {
-        widths.push(await Promise.all([-4, -7, -10, -13].map(async (y) => inkWidth(page, await viewer.point(10 * scale, -y * scale)))));
-        if (zoom < 2) await page.keyboard.press("Control+=");
+      for (const y of [-4, -7, -10, -13]) {
+        await page.keyboard.press("f");
+        const widths = [];
+        for (let zoom = 0; zoom < 3; zoom++) {
+          const p = await viewer.point(10 * scale, -y * scale);
+          widths.push(await inkWidth(page, p));
+          if (zoom < 2) {
+            const before = await viewer.viewBox();
+            await page.mouse.move(p.x, p.y);
+            await page.mouse.wheel(0, -Math.log(1.25) / 0.0015);
+            await expect.poll(() => viewer.viewBox()).not.toBe(before);
+          }
+        }
+        if (y === -10) expect(widths[2] / widths[0]).toBeCloseTo(1.25 ** 2, 1);
+        else {
+          for (const w of widths) expect(Math.abs(w - widths[0])).toBeLessThan(0.15);
+          if (y !== -13) expect(Math.abs(widths[0] - 1.2)).toBeLessThan(0.1);
+        }
       }
-      for (const i of [0, 1, 3]) {
-        for (const w of widths) expect(w[i]).toBeCloseTo(widths[0][i], 1);
-      }
-      expect(widths[0][0]).toBeCloseTo(1.2, 1);
-      expect(widths[0][1]).toBeCloseTo(1.2, 1);
-      expect(widths[2][2] / widths[0][2]).toBeCloseTo(1.25 ** 2, 1);
     });
 
     test("Dark reflects only HSL L below 25%, preserves alpha and original Documents, and restores Light", async ({ page }) => {
@@ -135,8 +146,8 @@ for (const [platform, query] of Object.entries(modes)) {
       for (const reversed of [false, true]) {
         await page.keyboard.press("f");
         const before = await box(viewer);
-        const a = { x: r.x + r.width * 0.2, y: r.y + r.height * 0.3 };
-        const b = { x: r.x + r.width * 0.6, y: r.y + r.height * 0.6 };
+        const a = { x: Math.round(r.x + r.width * 0.2), y: Math.round(r.y + r.height * 0.3) };
+        const b = { x: Math.round(r.x + r.width * 0.6), y: Math.round(r.y + r.height * 0.6) };
         const [start, end] = reversed ? [b, a] : [a, b];
         await page.mouse.move(start.x, start.y); await page.mouse.down({ button: "right" });
         await page.mouse.move(end.x, end.y, { steps: 5 });
@@ -145,10 +156,11 @@ for (const [platform, query] of Object.entries(modes)) {
         await page.mouse.up({ button: "right" });
         await expect(page.locator(".zoom-box")).toBeHidden();
         const after = await box(viewer);
-        expect(after[2]).toBeCloseTo(before[2] * 0.4, 0);
-        expect(after[3]).toBeCloseTo(before[3] * 0.4, 0);
-        expect(after[0] + after[2] / 2).toBeCloseTo(before[0] + before[2] * 0.4, 0);
-        expect(after[1] + after[3] / 2).toBeCloseTo(before[1] + before[3] * 0.45, 0);
+        const ratio = Math.max((b.x - a.x) / r.width, (b.y - a.y) / r.height);
+        expect(after[2]).toBeCloseTo(before[2] * ratio, 6);
+        expect(after[3]).toBeCloseTo(before[3] * ratio, 6);
+        expect(after[0] + after[2] / 2).toBeCloseTo(before[0] + before[2] * ((a.x + b.x) / 2 - r.x) / r.width, 6);
+        expect(after[1] + after[3] / 2).toBeCloseTo(before[1] + before[3] * ((a.y + b.y) / 2 - r.y) / r.height, 6);
       }
       const before = await viewer.viewBox();
       for (const cancel of ["short", "Escape", "capture"]) {

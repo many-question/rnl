@@ -363,7 +363,7 @@ test.describe("on the web", () => {
     const shown = page.locator("#menubar .menu-list:visible, #menubar .submenu:visible");
     await page.keyboard.press("Alt+V");
     await expect(viewer.menuItem("fit")).toHaveClass(/\bactive\b/);
-    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+    for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowDown");
     await expect(entry(page, "Grid")).toHaveClass(/\bactive\b/);
     await page.keyboard.press("ArrowRight");
     await expect(grid).toBeVisible();
@@ -428,6 +428,7 @@ test.describe("with a native menu", () => {
   test("the page shows no menu bar, and tells the shell the check marks", async ({ page, viewer }) => {
     await expect(page.locator("#menubar")).toBeHidden();
     const marks = [
+      ["background-light", true], ["background-dark", false],
       ["toggle-netlist", true], ["toggle-problems", true], ["toggle-edit", false],
       ["toggle-grid", true], ["grid-none", false], ["grid-dots", true], ["grid-lines", false], ["grid-axes", false],
       ["toggle-hover-names", true],
