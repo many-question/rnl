@@ -311,7 +311,9 @@ pub fn append_record(doc: &HostDocument, level: LevelId, text: &str, record: &st
 /// The line before which text added to the end of a level goes (17).
 fn end_of(doc: &HostDocument, level: LevelId, lines: &Lines) -> u32 {
     let lv = &doc.levels[level];
-    if lv.end_line > 0 {
+    if let Some((_, end)) = lv.section_lines {
+        end
+    } else if lv.end_line > 0 {
         lv.end_line
     } else {
         lines.lines.len() as u32 + 1
@@ -325,16 +327,22 @@ fn end_of(doc: &HostDocument, level: LevelId, lines: &Lines) -> u32 {
 /// region instead, and before the subcircuit written in the level that holds that place, at the
 /// last place of the level's own text above the end that lies in no region. A level without one,
 /// such as a subcircuit whose `.subckt` lies in a region, gives that region, as the lines that open
-/// and close it ([`HostDocument::protected`]).
+/// and close it ([`HostDocument::unwritable_at`]). Other excluded host regions follow the same
+/// rule, including unterminated scripts/foreign languages, preprocessing and job-title lines.
 pub fn record_line(doc: &HostDocument, level: LevelId, text: &str) -> Result<u32, (u32, u32)> {
     let lv = &doc.levels[level];
+    let file = &doc.levels[doc.file_level(level)];
+    if file.section.is_some() && file.section_lines.is_none() {
+        return Err((1, Lines::new(text).lines.len() as u32 + 1));
+    }
     // the first place of its own text: after its `.subckt`; line 2 of a file, as line 1 is not read
-    let first = if lv.kind == LevelKind::Subckt { lv.line + 1 } else { 2 };
+    let first =
+        if lv.kind == LevelKind::Subckt { lv.line + 1 } else { lv.section_lines.map_or(2, |(start, _)| start + 1) };
     free_place(doc, level, end_of(doc, level, &Lines::new(text)), first)
 }
 
 /// The last place of the own text of `level`, at the line `at` or above it, that lies in no region
-/// written to be encrypted (2.2) and in no subcircuit written in `level`, given as the line that
+/// excluded from writing (2.2) and in no subcircuit written in `level`, given as the line that
 /// text added there goes before; `first` is the first place of that text. A region that begins
 /// above `first` gives an error with its lines, as [`record_line`] says.
 fn free_place(doc: &HostDocument, level: LevelId, mut at: u32, first: u32) -> Result<u32, (u32, u32)> {
@@ -346,7 +354,7 @@ fn free_place(doc: &HostDocument, level: LevelId, mut at: u32, first: u32) -> Re
         .filter(|s| s.kind == LevelKind::Subckt && s.file == lv.file)
         .collect();
     loop {
-        if let Some((open, close)) = doc.protected_at(&lv.file, at) {
+        if let Some((open, close)) = doc.unwritable_in(level, at) {
             if open < first {
                 return Err((open, close));
             }
@@ -689,7 +697,8 @@ fn header_edits(
                 let at = first.loc(brace);
                 Edit::Text(at.line, at.col as usize, s)
             });
-            let edit = edit.filter(|e| doc.protected_at(file, e.at().0).is_none());
+            let top = file_records(doc, file, at).0;
+            let edit = edit.filter(|e| unwritable(doc, file, top, e.at().0).is_none());
             return (edit.into_iter().collect(), marker);
         }
         None if headers_of(doc, file, at) => return (Vec::new(), marker),
@@ -797,7 +806,7 @@ fn raise_edit(doc: &HostDocument, level: LevelId, text: &str, pin: bool) -> Opti
         None if doc.levels[level].section.is_some() => return None,
         None => new_header(doc, file, text, marker, |_| format!("@RNL(type=\"header\") {{ {raised}}}"))?.0,
     };
-    if doc.protected_at(file, edit.at().0).is_some() {
+    if doc.unwritable_in(level, edit.at().0).is_some() {
         return None;
     }
     Some(edit)
@@ -959,6 +968,15 @@ fn names_in(members: &[std::rc::Rc<crate::syntax::Member>], out: &mut Vec<(&'sta
     }
 }
 
+/// File-wide header operations use the whole-file reading when one exists; a targeted
+/// section operation uses its own file level. Both retain the physical host exclusions.
+fn unwritable(doc: &HostDocument, file: &str, top: Option<LevelId>, line: u32) -> Option<(u32, u32)> {
+    match top {
+        Some(level) => doc.unwritable_in(level, line),
+        None => doc.unwritable_at(file, line),
+    }
+}
+
 /// Where a header record written at the top of a file goes: before the line `line`, 1-based,
 /// carried by `marker`, after the bare marker when `bare`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -973,7 +991,26 @@ impl Top {
     /// encrypted, and carried by `*` in its stead where the reading is in SPICE mode.
     fn kept(self, doc: &HostDocument, file: &str) -> Option<Top> {
         let marker = in_mode(doc, file, self.line, self.marker);
-        doc.protected_at(file, self.line).is_none().then_some(Top { marker, ..self })
+        let mut line = self.line;
+        let mut below_first = false;
+        let top = file_records(doc, file, None).0;
+        while let Some((open, close)) = unwritable(doc, file, top, line) {
+            if open < 2 || below_first {
+                below_first = true;
+                // An encrypted envelope may start on the first comment line. Its first safe
+                // header position is after the closing pragma, if it closes before EOF and
+                // no existing record would precede the new header there.
+                let past = doc.source(file)?.lines().count() as u32 + 1;
+                if close >= past || records_of(doc, file).iter().any(|(_, r)| r.lines.0 <= close) {
+                    return None;
+                }
+                line = close + 1;
+            } else {
+                line = open;
+            }
+        }
+        let marker = in_mode(doc, file, line, marker);
+        Some(Top { line, marker, ..self })
     }
 
     /// The change that writes these lines, each behind the marker already, there.
