@@ -13,7 +13,7 @@ async function inkWidth(page, point) {
   const png = await page.screenshot({ clip: { x: Math.floor(point.x) - 2, y: Math.floor(point.y) - 10, width: 5, height: 20 } });
   const coverage = await page.evaluate(async (bytes) => {
     const bitmap = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type: "image/png" }));
-    const c = document.createElement("canvas");
+    const c = document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
     c.width = bitmap.width; c.height = bitmap.height;
     const ctx = c.getContext("2d");
     ctx.drawImage(bitmap, 0, 0);
