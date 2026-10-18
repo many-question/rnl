@@ -17,6 +17,8 @@ export interface Request {
   files?: Record<string, string>;
   /** The directories, among the paths of `files`, whose packages are found by name (16.2). */
   package_dirs?: string[];
+  /** Explicit temporary files, searched before package directories. */
+  pool?: string[];
   /** The dialect, instead of guessing it from the entry. */
   dialect?: "spice" | "spectre";
   /** Use the standard package at the root (16.3); true when not given. */

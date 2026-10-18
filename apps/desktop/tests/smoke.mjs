@@ -636,7 +636,69 @@ async function drive(app, port, profile, t0, session) {
   );
   console.log(`The Not drawn list asked the app for the drawings of its ${thumbs} rows, which the Document did not carry`);
 
+  await filePoolSmoke(page);
   same(page.errors, [], "the page's errors");
+}
+
+/** Exercise the real desktop shell and native core; replace only the OS chooser's selection. */
+async function filePoolSmoke(page) {
+  const work = path.dirname(netlist);
+  const parts = path.join(work, "pool");
+  fs.mkdirSync(parts);
+  const top = path.join(work, "pool-top.sp");
+  const pkg = path.join(parts, "renamed.rnl");
+  const inc = path.join(parts, "part.inc");
+  fs.writeFileSync(top, '* top\n* @RNL(type="header") { @VERSION("0.3"); @USE-PACKAGE(name="acme", version="1.0") }\n.include "part.inc"\n.end\n');
+  fs.writeFileSync(pkg, '@RNL(type="header") { @VERSION("0.3"); @PACKAGE(name="acme", version="1.0") }\n');
+  fs.writeFileSync(inc, "Rpool a 0 1k\n");
+  const slashed = (p) => p.replaceAll("\\", "/");
+  await page.evaluate(`(async () => {
+    const { openSource } = await import('./open.js');
+    await openSource({ path: ${JSON.stringify(top)}, name: 'pool-top.sp' }, false);
+  })()`);
+  check(await page.evaluate(`window.viewer.doc.diagnostics.some(d => d.message.includes('acme 1.0 cannot be found'))`), "Open File unexpectedly added package directories");
+  const selected = [pkg, inc].map((p) => ({ path: slashed(p), name: path.basename(p), source: { path: slashed(p), name: path.basename(p) } }));
+  await page.evaluate(`(async () => {
+    const shell = (await import('./shells/desktop.js')).default;
+    shell.include = async () => ${JSON.stringify(selected)};
+    await (await import('./pool.js')).includeFiles('folder');
+  })()`);
+  same(await page.evaluate(`window.viewer.doc.diagnostics.filter(d => d.severity === 'error')`), [], "pool search diagnostics");
+  check(await page.evaluate(`window.viewer.doc.files.some(f => f.text.includes('Rpool'))`), "the pooled include was not read");
+  const pasted = await page.evaluate(`(async () => {
+    const shell = (await import('./shells/desktop.js')).default;
+    const doc = await shell.build({ name: 'clipboard.sp', text: '* clipboard\\n.include "part.inc"\\n.end\\n' },
+      { [${JSON.stringify(slashed(inc))}]: 'Redited a 0 2k\\n' });
+    return doc.files.map(f => f.text);
+  })()`);
+  check(pasted.some(t => t.startsWith('* clipboard')) && pasted.some(t => t.includes('Redited')),
+    "an include edit replaced the clipboard entry");
+  await page.evaluate(`document.querySelector('[aria-label="Open renamed.rnl"]').click()`);
+  await until("a pool package opened", () => page.evaluate(`window.viewer.doc.name === 'renamed.rnl' && !document.body.classList.contains('busy')`));
+  await page.evaluate(`(async () => {
+    await (await import('./open.js')).openSource({ path: ${JSON.stringify(top)}, name: 'pool-top.sp' }, false);
+    document.getElementById('tab-files').click();
+    document.querySelector('[aria-label="Exclude part.inc"]').click();
+  })()`);
+  await until("the excluded include missing", () => page.evaluate(`window.viewer.doc.diagnostics.some(d => d.message.includes('part.inc cannot be found'))`));
+  await page.evaluate(`(async () => {
+    const shell = (await import('./shells/desktop.js')).default;
+    shell.pickPath = async () => ${JSON.stringify(slashed(parts))};
+    document.getElementById('add-path').click();
+  })()`);
+  await until("PATH resolving the include", () => page.evaluate(`window.viewer.doc.files.some(f => f.text.includes('Rpool')) && !document.body.classList.contains('busy')`));
+  const settings = await page.evaluate(`(async () => {
+    const util = await import('./util.js'); await util.flushSettings(); return util.settingsPath;
+  })()`);
+  same(JSON.parse(fs.readFileSync(settings, "utf8"))["search-paths"], [slashed(parts)], "native settings file PATH");
+  check(await page.evaluate(`Array.from(document.querySelectorAll('#pool-list .pool-row')).filter(r => r.querySelector('.pool-badge')).every(r => !r.textContent.includes('Exclude'))`), "a built-in can be excluded");
+  await page.evaluate(`document.querySelector('[aria-label="Open 0.3/rnl-std.rnl"]').click()`);
+  await until("a built-in package opened", () => page.evaluate(`window.viewer.doc.path.includes('<bundled>') && !document.body.classList.contains('busy')`));
+  check(await page.evaluate(`(async () => (await import('./open.js')).currentSource().readonly)()`), "built-in package is not read-only");
+  await page.send("Page.reload");
+  await until("settings after reload", () => page.evaluate(`window.viewer && window.viewer.doc && document.querySelectorAll('#path-list li').length === 1 && !document.body.classList.contains('busy')`));
+  same(await page.evaluate(`document.querySelectorAll('#pool-list .pool-row:not(:has(.pool-badge))').length`), 0, "pool lifetime");
+  console.log("The native file pool resolves packages/includes, opens and excludes files; PATH persists and built-ins are read-only");
 }
 
 /**
@@ -686,7 +748,7 @@ async function main() {
   // where the app runs elevated, as on GitHub's runners, but takes the profile from the environment
   const app = spawn(exe, [`--remote-debugging-port=${port}`, netlist], {
     cwd: root,
-    env: { ...process.env, WEBVIEW2_USER_DATA_FOLDER: profile },
+    env: { ...process.env, WEBVIEW2_USER_DATA_FOLDER: profile, RNL_VIEWER_TEST_CONFIG_DIR: path.join(profile, "settings") },
     stdio: ["ignore", "inherit", "inherit"],
   });
   let end = null; // how the app ended, or why it did not start

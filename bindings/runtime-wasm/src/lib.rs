@@ -39,6 +39,9 @@ use serde::{Deserialize, Serialize};
 pub struct Request {
     /// The path of the file to open, as the frontend names it (see [`rnl_view::build`]).
     pub entry: String,
+    /// Explicit temporary files, searched before package directories.
+    #[serde(default)]
+    pub pool: Vec<String>,
     /// The texts of the workspace by path, the entry's among them.
     #[serde(default)]
     pub files: BTreeMap<String, String>,
@@ -245,6 +248,8 @@ pub fn respond(request: &[u8]) -> Response {
     }
     let files = request.files.into_iter().map(|(path, text)| (normalize(&path), text)).collect();
     let files = MemoryProvider { files, package_dirs: request.package_dirs };
+    let paths: Vec<String> = request.pool.iter().map(|p| normalize(p)).collect();
+    let files = rnl_runtime::source::FilePool { files: &files, paths: &paths };
     let options = BuildOptions {
         dialect: request.dialect,
         runtime: Options { std: request.std, std_version: request.std_version.clone(), ..Options::default() },
@@ -466,6 +471,36 @@ C1 a 0 1p
         serde_json::from_str(&respond_json(request.to_string().as_bytes())).unwrap()
     }
 
+    // Compare both sides after the same JSON transport. Parsing a JSON float without
+    // float_roundtrip may round its final bit differently from an in-memory to_value.
+    fn wire(value: impl Serialize) -> Value {
+        serde_json::from_str(&serde_json::to_string(&value).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn file_pool_is_separate_from_open_files_and_resolves_packages_and_includes() {
+        let top = "* top\n* @RNL(type=\"header\") { @VERSION(\"0.3\"); @USE-PACKAGE(name=\"acme\", version=\"1.0\") }\n.include \"part.inc\"\n.end\n";
+        let files = json!({
+            "/work/top.sp": top,
+            "/pool/custom.rnl": "@RNL(type=\"header\") { @VERSION(\"0.3\"); @PACKAGE(name=\"acme\", version=\"1.0\") }",
+            "/pool/part.inc": "R1 a 0 1k\n"
+        });
+        let without = answer(json!({ "entry": "/work/top.sp", "files": files }));
+        assert!(without["document"]["diagnostics"].as_array().unwrap().iter().any(|d| d["severity"] == "error"));
+        let with =
+            answer(json!({ "entry": "/work/top.sp", "files": files, "pool": ["/pool/custom.rnl", "/pool/part.inc"] }));
+        assert!(
+            !with["document"]["diagnostics"].as_array().unwrap().iter().any(|d| d["severity"] == "error"),
+            "{with}"
+        );
+        assert_eq!(with["document"]["files"].as_array().unwrap().len(), 2);
+        assert!(with["document"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["message"].as_str().unwrap().contains("/pool/part.inc")));
+    }
+
     #[test]
     fn a_request_can_ask_for_a_version_of_the_standard_package() {
         // a file of 0.3 that writes $GND of the series 0.2: an error, unless the request asks for it
@@ -496,7 +531,7 @@ C1 a 0 1p
         let files = MemoryProvider::new().with("/w/top.sp", NETLIST);
         let native = rnl_view::build("/w/top.sp", &files, &BuildOptions::default()).unwrap();
         let v = answer(json!({ "entry": "/w/top.sp", "files": { "/w/top.sp": NETLIST } }));
-        assert_eq!(v["document"], serde_json::to_value(native).unwrap());
+        assert_eq!(v["document"], wire(native));
     }
 
     #[test]
@@ -527,7 +562,7 @@ C1 a 0 1p
         assert_eq!(status["document"]["levels"][0]["solve"], "unsolved");
         let native = BuildOptions { status: true, ..BuildOptions::default() };
         let native = rnl_view::build("a.sp", &MemoryProvider::new().with("a.sp", NETLIST), &native).unwrap();
-        assert_eq!(status["document"], serde_json::to_value(native).unwrap());
+        assert_eq!(status["document"], wire(native));
         // a file of 0.3 is read without any switch; `draft`, which the core once accepted with no
         // effect, is ignored as every field it does not know
         let text = "* t\n* @RNL(type=\"header\") { @VERSION(\"0.3\")}\nR1 a 0 1k\n* @RNL { #R1 @PLACE(0, 0) }\n.end\n";
@@ -667,7 +702,7 @@ R1 a 0 1k
         let parts = Parts { drawing: true, host: false, model: true };
         let native = rnl_view::snapshot("/w/a.sp", &provider, &BuildOptions::default(), parts).unwrap();
         let v = answer(json!({ "entry": "/w/a.sp", "files": files, "parts": { "model": true } }));
-        assert_eq!(v["snapshot"], serde_json::to_value(native).unwrap());
+        assert_eq!(v["snapshot"], wire(native));
         let built = answer(json!({ "entry": "/w/a.sp", "files": files }));
         assert_eq!(v["snapshot"]["drawing"], built["document"]);
     }
@@ -683,7 +718,7 @@ R1 a 0 1k
         assert_eq!(resistor["pins"][0], json!({"terminal": 1, "at": [0.0, 2.0], "direction": "up"}));
         // the catalog rnl-view lists
         let native = rnl_view::catalog(&MemoryProvider::new(), &CatalogOptions::default());
-        assert_eq!(v["catalog"], serde_json::to_value(native).unwrap());
+        assert_eq!(v["catalog"], wire(native));
         // the frontend's own packages with the bundled ones, by name, every version
         let package = "@RNL(type=\"header\") { @VERSION(\"0.3\"); @PACKAGE(name=\"acme\", version=\"1.0\")}";
         let request = json!({ "catalog": { "packages": ["acme", "rnl-std"], "all_versions": true },

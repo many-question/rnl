@@ -3,6 +3,7 @@
 // item its id, its label, its keys and the platforms that offer it. A command runs by its id,
 // whether it comes from the platform's menu, the HTML menu bar or a key.
 
+import { includeFiles } from "./pool.js";
 import { inform } from "./dialog.js";
 import { fit, zoomCenter } from "./drawing.js";
 import { applyChanges, save, saveAs, toggleEdit } from "./editor.js";
@@ -38,7 +39,9 @@ export async function startCommands() {
 export function command(id) {
   switch (id) {
     case "open": pickAndOpen("file"); break;
-    case "open-folder": pickAndOpen("folder"); break;
+    case "include-file": includeFiles("file"); break;
+    case "include-folder": includeFiles("folder"); break;
+    case "include-library": includeFiles("library"); break;
     case "open-url": pickAndOpen("url"); break;
     case "load-clipboard": loadClipboard(); break;
     case "reload": reload(); break;
@@ -101,7 +104,7 @@ function toolsPage() {
 /** Set the state of a check-mark command, such as "toggle-netlist", in the menus that show it. */
 export function setCheck(id, checked) {
   checks.set(id, checked);
-  if (shell) shell.setCheck(id, checked);
+  if (shell && table) shell.setCheck(id, checked);
 }
 
 /** Whether a check-mark command is checked. */

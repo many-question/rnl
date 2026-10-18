@@ -12,6 +12,87 @@ pub trait Provider {
     fn package_files(&self) -> Vec<String> {
         Vec::new()
     }
+
+    /// Candidates for a named package, in search order. Implementations can prefer its filename
+    /// within each directory; the runtime still checks PACKAGE and selects the version (16.2).
+    fn package_candidates(&self, _name: &str) -> Vec<String> {
+        self.package_files()
+    }
+
+    /// Fallback paths for a bare include filename, after the including file's directory.
+    fn include_candidates(&self, _name: &str) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+/// Explicit files in a viewer's temporary file pool. Their original paths stay intact, so
+/// relative references in a pool file continue to resolve beside that file.
+pub struct FilePool<'a> {
+    pub files: &'a dyn Provider,
+    pub paths: &'a [String],
+}
+
+impl Provider for FilePool<'_> {
+    fn read(&self, path: &str) -> Option<String> {
+        self.files.read(path)
+    }
+    fn package_files(&self) -> Vec<String> {
+        let mut out: Vec<_> = self.paths.iter().filter(|p| p.to_ascii_lowercase().ends_with(".rnl")).cloned().collect();
+        out.extend(self.files.package_files());
+        out
+    }
+    fn package_candidates(&self, name: &str) -> Vec<String> {
+        let mut out: Vec<_> = self.paths.iter().filter(|p| p.to_ascii_lowercase().ends_with(".rnl")).cloned().collect();
+        prefer_filename(&mut out, name);
+        out.extend(self.files.package_candidates(name));
+        out
+    }
+    fn include_candidates(&self, name: &str) -> Vec<String> {
+        let mut out: Vec<_> = self.paths.iter().filter(|p| p.rsplit('/').next() == Some(name)).cloned().collect();
+        out.extend(self.files.include_candidates(name));
+        out
+    }
+}
+
+/// Whether a directory name follows the tool's numeric version convention.
+pub fn version_directory(name: &str) -> bool {
+    !name.is_empty() && name.split('.').all(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+}
+
+fn package_in_directory(path: &str) -> bool {
+    path.to_ascii_lowercase().ends_with(".rnl")
+        && match path.split_once('/') {
+            None => true,
+            Some((version, file)) => version_directory(version) && !file.contains('/'),
+        }
+}
+
+/// Prefer the conventional filename without dropping packages named differently.
+pub fn prefer_filename(paths: &mut [String], name: &str) {
+    let file = format!("{name}.rnl");
+    paths.sort_by_key(|p| p.rsplit('/').next() != Some(file.as_str()));
+}
+
+/// Resolve a host include, keeping relative paths authoritative. A fallback is a tool setting,
+/// not a change to the meaning of a path containing directory components.
+pub fn resolve_include(
+    provider: &dyn Provider,
+    from: &str,
+    target: &str,
+    sink: &mut crate::diag::Sink,
+    loc: crate::diag::Loc,
+) -> String {
+    let relative = join(&dirname(from), target);
+    if target.contains(['/', '\\', ':']) || provider.read(&relative).is_some() {
+        return relative;
+    }
+    for candidate in provider.include_candidates(target) {
+        if provider.read(&candidate).is_some() {
+            sink.hint(format!("include {target} resolved through the file pool or PATH to {candidate}"), Some(loc));
+            return candidate;
+        }
+    }
+    relative
 }
 
 /// Files held in memory: for tests, WASM and bundled packages.
@@ -46,10 +127,29 @@ impl Provider for MemoryProvider {
         for d in &self.package_dirs {
             let prefix = if d.is_empty() { String::new() } else { format!("{}/", normalize(d)) };
             for f in self.files.keys() {
-                if f.starts_with(&prefix) && f.ends_with(".rnl") && !f[prefix.len()..].contains('/') {
+                if f.starts_with(&prefix) && package_in_directory(&f[prefix.len()..]) {
                     out.push(f.clone());
                 }
             }
+        }
+        out
+    }
+
+    fn package_candidates(&self, name: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for d in &self.package_dirs {
+            let prefix = if d.is_empty() { String::new() } else { format!("{}/", normalize(d)) };
+            let mut group: Vec<_> = self
+                .files
+                .keys()
+                .filter(|f| f.starts_with(&prefix) && package_in_directory(&f[prefix.len()..]))
+                .cloned()
+                .collect();
+            prefer_filename(&mut group, name);
+            // A direct match precedes matches in version subdirectories.
+            let direct = join(d, &format!("{name}.rnl"));
+            group.sort_by_key(|p| p != &direct);
+            out.extend(group);
         }
         out
     }
@@ -68,6 +168,14 @@ impl Provider for Layered<'_> {
 
     fn package_files(&self) -> Vec<String> {
         self.layers.iter().flat_map(|p| p.package_files()).collect()
+    }
+
+    fn package_candidates(&self, name: &str) -> Vec<String> {
+        self.layers.iter().flat_map(|p| p.package_candidates(name)).collect()
+    }
+
+    fn include_candidates(&self, name: &str) -> Vec<String> {
+        self.layers.iter().flat_map(|p| p.include_candidates(name)).collect()
     }
 }
 

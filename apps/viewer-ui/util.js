@@ -19,8 +19,37 @@ export function svgElement(name, attrs) {
   return el;
 }
 
-/** A value kept in localStorage for the next start, or `fallback` when there is none to read. */
+let preferences = null;
+let persist = null;
+let pending = Promise.resolve();
+export let settingsPath = null;
+
+/** Load native settings before any view writes its initial state; migrate known browser keys once. */
+export async function startSettings(shell) {
+  if (!shell.loadSettings) return;
+  const keys = ["sidebar-width", "sidebar-shown", "side-pane", "problems-height", "problems-shown",
+    "index-height", "show-failed", "hover-names", "grid-shown", "grid-style", "grid-spacing",
+    "grid-major", "grid-axes", "solve-options", "solve-time-limit", "search-paths"];
+  const legacy = {};
+  for (const key of keys) {
+    const value = load(key, undefined);
+    if (value !== undefined) legacy[key] = value;
+  }
+  const loaded = await shell.loadSettings(legacy);
+  preferences = loaded.values;
+  settingsPath = loaded.path;
+  persist = shell.saveSetting;
+  for (const key of keys) {
+    try { localStorage.removeItem(key); } catch { /* browser storage may be disabled */ }
+  }
+}
+
+/** Wait for changes already queued, such as PATH, before a native build or solve. */
+export const flushSettings = () => pending;
+
+/** A persisted value, or `fallback` when there is none to read. */
 export function load(key, fallback) {
+  if (preferences) return Object.hasOwn(preferences, key) ? preferences[key] : fallback;
   try {
     const v = localStorage.getItem(key);
     return v === null ? fallback : JSON.parse(v);
@@ -29,8 +58,21 @@ export function load(key, fallback) {
   }
 }
 
-/** Keep a value in localStorage for the next start. */
+/** Keep settings in the native configuration file, or browser storage on the web. */
 export function save(key, value) {
+  if (preferences) {
+    const before = preferences[key];
+    preferences[key] = value;
+    pending = pending.catch(() => {}).then(() => persist(key, value)).catch((error) => {
+      if (preferences[key] === value) {
+        if (before === undefined) delete preferences[key];
+        else preferences[key] = before;
+      }
+      throw error;
+    });
+    pending.catch((error) => window.dispatchEvent(new CustomEvent("settings-error", { detail: String(error) })));
+    return pending;
+  }
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {

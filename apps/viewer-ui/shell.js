@@ -7,12 +7,18 @@
  *
  * @typedef {object} Shell
  * @property {"desktop" | "web"} platform The platform, which picks the commands of commands.json it offers.
+ * @property {() => Promise<Record<string, string>>} [bundledFiles] Built-in package texts by path.
+ * @property {(kind: string) => Promise<object[]>} [include] Include files, a folder or a library package.
+ * @property {(items: object[]) => void} [setPool] Replace the session's search pool.
+ * @property {() => Promise<string | null>} [pickPath] Pick a desktop search directory.
+ * @property {(legacy: object) => Promise<{ path: string, values: object }>} [loadSettings] Native settings and migration.
+ * @property {(key: string, value: unknown) => Promise<void>} [saveSetting] Persist a native setting.
  * @property {boolean} nativeMenu Whether the platform shows the menu bar itself; if not, the page shows
  *   its own (menubar.js).
  * @property {() => Promise<Source | null>} initial What to open at start, if anything: on the desktop,
  *   the file named on the command line.
  * @property {(kind: string) => Promise<Source | null>} pick Ask for something to open: kind "file", and on
- *   the web also "folder" or "url". Null when nothing is chosen.
+ *   the web also "url". Null when nothing is chosen.
  * @property {(source: Source, edits?: Edits) => Promise<import("../../crates/rnl-view/types/document.js").Document>} build
  *   Read a source and build its Document; rejects with a message when it cannot. With `edits`, the
  *   texts of some of its files are those, not what is read: Edit > Apply Changes (editor.js). The

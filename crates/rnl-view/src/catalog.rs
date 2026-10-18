@@ -249,7 +249,13 @@ fn listed(ws: &Workspace, options: &CatalogOptions) -> Vec<String> {
         if options.packages.as_ref().is_some_and(|names| !names.contains(&name)) {
             continue;
         }
-        if !found.iter().any(|(n, v, _)| *n == name && *v == version) {
+        if let Some((_, _, previous)) = found.iter_mut().find(|(n, v, _)| *n == name && *v == version) {
+            let order = ws.package_candidates(&name);
+            let rank = |p: &str| order.iter().position(|f| f == p).unwrap_or(usize::MAX);
+            if rank(&path) < rank(previous) {
+                *previous = path;
+            }
+        } else {
             found.push((name, version, path));
         }
     }

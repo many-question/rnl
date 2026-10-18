@@ -199,3 +199,7 @@ node bindings/runtime-wasm/tests/equality.mjs --snapshot
 The core takes its sines, cosines and arc tangents from `libm`, a math library in Rust, so that both builds compute the same bits; the rest of its arithmetic (`+`, `-`, `*`, `/`, square roots, rounding) is correctly rounded by IEEE 754 and gives the same bits everywhere. Nothing in a Document may follow the order of a hash map, whose keys change from one build to the next, even within one instance: the corpus case `16-ties` has a hint with names equally close and several overridden statements, whose order once did, and the Rust tests and `tests/core.mjs` build it again and again. CI runs these tests in the `wasm` job of [`rust.yml`](../../.github/workflows/rust.yml).
 
 See the [roadmap](../../docs/roadmap.md) for planned work.
+
+### Temporary file pools
+
+A build or snapshot request may include `pool: string[]`, the paths of explicitly included files in `files`. Pool packages are found by PACKAGE name/version before `package_dirs` and the bundled packages, even if their filenames differ. Bare include names fall back to matching pool filenames only after the including file’s relative path was tried. Merely supplying a file in `files` does not add it to the pool. `collect` still requests a missing relative file and rebuilds if it becomes available, so a pool fallback never displaces a relative include that the frontend can read.

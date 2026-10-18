@@ -63,7 +63,7 @@ test.describe("on the web", () => {
         title: "File",
         letter: "F",
         items: [
-          "Open...Ctrl+O", "Open Folder...", "Open URL...", "Load from Clipboard...Ctrl+Shift+V", "ReloadF5",
+          "Open File...Ctrl+O", "Include File...", "Include Folder...", "Include Package from Library...", "Open URL...", "Load from Clipboard...Ctrl+Shift+V", "ReloadF5",
           "", "SaveCtrl+S",
         ],
       },
@@ -185,12 +185,13 @@ test.describe("on the web", () => {
       await viewer.menuItem(id).click();
       await expect(page.locator("#menubar .menu-list:visible")).toHaveCount(0);
     };
-    await choose("File", "open-folder");
+    await choose("File", "include-folder");
+    expect(await viewer.calls("include")).toEqual([["folder"]]);
     await choose("File", "open-url");
-    expect(await viewer.calls("pick")).toEqual([["folder"], ["url"]]);
+    expect(await viewer.calls("pick")).toEqual([["url"]]);
     await page.evaluate(() => window.fakeShell.picks.push("01-rc-lowpass"));
     await viewer.build(() => choose("File", "open"));
-    expect(await viewer.calls("pick")).toEqual([["folder"], ["url"], ["file"]]);
+    expect(await viewer.calls("pick")).toEqual([["url"], ["file"]]);
     await expect(page.locator("#level-name")).toHaveText("01-rc-lowpass.sp");
     await viewer.build(() => choose("File", "reload"));
     expect((await viewer.calls("build")).at(-1)).toEqual(["01-rc-lowpass"]);

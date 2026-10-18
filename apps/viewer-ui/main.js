@@ -3,6 +3,7 @@
 // diagnostics and the subcircuit hierarchy, and follows a selected instance or net between the
 // drawing and the text. Each part is a module of its own (README.md); this one starts the page.
 
+import { startPool } from "./pool.js";
 import { command, isChecked, setCheck, startCommands } from "./commands.js";
 import { closeRequested } from "./editor.js";
 import { dirtyPaths, unappliedPaths } from "./edits.js";
@@ -16,38 +17,40 @@ import {
 import { loadShell } from "./shell.js";
 import { current, doc, path, selected } from "./state.js";
 import { renderUnplaced } from "./unplaced.js";
-import { $, load } from "./util.js";
-
-setSidebarWidth(load("sidebar-width", 420));
-setProblemsHeight(load("problems-height", 180));
-setSidebar(load("sidebar-shown", true));
-setProblems(load("problems-shown", true));
-setPane(load("side-pane", "netlist"));
-setShowFailed(load("show-failed", true));
-// the text is read, not edited, until the user says (editor.js); the native menu starts checked
-setCheck("toggle-edit", false);
-setIndexHeight(load("index-height", 260));
-// the grid: dots at the integer points, and no axes, since the origin means nothing in particular
-setGrid({
-  shown: load("grid-shown", true),
-  style: load("grid-style", "dots"),
-  spacing: load("grid-spacing", "auto"),
-  major: load("grid-major", 5),
-  axes: load("grid-axes", false),
-});
-setHoverNames(load("hover-names", true));
-{
-  const li = document.createElement("li");
-  li.className = "nothing";
-  li.textContent = "No file is open.";
-  $("diags").append(li);
-}
-renderUnplaced();
+import { $, load, startSettings } from "./util.js";
 
 /** Load the shell and the command table, then open what the shell has for the start. */
 async function start() {
   const shell = await loadShell();
+  await startSettings(shell);
+  setSidebarWidth(load("sidebar-width", 420));
+  setProblemsHeight(load("problems-height", 180));
+  setSidebar(load("sidebar-shown", true));
+  setProblems(load("problems-shown", true));
+  setPane(load("side-pane", "netlist"));
+  setShowFailed(load("show-failed", true));
+  // the text is read, not edited, until the user says (editor.js); the native menu starts checked
+  setCheck("toggle-edit", false);
+  setIndexHeight(load("index-height", 260));
+  // the grid: dots at the integer points, and no axes, since the origin means nothing in particular
+  setGrid({
+    shown: load("grid-shown", true),
+    style: load("grid-style", "dots"),
+    spacing: load("grid-spacing", "auto"),
+    major: load("grid-major", 5),
+    axes: load("grid-axes", false),
+  });
+  setHoverNames(load("hover-names", true));
+  {
+    const li = document.createElement("li");
+    li.className = "nothing";
+    li.textContent = "No file is open.";
+    $("diags").append(li);
+  }
+  renderUnplaced();
+
   await startCommands();
+  await startPool();
   if (!shell.nativeMenu) showMenuBar(true);
   if (shell.onOpen) shell.onOpen((source) => openSource(source, false));
   if (shell.onCloseRequested) shell.onCloseRequested(closeRequested);

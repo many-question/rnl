@@ -278,6 +278,12 @@ impl Provider for Noting<'_> {
     fn package_files(&self) -> Vec<String> {
         self.files.package_files()
     }
+    fn package_candidates(&self, name: &str) -> Vec<String> {
+        self.files.package_candidates(name)
+    }
+    fn include_candidates(&self, name: &str) -> Vec<String> {
+        self.files.include_candidates(name)
+    }
 }
 
 /// Reads `file` as a solver reads it, solves every drawing level, or the one `options.level`
