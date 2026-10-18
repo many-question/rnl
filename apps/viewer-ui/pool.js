@@ -14,6 +14,9 @@ let scanVersion = 0;
 const expanded = new Map([["files", true]]); // session only; never written to settings
 let scanned = new Map();
 
+// Native choosers/CLI arguments use Windows separators; the lookup provider lists forward slashes.
+const filePath = (path) => shell.platform === "desktop" ? path.replace(/\\/g, "/") : path;
+
 function button(label, action, title = label) {
   const b = document.createElement("button");
   b.type = "button";
@@ -26,7 +29,8 @@ function button(label, action, title = label) {
 
 function addItems(added) {
   for (const item of added) {
-    item.source.path ??= item.path;
+    item.path = filePath(item.path);
+    item.source.path = filePath(item.source.path || item.path);
     const at = items.findIndex((old) => old.path === item.path && !old.builtin);
     if (at < 0) { items.push(item); expanded.set("files", true); }
     else items[at] = item;
@@ -43,7 +47,7 @@ export function sourceOpened(source, doc, add, applied = false) {
     if (applied && temporary?.source === source && doc) source.text = doc.files[0]?.text ?? source.text;
     currentPath = null;
   } else {
-    const path = source.path || doc?.path || source.name;
+    const path = filePath(source.path || doc?.path || source.name);
     currentPath = path;
     if (add && !source.readonly && !items.some((i) => i.path === path && i.builtin)) {
       source.path = path;

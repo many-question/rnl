@@ -26,6 +26,7 @@ let lastUrl = ""; // the URL opened last, which Open URL offers again
  *
  * @typedef {object} WebSource
  * @property {string} name How the page names it: the entry's file name, its path in a folder, or the URL.
+ * @property {string} path The entry's rooted workspace path; a URL updates it after redirects.
  * @property {(again: boolean) => Promise<{ path: string, text: string }>} open Read the entry: its
  *   path in the workspace, rooted, such as "/top.sp", and its text; rejects with an Error that says
  *   why it cannot be read. `again` when the source is read again (File > Reload).

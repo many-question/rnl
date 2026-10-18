@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../viewer.js";
 
-const group = (page, key) => page.locator(`.lib-group[data-group="${key}"]`);
+const group = (page, key) => page.locator(`.lib-group[data-group=${JSON.stringify(key)}]`);
 const files = (page) => group(page, "files");
 const builtin = (page) => group(page, "builtin");
 const dialog = (page) => page.locator("dialog.dialog");
@@ -161,6 +161,30 @@ test("desktop: PATH groups scan on entry and changes, preserve collapse and high
   await viewer.build(() => pdk.getByRole("button", { name: "Remove from PATH", exact: true }).click());
   await expect(pdk).toHaveCount(0);
   await expect(files(page).locator(".current")).toHaveAttribute("data-path", "/pdk/direct.rnl");
+});
+
+test("desktop: Windows chooser paths match PATH rows and forward-slash opens without duplicates", async ({ page, viewer }) => {
+  await viewer.open(null, { platform: "desktop", pool: "1" });
+  await page.evaluate(() => {
+    localStorage.setItem("search-paths", JSON.stringify(["C:\\libs\\pdk"]));
+    window.fakeShell.packages["C:\\libs\\pdk"] = ["C:/libs/pdk/shared.rnl"];
+  });
+  await viewer.build(() => page.evaluate(() => window.fakeShell.open({
+    name: "shared.rnl", path: "C:\\libs\\pdk\\shared.rnl", fixture: "04-hierarchy",
+  })));
+  await page.locator("#tab-files").click();
+  const dir = group(page, "path:C:\\libs\\pdk");
+  await dir.locator(".lib-toggle").click();
+  await expect(dir.locator(".pool-open")).toHaveText("shared.rnl");
+  await expect(page.locator('.pool-row.current[data-path="C:/libs/pdk/shared.rnl"][aria-current="true"]')).toHaveCount(2);
+  await files(page).locator(".lib-toggle").click();
+  await viewer.build(() => page.evaluate(() => window.fakeShell.open({
+    name: "shared.rnl", path: "C:/libs/pdk/shared.rnl", fixture: "04-hierarchy",
+  })));
+  await expect(files(page).locator(".pool-row")).toHaveCount(1);
+  await expect(files(page).locator(".lib-toggle")).toHaveAttribute("aria-expanded", "false");
+  await viewer.build(() => dir.locator(".pool-open").click());
+  await expect(files(page).locator(".pool-row")).toHaveCount(1);
 });
 
 for (const platform of ["desktop", "web"]) for (const theme of ["light", "dark"]) {
