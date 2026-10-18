@@ -214,11 +214,11 @@ impl Interp<'_> {
         if let Some(&s) = self.std_units.get(language) {
             return s;
         }
-        self.scan_packages();
+        self.scan_packages(STD_NAME);
         // of the files of one version, the one found is the first in the order of the package
         // directories (16.2): one of a frontend's own directories hides the bundled one
         let mut found: Vec<(String, String, String)> = Vec::new();
-        for c in self.pkg_files.as_ref().unwrap().iter().filter(|c| c.0 == STD_NAME) {
+        for c in self.pkg_files[STD_NAME].iter().filter(|c| c.0 == STD_NAME) {
             if !found.iter().any(|f| f.1 == c.1) {
                 found.push(c.clone());
             }

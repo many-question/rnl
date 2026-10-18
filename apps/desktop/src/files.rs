@@ -48,6 +48,13 @@ pub fn held(entry: &str, edits: &Edits) -> MemoryProvider {
     files
 }
 
+/// Clipboard text and any edits to the entry or its includes, at their own paths.
+pub fn held_text(entry: &str, text: &str, edits: &Edits) -> MemoryProvider {
+    let mut files = MemoryProvider::new().with(entry, text);
+    files.files.extend(held(entry, edits).files);
+    files
+}
+
 /// The files of the netlist `entry` as the core reads them: the edits over the disk.
 pub fn layered<'a>(edits: &'a MemoryProvider, disk: &'a dyn Provider) -> Layered<'a> {
     Layered { layers: vec![edits, disk] }

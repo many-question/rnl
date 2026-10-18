@@ -8,6 +8,7 @@
  * What to build: the workspace and how. Fields the core does not know are ignored.
  *
  * @typedef {object} Request
+ * @property {string[]} [pool] Explicit temporary files searched before package directories.
  * @property {string} entry The path of the file to open, as the frontend names it, such as `/w/top.sp`.
  * @property {Record<string, string>} [files] The texts of the workspace by path, the entry's among them.
  * @property {string[]} [package_dirs] The directories, among the paths of `files`, whose packages are

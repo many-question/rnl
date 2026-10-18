@@ -3,7 +3,7 @@
 // beam, the work of the search and the router, whether to seek every conflict group of the facts of
 // priority low, and the objectives, the order in which the solver ranks candidates, with their levels.
 // The solver's defaults come from the shell, so the page keeps none of them; what the user changed
-// is kept in localStorage under `solve-options`, as only the settings that differ from the defaults,
+// is kept in the shell's settings under `solve-options`, as only the settings that differ from the defaults,
 // and so follows the solver's defaults where it was not changed. A solve gets them as the text
 // `--solver-options` takes (`solverSettings`), which the solver reads, so its rules are the only ones.
 

@@ -350,7 +350,20 @@ pub(crate) fn document(
     let dir = dirname(entry);
     let shown_file = |file: &str| relative_to(file, &dir).unwrap_or(file).to_string();
 
-    let mut files = source_files(&r.doc, &shown_file);
+    // A package checked on its own has no host sources. Still expose the opened package's
+    // text, including its record ranges, so the Files tab can open built-ins read-only.
+    let package_doc = if r.doc.sources.is_empty() && r.doc.dialect.name == "none" {
+        let mut source_doc = r.doc.clone();
+        if let Some((name, text)) = r.sources.iter().find(|(name, _)| name == &source_doc.main().file) {
+            source_doc.sources.push((name.clone(), text.clone()));
+            source_doc.levels[0].records =
+                rnl_runtime::records::scan_run(&rnl_runtime::records::package_lines(text), name, &mut Sink::new());
+        }
+        Some(source_doc)
+    } else {
+        None
+    };
+    let mut files = source_files(package_doc.as_ref().unwrap_or(&r.doc), &shown_file);
     for f in &r.failed {
         if let Some(file) = files.iter_mut().find(|x| x.path == f.start.file) {
             file.failed.push([f.start.line, f.start.col, f.end.line, f.end.col, u32::from(f.conflict)]);

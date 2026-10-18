@@ -258,29 +258,21 @@ test("files set on the file input open as with Open, and the page asks which is 
   expect(await page.evaluate(() => window.viewer.doc.path)).toBe("/12-diagnostics.sp");
 });
 
-test("a folder set on the folder input opens as with Open Folder", async ({ page }) => {
+test("Include Folder adds netlists and packages, and clicking a pooled file opens it", async ({ page }) => {
   await start(page);
   const dir = folder({
     "top.sp": "* top\n.include \"lib/parts.inc\"\nX1 a 0 part\n.end\n",
     "lib/parts.inc": ".subckt part p q\nR1 p q 1k\n.ends\n",
     "notes.txt": "notes\n",
   });
-  // With a folder, Playwright's setInputFiles waits for the input's own input event, which it starts
-  // to listen for while it sets the files; in Firefox and WebKit the event can come first, and then
-  // it never returns, though the page has the files and shows the dialog (seen in CI, a trace of
-  // run 39023147223). So the dialog does not wait for it: it is started, the dialog checked, and then
-  // it is given a few seconds, and left if it hangs; its error, when the page closes, is dropped.
   const setting = page.locator("#folder-input").setInputFiles(dir).catch(() => {});
   const name = path.basename(dir);
-  const dialog = page.locator("dialog.dialog");
-  await expect(dialog.locator(".dialog-title")).toHaveText("Open Folder");
+  const row = page.locator("#pool-list .pool-row", { has: page.getByRole("button", { name: `Open ${name}/top.sp`, exact: true }) });
+  await expect(row).toBeVisible();
   await Promise.race([setting, new Promise((resolve) => setTimeout(resolve, 3000))]);
-  await expect(dialog.locator(".dialog-body > p").first()).toHaveText(`The netlist to open in ${name}:`);
-  // the netlists first, then the files mostly included, then the others; the filter narrows them
-  await expect(dialog.locator(".dialog-option")).toHaveText(["top.sp", "lib/parts.inc", "notes.txt"]);
-  await dialog.locator("input[type=search]").fill("top");
-  await expect(dialog.locator(".dialog-option")).toHaveText(["top.sp"]);
-  const doc = await opened(page, () => dialog.locator("input[type=search]").press("Enter"));
+  expect(await page.evaluate(() => window.viewer.doc)).toBeNull();
+  await expect(page.locator("#pool-list")).not.toContainText("notes.txt");
+  const doc = await opened(page, () => row.locator(".pool-open").click());
   expect(doc.path).toBe(`/${name}/top.sp`);
   expect(doc.files.map((f) => f.path)).toEqual(["top.sp", "lib/parts.inc"]);
   sameAsRnl(doc, path.join(dir, "top.sp"));
@@ -558,4 +550,64 @@ test("the text edited and applied is built by the core as rnl view builds the sa
   await expect(page.locator("#note")).toHaveText("Downloaded parts.inc.");
   // the file downloaded is what was read from now on; the netlist's change is still not saved
   await expect(page.locator("#file-tabs button[data-unsaved='true']")).toHaveText(["top.sp"]);
+});
+
+
+test("Include File resolves a package with a different filename and Exclude removes it from search", async ({ page }) => {
+  await start(page);
+  await page.locator("#file-input").setInputFiles({ name: "top.sp", mimeType: "text/plain", buffer: Buffer.from(
+    '* top\n* @RNL(type="header") { @VERSION("0.3"); @USE-PACKAGE(name="acme", version="1.0") }\nR1 a 0 1k\n.end\n') });
+  await shown(page);
+  await page.locator("#tab-files").click();
+  expect(await page.locator("#pool-list .pool-row:not(:has(.pool-badge))").count()).toBe(0);
+  const d = await opened(page, () => page.locator("#include-input").setInputFiles({ name: "custom.rnl", mimeType: "text/plain", buffer: Buffer.from(
+    '@RNL(type="header") { @VERSION("0.3"); @PACKAGE(name="acme", version="1.0") }\n') }));
+  expect(d.diagnostics.some((d) => d.message.includes("acme 1.0 cannot be found"))).toBe(false);
+  const excluded = await opened(page, () => page.getByRole("button", { name: "Exclude custom.rnl", exact: true }).click());
+  expect(excluded.diagnostics.some((d) => d.message.includes("acme 1.0 cannot be found"))).toBe(true);
+});
+
+test("the web library adds SKY130 without duplicating built-ins, which open read-only", async ({ page }) => {
+  await start(page);
+  await page.locator("#tab-files").click();
+  await expect(page.getByRole("button", { name: "Open 0.2/rnl-std.rnl", exact: true })).toBeVisible();
+  await expect(page.locator("#pool-list .pool-row").filter({ hasText: "Built-in" }).getByRole("button", { name: /Exclude/ })).toHaveCount(0);
+  await page.locator("#include-library").click();
+  const dialog = page.locator("dialog.dialog");
+  await expect(dialog.locator(".dialog-option")).toContainText(["rnl-pdk-sky130"]);
+  await expect(dialog.locator(".dialog-option")).not.toContainText(["rnl-std-basic"]);
+  await dialog.locator("input[type=search]").fill("sky130");
+  await dialog.locator("input[type=search]").press("Enter");
+  await expect(page.getByRole("button", { name: "Exclude rnl-pdk-sky130 0.1", exact: true })).toBeVisible();
+  await page.locator("#file-input").setInputFiles({ name: "sky.sp", mimeType: "text/plain", buffer: Buffer.from(
+    '* sky\n* @RNL(type="header") { @VERSION("0.3"); @USE-PACKAGE(name="rnl-pdk-sky130", version="0.1") }\nXM1 d g 0 0 sky130_fd_pr__nfet_01v8\n.end\n') });
+  const doc = await shown(page);
+  expect(doc.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+  await page.locator("#tab-files").click();
+  const builtin = await opened(page, () => page.getByRole("button", { name: "Open 0.3/rnl-std.rnl", exact: true }).click());
+  expect(builtin.path).toContain("<bundled>");
+  await page.evaluate(() => window.viewer.command("toggle-edit"));
+  expect(await page.evaluate(() => window.viewer.checked("toggle-edit"))).toBe(false);
+  await expect(page.locator("#source")).toContainText("@PACKAGE");
+});
+
+
+test("relative files win over pooled files with the same name, including deferred URL collection", async ({ page }) => {
+  await start(page);
+  await page.locator("#include-input").setInputFiles({ name: "part.inc", mimeType: "text/plain", buffer: Buffer.from("Rpool a 0 1k\n") });
+  await page.locator("#tab-files").click();
+  await expect(page.getByRole("button", { name: "Exclude part.inc", exact: true })).toBeVisible();
+  const local = await opened(page, () => page.locator("#file-input").setInputFiles([
+    { name: "top.sp", mimeType: "text/plain", buffer: Buffer.from('* top\n.include "part.inc"\n.end\n') },
+    { name: "part.inc", mimeType: "text/plain", buffer: Buffer.from("Rrelative a 0 2k\n") },
+  ]));
+  expect(local.files[1].text).toContain("Rrelative");
+  await page.route("**/priority/top.sp", (route) => route.fulfill({ body: '* top\n.include "part.inc"\n.end\n', contentType: "text/plain" }));
+  await page.route("**/priority/part.inc", (route) => route.fulfill({ body: "Rremote a 0 3k\n", contentType: "text/plain" }));
+  await page.evaluate(() => window.viewer.command("open-url"));
+  const dialog = page.locator("dialog.dialog");
+  await dialog.locator("input").fill(`${process.env.RNL_WEB_URL}/priority/top.sp`);
+  const remote = await opened(page, () => dialog.locator("input").press("Enter"));
+  expect(remote.files[1].text).toContain("Rremote");
+  expect(remote.diagnostics.some((d) => d.message.includes("resolved through"))).toBe(false);
 });

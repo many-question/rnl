@@ -9,6 +9,7 @@
 // again; --samples copies the conformance corpus's cases and equivalence files into samples/, to try
 // the viewer with ?url=samples/cases/04-hierarchy.sp and for tests.
 
+import { publishLibrary } from "./library.mjs";
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
@@ -88,6 +89,8 @@ function files(dir, base = dir) {
     e.isDirectory() ? files(join(dir, e.name), base) : [relative(base, join(dir, e.name)).split(sep).join("/")],
   );
 }
+
+publishLibrary(join(root, "libraries"), join(out, "libraries"));
 
 const all = files(out);
 const bytes = all.reduce((n, f) => n + statSync(join(out, f)).size, 0);

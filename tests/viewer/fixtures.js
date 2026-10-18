@@ -293,6 +293,7 @@ export const LONG = 200000;
  * CARGO_TARGET_DIR or cargo's configuration may move.
  */
 export function buildRnl() {
+  if (process.env.RNL_BIN && fs.existsSync(process.env.RNL_BIN)) return process.env.RNL_BIN;
   execFileSync("cargo", ["build", "-p", "rnl-cli"], { cwd: root, stdio: "inherit" });
   const metadata = execFileSync("cargo", ["metadata", "--format-version", "1", "--no-deps"], {
     cwd: root,

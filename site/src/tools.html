@@ -177,6 +177,8 @@
     <header class="sheet-head">
       <p class="sheet-no"><zh>02 · 网页版</zh><en>02 · Web viewer</en></p>
       <h2><zh>网页版：不用安装，打开就能用。</zh><en>The web viewer: nothing to install.</en></h2>
+      <p><zh>Files 是侧栏第一个页签：Open File 只打开，Include File / Include Folder 把网表和包加入临时文件池，点击可打开，Exclude 可移出。内置的标准包 0.3、0.2 和 analog-canvas-extensions 也在池中，只读且不可移出。网页版的 Include Package from Library 可从本站包库加入 SKY130 等包，不使用 GitHub API；关闭页面后文件池清空。浏览器不能搜索任意本地目录，使用文件池代替 PATH。</zh>
+        <en>Files is the first sidebar tab: Open File only opens, while Include File / Include Folder add netlists and packages to the temporary file pool. Click to open, or Exclude to remove. Built-in standard series 0.3, 0.2 and analog-canvas-extensions are listed read-only and cannot be excluded. Include Package from Library adds packages such as SKY130 from this site, without the GitHub API. Closing the page clears the pool; browsers use the pool instead of searching arbitrary local PATH directories.</en></p>
       <p class="lead"><zh>网页版是一个静态网页，RNL 核心编译成 WebAssembly，在页面里运行。它能打开电脑上的文件或整个文件夹，也能打开网上的网表；把文件拖到页面上也行。</zh>
         <en>The web viewer is a static web page, with the RNL core compiled to WebAssembly running inside it. It opens files or a whole folder from your computer, or a netlist on the web; files dropped on the page open too.</en></p>
     </header>
@@ -232,6 +234,9 @@
       <p class="lead"><zh>桌面版 RNL Viewer 按路径读写磁盘上的文件：网表 include 的文件放在哪里都能找到，文件改了按 F5 重新读取，改过的文本保存时写回原处，File › Save As 把网表另存为新文件。窗口里的页面和网页版相同，另外多一个 Solve 菜单，能<a href="#solve">求解</a>。</zh>
         <en>The desktop RNL Viewer reads and writes files on disk by their paths: the files a netlist includes are found wherever they are, F5 reads a changed file again, edited text is saved back where it was read, and File › Save As saves the netlist under a new name. Its window shows the same page as the web viewer, with a Solve menu besides, which <a href="#solve">solves</a>.</en></p>
     </header>
+      <p><zh>桌面版 Files 下方的 PATH 可以添加、删除和排序搜索目录。所有设置（含求解、显示和 PATH）保存到 Tauri 应用配置目录的 settings.json，首次启动迁移旧版浏览器存储设置，具体路径显示在 PATH 下方。include 先找相对位置，仅纯文件名找不到时按文件池、PATH 的顺序回退并提示所用文件；包按文件池、PATH、内置包顺序搜索，同版本取先出现的。目录内先找包名.rnl 和版本/包名.rnl，再扫描其他 .rnl 并验证 PACKAGE 头，因此文件名可与包名不同。用户自己的 rnl-std 可以覆盖内置包。</zh>
+        <en>The desktop Files tab also edits ordered PATH directories. All settings, including solver, display and PATH, live in settings.json in Tauri’s application configuration directory; old browser settings migrate on first start, and the exact path is shown under PATH. Includes try their relative location first; bare filenames fall back to the pool, then PATH, with a hint naming the selected file. Packages search the pool, PATH and built-ins, taking the first copy of the selected version. Each directory prefers name.rnl and version/name.rnl, then scans other .rnl files and checks their PACKAGE headers, so filenames may differ from package names. A user’s rnl-std can override the bundled copy.</en></p>
+
 
 <!--release-->
     <div class="panel dl">

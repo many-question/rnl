@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 use rnl_runtime::diag::{Loc, Sink};
 use rnl_runtime::host::{file_name, Dialect, HostDocument, Instance, Level, LevelId, LevelKind};
 use rnl_runtime::records::{scan_run, CarrierLine};
-use rnl_runtime::source::{dirname, join, normalize, relative_to, Provider};
+use rnl_runtime::source::{dirname, normalize, relative_to, resolve_include, Provider};
 
 /// A record in a region written to be encrypted (2.2): Spectre's `protect … unprotect`, and
 /// `.prot … .unprot` in SPICE mode.
@@ -710,7 +710,7 @@ impl<'a> Reader<'a> {
         stack: &[String],
         parent_mode: Mode,
     ) {
-        let full = join(&dirname(path), target);
+        let full = resolve_include(self.provider, path, target, self.sink, Loc::line(fname, no));
         let key = format!("{}#{}", full, section.unwrap_or("").to_lowercase());
         if stack.contains(&key) {
             self.sink.error(format!("the include of {target} forms a cycle"), Some(Loc::line(fname, no)));

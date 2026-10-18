@@ -141,9 +141,11 @@ jobs:
       - name: Write the web fonts
         if: steps.fonts.outputs.cache-hit != 'true'
         run: pip install fonttools brotli && python scripts/fonts.py web
-      # writes apps/web/dist/, and puts it at site/dist/viewer/, where the pages of both languages link
-      - name: Build the web viewer, with the samples
+      # writes apps/web/dist/, including libraries/*.rnl, index.json and bundled.json,
+      # and puts it at site/dist/viewer/, where the pages of both languages link
+      - name: Build the web viewer, with samples and the package library
         run: |
+          node --test apps/web/library.test.mjs
           node apps/web/build.mjs --samples
           cp -r apps/web/dist site/dist/viewer
 

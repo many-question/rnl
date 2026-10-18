@@ -10,6 +10,8 @@
 mod core_thread;
 mod files;
 mod menu;
+mod pool;
+mod settings;
 mod solve;
 
 use std::ffi::OsString;
@@ -19,7 +21,7 @@ use std::sync::Mutex;
 use core_thread::Core;
 use files::{Edits, Saved, SavedFile};
 use rnl_cli::FsProvider;
-use rnl_view::{BuildOptions, Document, MemoryProvider, UnplacedDrawing};
+use rnl_view::{BuildOptions, Document, UnplacedDrawing};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow, WindowEvent};
 use tauri_plugin_dialog::DialogExt;
 
@@ -84,16 +86,25 @@ async fn open_document(
     window: WebviewWindow,
     unsaved: State<'_, Unsaved>,
     core: State<'_, Core>,
+    settings: State<'_, settings::Settings>,
+    pool: Option<Vec<String>>,
     path: String,
     edits: Option<Edits>,
 ) -> Result<Document, String> {
     let core = core.inner().clone();
+    let paths = settings.paths()?;
+    let pool = pool.unwrap_or_default();
     let doc = tauri::async_runtime::spawn_blocking(move || {
         core.run(move |drawn| {
-            let path = std::path::absolute(&path).map_err(|e| format!("{path}: {e}"))?;
+            let path = if path.starts_with(rnl_view::BUNDLED_DIR) {
+                PathBuf::from(&path)
+            } else {
+                std::path::absolute(&path).map_err(|e| format!("{path}: {e}"))?
+            };
             let entry = path.to_string_lossy().into_owned();
             let held = files::held(&entry, &edits.unwrap_or_default());
-            let disk = FsProvider::new(&[]);
+            let disk = FsProvider::new(&paths).with_search_paths(&paths);
+            let disk = rnl_runtime::source::FilePool { files: &disk, paths: &pool };
             let (doc, kept) = rnl_view::build_drawn(&entry, &files::layered(&held, &disk), &BuildOptions::default())?;
             *drawn = Some(kept);
             Ok::<_, String>(doc)
@@ -106,20 +117,28 @@ async fn open_document(
 }
 
 /// Draw a netlist held in memory, such as one from the clipboard, as the file `name`, whose
-/// extension says how it is read, alone in a workspace of its own: what it includes is missing.
+/// extension says how it is read. Bare includes can use the file pool and PATH.
 #[tauri::command]
 async fn open_text(
     window: WebviewWindow,
     unsaved: State<'_, Unsaved>,
     core: State<'_, Core>,
+    settings: State<'_, settings::Settings>,
+    pool: Option<Vec<String>>,
     name: String,
     text: String,
+    edits: Option<Edits>,
 ) -> Result<Document, String> {
     let core = core.inner().clone();
+    let paths = settings.paths()?;
+    let pool = pool.unwrap_or_default();
     let doc = tauri::async_runtime::spawn_blocking(move || {
         core.run(move |drawn| {
             let entry = format!("/{name}");
-            let files = MemoryProvider::new().with(&entry, &text);
+            let held = files::held_text(&entry, &text, &edits.unwrap_or_default());
+            let disk = FsProvider::new(&paths).with_search_paths(&paths);
+            let disk = rnl_runtime::source::FilePool { files: &disk, paths: &pool };
+            let files = files::layered(&held, &disk);
             let (doc, kept) = rnl_view::build_drawn(&entry, &files, &BuildOptions::default())?;
             *drawn = Some(kept);
             Ok::<_, String>(doc)
@@ -241,6 +260,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .manage(solve::Solves::default())
         .manage(Unsaved::default())
+        .manage(settings::Settings::default())
         .manage(Core::new())
         .menu(menu::menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -268,6 +288,10 @@ fn main() {
             quit,
             pick_file,
             initial_file,
+            settings::load_settings,
+            settings::save_setting,
+            pool::pick_pool,
+            pool::bundled_files,
             menu::set_view_check,
             solve::solve_preview,
             solve::solver_defaults,
