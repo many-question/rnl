@@ -236,7 +236,11 @@ pub struct Params {
 
 impl Params {
     pub fn get(&self, name: &str) -> Option<&Value> {
-        self.named.iter().find(|n| n.name == name).map(|n| &n.value)
+        let mut fields = self.named.iter().filter(|n| n.name == name);
+        let field = fields.next()?;
+        // A repeated record-head field is absent, including for readers that classify
+        // generated/header records before interpretation (2.8).
+        fields.next().is_none().then_some(&field.value)
     }
 }
 
@@ -456,7 +460,7 @@ impl Parser {
                 if self.i != 4 {
                     return self.err("the record head must touch @RNL; remove the white space or comment (2.4)");
                 }
-                header = Some(self.params()?);
+                header = Some(self.params(true)?);
             }
             self.skip_ws()?;
             if self.peek() != Some('{') {
@@ -1045,11 +1049,11 @@ impl Parser {
         }
         let kw: String = self.t[self.i..j].iter().collect();
         self.i = j;
-        let params = if self.peek() == Some('(') { Some(self.params()?) } else { None };
+        let params = if self.peek() == Some('(') { Some(self.params(false)?) } else { None };
         Ok(Call { kw, params, start, end: self.i })
     }
 
-    fn params(&mut self) -> PResult<Params> {
+    fn params(&mut self, record_head: bool) -> PResult<Params> {
         let start = self.i;
         self.i += 1;
         let mut p = Params { start, ..Params::default() };
@@ -1099,7 +1103,7 @@ impl Parser {
                     p.positional.push(val);
                 }
                 Some(name) => {
-                    if p.named.iter().any(|x| x.name == name) {
+                    if !record_head && p.named.iter().any(|x| x.name == name) {
                         return self.err_at(format!("parameter {name} is written twice (4.2 rule 9)"), off);
                     }
                     p.named.push(Named { name, value: val, quoted, off });
