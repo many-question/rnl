@@ -26,6 +26,7 @@ const USAGE: &str = "usage:
 
 FILE is a SPICE netlist, a Spectre netlist (.scs) or a package file (.rnl); catalog takes none.
 options:
+  --path DIR          search packages and bare include filenames here; repeatable
   --package-dir DIR   look for packages in DIR as well (16.2); repeatable
   --no-std            do not use the standard package at the root (16.3)
   --std-version V     use rnl-std V at the root, whatever the files' language version, such as 0.2
@@ -81,6 +82,7 @@ struct Args {
     file: PathBuf,
     out: Option<PathBuf>,
     package_dirs: Vec<PathBuf>,
+    search_paths: Vec<PathBuf>,
     std: bool,
     std_version: Option<String>,
     generated: bool,
@@ -112,6 +114,7 @@ fn parse_args() -> Result<Args, String> {
     let mut file = None;
     let mut out = None;
     let mut package_dirs = Vec::new();
+    let mut search_paths = Vec::new();
     let mut std = true;
     let mut std_version = None;
     let mut generated = true;
@@ -131,6 +134,11 @@ fn parse_args() -> Result<Args, String> {
         match a.as_str() {
             "-o" | "--out" => out = Some(PathBuf::from(it.next().ok_or("-o needs a path")?)),
             "--package-dir" => package_dirs.push(PathBuf::from(it.next().ok_or("--package-dir needs a directory")?)),
+            "--path" => {
+                let dir = PathBuf::from(it.next().ok_or("--path needs a directory")?);
+                package_dirs.push(dir.clone());
+                search_paths.push(dir);
+            }
             "--no-std" => std = false,
             "--std-version" => std_version = Some(it.next().ok_or("--std-version needs a version, such as 0.2")?),
             "--no-generated" => generated = false,
@@ -166,6 +174,7 @@ fn parse_args() -> Result<Args, String> {
         file,
         out,
         package_dirs,
+        search_paths,
         std,
         std_version,
         generated,
@@ -218,7 +227,7 @@ fn interpret(args: &Args, provider: &FsProvider) -> Result<Interpretation, Strin
 }
 
 fn run(args: &Args) -> Result<ExitCode, String> {
-    let provider = FsProvider::new(&args.package_dirs);
+    let provider = FsProvider::new(&args.package_dirs).with_search_paths(&args.search_paths);
     match args.command.as_str() {
         "solver-config" => {
             let loaded = if args.defaults {

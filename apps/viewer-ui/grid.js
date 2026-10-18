@@ -4,7 +4,7 @@
 // for lines a little darker every fifth, or at the next step of that sequence; and the axes through
 // the origin. They are drawn on a canvas of their own under the drawing's SVG, the same size on the
 // screen at every zoom, so that clicks, fitting and the selection go by the drawing alone. The
-// settings are the View menu's Grid submenu and its dialog, kept in localStorage for the next start.
+// settings are the View menu's Grid submenu and its dialog, persisted for the next start.
 
 import { setCheck } from "./commands.js";
 import { form } from "./dialog.js";

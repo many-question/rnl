@@ -16,6 +16,8 @@ const STALL = 30000;
 const core = startCore();
 const built = new WeakSet(); // the sources built before: building one again reads it again
 let opened = null; // the page's handler for sources opened without asking, such as dropped files
+let included = null;
+let poolFiles = new Map();
 let lastUrl = ""; // the URL opened last, which Open URL offers again
 
 /**
@@ -250,13 +252,32 @@ async function openFiles(files) {
   return entry && filesSource(all, entry);
 }
 
-/** The files of a folder, each at /<folder>/<sub>/<name> in the workspace. */
-async function openFolder(files) {
-  if (files.length === 0) return null;
-  const all = new Map(files.map((f) => [`/${f.webkitRelativePath || f.name}`, () => f]));
-  const folder = (files[0].webkitRelativePath || "").split("/")[0];
-  const entry = await chooseEntry(all, `/${folder}`, folder);
-  return entry && filesSource(all, entry);
+/** Pool files retain their directory structure, but only the current pool supplies siblings. */
+function poolItems(files, folder = false) {
+  return files.filter((f) => !folder || [...NETLISTS, ...PARTS].includes(extension(f.name))).map((f) => {
+    const path = `/${f.webkitRelativePath || f.name}`;
+    const read = () => f;
+    return { path, name: path.slice(1), read, source: { ...filesSource(new Map([[path, read]]), path), fromPool: true } };
+  });
+}
+
+async function includeLibrary() {
+  const response = await fetch("libraries/index.json");
+  if (!response.ok) throw new Error(`The package library could not be read (${response.status}).`);
+  const catalog = await response.json();
+  const packages = catalog.filter((p) => !p.builtin);
+  const selected = await choose({ title: "Include Package from Library", text: "Choose a package to add to the file pool.",
+    items: packages.map((p) => ({ label: `${p.name} ${p.version} — ${p.description}`, value: p })), filter: true });
+  if (!selected) return [];
+  const url = new URL(selected.path, new URL("libraries/", location.href));
+  const base = new URL("libraries/", location.href);
+  if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname)) throw new Error("Invalid package library path.");
+  const got = await fetchBytes(url.href, false);
+  if (!got.bytes) throw new Error(`The package could not be fetched: ${got.why}`);
+  const text = decodeText(got.bytes);
+  const path = `/library/${selected.path}`;
+  const read = () => new File([text], selected.name + ".rnl");
+  return [{ path, name: `${selected.name} ${selected.version}`, read, source: { ...filesSource(new Map([[path, read]]), path), fromPool: true } }];
 }
 
 /** Ask for a URL, resolved against the page. */
@@ -281,6 +302,7 @@ async function openUrl() {
 
 const fileInput = input("file-input", false);
 const folderInput = input("folder-input", true);
+const includeInput = input("include-input", false);
 let waiting = null; // resolves the chooser shown with the files chosen
 
 /** A hidden file input in the page, for files or, with `folder`, a folder. */
@@ -295,7 +317,10 @@ function input(id, folder) {
     const files = [...el.files];
     el.value = "";
     if (waiting) chosen(files);
-    else if (opened && !modal()) (folder ? openFolder : openFiles)(files).then((source) => source && opened(source));
+    else if (!modal()) {
+      if ((folder || id === "include-input") && included) included(poolItems(files, folder));
+      else if (opened) openFiles(files).then((source) => source && opened(source));
+    }
   });
   el.addEventListener("cancel", () => chosen([]));
   document.body.append(el);
@@ -319,7 +344,7 @@ function chosen(files) {
   if (resolve) resolve(files);
 }
 
-// Files or a folder dropped on the page open as with Open and Open Folder. A dropped file is read
+// Files dropped on the page open; folders join the pool. A dropped file is read
 // anew from its entry each time, so Reload reads it as it is now.
 
 let over = 0; // how deep the files dragged over the page are, in the elements they entered
@@ -362,9 +387,9 @@ document.addEventListener("drop", (e) => {
 });
 
 /**
- * The source of the files and folders dropped, each by its `fullPath`, as Open and Open Folder put
- * them: files at /<name> and folders at /<folder>/<sub>/<name>. With a folder among them the user
- * picks the netlist. Only files, as a browser without entries gives them, open as with Open.
+ * Files and folders dropped retain their `fullPath`: files at /<name> and folders at
+ * /<folder>/<sub>/<name>. A folder adds the collection to the pool. Only files, as a browser
+ * without entries gives them, open as with Open File.
  */
 async function dropped(entries, files) {
   if (entries.length === 0 || !entries.every(Boolean)) return openFiles(files);
@@ -372,6 +397,11 @@ async function dropped(entries, files) {
   for (const entry of entries) await walk(entry, all);
   if (all.size === 0) return null;
   const folders = entries.filter((entry) => entry.isDirectory);
+  if (folders.length > 0 && included) {
+    included([...all].filter(([path]) => [...NETLISTS, ...PARTS].includes(extension(path))).map(([path, read]) =>
+      ({ path, name: path.slice(1), read, source: { ...filesSource(new Map([[path, read]]), path), fromPool: true } })));
+    return null;
+  }
   const folder = folders.length === 0 ? null : entries.length === 1 ? folders[0].name : "";
   const entry = await chooseEntry(all, entries.length === 1 && folder ? `/${folder}` : "", folder);
   return entry && filesSource(all, entry);
@@ -432,6 +462,18 @@ async function about() {
 /** @type {import("../shell.js").Shell} */
 export default {
   platform: "web",
+  bundledFiles: async () => {
+    const response = await fetch("libraries/bundled.json");
+    if (!response.ok) throw new Error(`Built-in packages could not be listed (${response.status}).`);
+    return response.json();
+  },
+  includeLibrary,
+  include(kind) {
+    if (kind === "library") return includeLibrary();
+    return chooseFiles(kind === "folder" ? folderInput : includeInput).then((files) => poolItems(files, kind === "folder"));
+  },
+  setPool(items) { poolFiles = new Map(items.filter((item) => !item.builtin).map((item) => [item.path, item.read])); },
+  onInclude(handler) { included = handler; },
   nativeMenu: false,
   /** The URL that `?url=` names in the page's address, resolved against the page. */
   initial() {
@@ -445,13 +487,12 @@ export default {
   pick(kind) {
     // the chooser is shown before anything is awaited, while the click or key that asked for it counts
     if (kind === "file") return chooseFiles(fileInput).then(openFiles);
-    if (kind === "folder") return chooseFiles(folderInput).then(openFolder);
     if (kind === "url") return openUrl();
     return Promise.resolve(null);
   },
   /**
    * Read the files the document needs, as SVG for the page to draw, and name the browser tab. A
-   * source that holds its text, such as the clipboard's, is the only file of its workspace. The
+   * source that holds its text, such as the clipboard's, can use the file pool for includes. The
    * texts of `edits`, by the paths the Document names the files by, are those of the files, not what
    * is read.
    */
@@ -460,12 +501,17 @@ export default {
     built.add(source);
     try {
       const held = source.text !== undefined;
-      const entry = held ? { path: `/${source.name}`, text: source.text } : await source.open(again);
+      const entry = held ? { path: source.path || `/${source.name}`, text: source.text } : await source.open(again);
       const dir = entry.path.slice(0, entry.path.lastIndexOf("/"));
-      const files = { [entry.path]: entry.text };
+      const files = {};
+      // An independently opened source owns its relative paths. Put the pool in a separate
+      // namespace so preloaded pool text cannot hide a source-relative file collect has yet to read.
+      const poolPath = (path) => source.fromPool ? path : `/<pool>${path}`;
+      for (const [path, read] of poolFiles) files[poolPath(path)] = decodeText(await (await read()).arrayBuffer());
+      files[entry.path] = entry.text;
       for (const [path, text] of Object.entries(edits || {})) files[joined(dir, path)] = text;
-      const request = { entry: entry.path, files, svg: true, primitives: false, lazy_unplaced: true };
-      const read = held ? async () => null : (path) => source.read(path, again);
+      const request = { entry: entry.path, files, pool: [...poolFiles.keys()].map(poolPath), svg: true, primitives: false, lazy_unplaced: true };
+      const read = held ? async () => null : (path) => path.startsWith("/<pool>/") ? Promise.resolve(null) : source.read(path, again);
       const { document: doc } = await collect(core, request, read);
       document.title = `${doc.name} - RNL Viewer`;
       return doc;

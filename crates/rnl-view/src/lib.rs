@@ -351,6 +351,14 @@ impl Provider for Workspace<'_> {
         out.extend(self.bundled.package_files());
         out
     }
+    fn package_candidates(&self, name: &str) -> Vec<String> {
+        let mut out = self.files.package_candidates(name);
+        out.extend(self.bundled.package_candidates(name));
+        out
+    }
+    fn include_candidates(&self, name: &str) -> Vec<String> {
+        self.files.include_candidates(name)
+    }
 }
 
 /// A path with `/` for every `\`, as the runtime reads paths.
@@ -611,6 +619,9 @@ R1 p q 1k
         let d = d.unwrap();
         assert!(d.diagnostics.is_empty(), "{:?}", d.diagnostics);
         assert!(d.missing.is_empty());
+        assert_eq!(d.files.len(), 1);
+        assert!(d.files[0].text.contains("@PACKAGE"));
+        assert!(!d.files[0].records.is_empty());
     }
 
     #[test]

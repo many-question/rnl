@@ -7,11 +7,17 @@ use rnl_runtime::source::Provider;
 
 pub struct FsProvider {
     dirs: Vec<PathBuf>,
+    search_paths: Vec<PathBuf>,
 }
 
 impl FsProvider {
     pub fn new(dirs: &[PathBuf]) -> FsProvider {
-        FsProvider { dirs: dirs.to_vec() }
+        FsProvider { dirs: dirs.to_vec(), search_paths: Vec::new() }
+    }
+
+    pub fn with_search_paths(mut self, dirs: &[PathBuf]) -> Self {
+        self.search_paths = dirs.to_vec();
+        self
     }
 }
 
@@ -32,16 +38,52 @@ impl Provider for FsProvider {
     fn package_files(&self) -> Vec<String> {
         let mut out = Vec::new();
         for d in &self.dirs {
-            let mut files: Vec<PathBuf> = match std::fs::read_dir(d) {
-                Ok(rd) => rd
-                    .filter_map(|e| e.ok().map(|e| e.path()))
-                    .filter(|p| p.extension().is_some_and(|x| x == "rnl"))
-                    .collect(),
-                Err(_) => Vec::new(),
-            };
-            files.sort();
-            out.extend(files.iter().map(|p| path_str(p)));
+            out.extend(directory_packages(d));
         }
         out
     }
+
+    fn package_candidates(&self, name: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for d in &self.dirs {
+            let mut files = directory_packages(d);
+            rnl_runtime::source::prefer_filename(&mut files, name);
+            let direct = path_str(&d.join(format!("{name}.rnl")));
+            files.sort_by_key(|p| p != &direct);
+            out.extend(files);
+        }
+        out
+    }
+
+    fn include_candidates(&self, name: &str) -> Vec<String> {
+        self.search_paths.iter().map(|d| path_str(&d.join(name))).collect()
+    }
+}
+
+/// Direct files and one level of version directories, sorted for reproducible fallback order.
+fn directory_packages(dir: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else { return out };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && path.extension().is_some_and(|x| x.eq_ignore_ascii_case("rnl")) {
+            out.push(path_str(&path));
+        } else if entry.file_type().is_ok_and(|t| t.is_dir()) {
+            let name = entry.file_name();
+            let version = name.to_string_lossy();
+            if rnl_runtime::source::version_directory(&version) {
+                if let Ok(children) = std::fs::read_dir(path) {
+                    out.extend(
+                        children
+                            .flatten()
+                            .map(|e| e.path())
+                            .filter(|p| p.is_file() && p.extension().is_some_and(|x| x.eq_ignore_ascii_case("rnl")))
+                            .map(|p| path_str(&p)),
+                    );
+                }
+            }
+        }
+    }
+    out.sort();
+    out
 }

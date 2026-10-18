@@ -35,6 +35,7 @@ export function previewing() {
  * of the file as it is now.
  */
 export async function solve() {
+  if (currentSource()?.readonly) return;
   if (!shell || !shell.solve || running || modal() || isLoading()) return;
   const source = shown ? shown.source : currentSource();
   if (!source || !doc) {

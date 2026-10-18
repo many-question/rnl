@@ -74,6 +74,7 @@ function makeEditor(path, name) {
   gutter.setAttribute("aria-hidden", "true");
   const area = document.createElement("textarea");
   area.className = "area";
+  area.readOnly = currentSource()?.readonly === true;
   area.spellcheck = false;
   area.autocomplete = "off";
   area.autocapitalize = "off";
@@ -172,6 +173,7 @@ function note(text) {
 
 /** Edit > Edit Text: switch the netlist pane to edit, or back; changes not applied are asked about. */
 export async function toggleEdit() {
+  if (currentSource()?.readonly) return;
   if (modal()) return;
   if (!editing) {
     if (!doc) {
@@ -241,6 +243,7 @@ function filesToSave() {
  * True when saved.
  */
 export async function save(overwrite = false) {
+  if (currentSource()?.readonly) return false;
   if (!doc || modal()) return false;
   const opened = currentSource();
   if (shell.saveAs && opened && opened.text !== undefined) return saveAs();
@@ -292,6 +295,7 @@ async function changedOnDisk(names) {
  * belongs to the directory of the netlist as it was. True when it was saved.
  */
 export async function saveAs() {
+  if (currentSource()?.readonly) return false;
   if (!doc || !shell.saveAs || modal()) return false;
   const entry = doc.files[0];
   const title = "Save As";

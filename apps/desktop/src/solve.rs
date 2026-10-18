@@ -14,7 +14,7 @@ use rnl_cli::preview::{one_file, preview, save_copy, Copy, Report, StoppableCloc
 use rnl_cli::solve::{Progress, SolveOptions};
 use rnl_cli::FsProvider;
 use rnl_solver::{exact_text, SolverOptions};
-use rnl_view::{Document, MemoryProvider};
+use rnl_view::Document;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
@@ -136,15 +136,21 @@ pub async fn pick_solver_config(window: WebviewWindow) -> Result<Option<String>,
 /// `name`, and give it drawn as solved, nothing written. The page is told of each level as it is
 /// solved (`solve-progress`); a solve started while another runs stops that one first.
 #[tauri::command]
+// Tauri injects the window and managed state alongside the separate IPC arguments.
+#[allow(clippy::too_many_arguments)]
 pub async fn solve_preview(
     window: WebviewWindow,
     solves: State<'_, Solves>,
+    preferences: State<'_, crate::settings::Settings>,
+    pool: Option<Vec<String>>,
     path: Option<String>,
     name: Option<String>,
     text: Option<String>,
     settings: Option<Settings>,
     edits: Option<Edits>,
 ) -> Result<Solved, String> {
+    let paths = preferences.paths()?;
+    let pool = pool.unwrap_or_default();
     let loaded = settings.unwrap_or_default().loaded(Some(&resource_directory(window.app_handle())?))?;
     let config_source = loaded.source();
     let options = SolveOptions { solver: loaded.options, ..SolveOptions::default() };
@@ -161,18 +167,25 @@ pub async fn solve_preview(
             !running.load(Ordering::Relaxed)
         };
         let clock = StoppableClock::new(running.clone());
+        let disk = FsProvider::new(&paths).with_search_paths(&paths);
+        let disk = rnl_runtime::source::FilePool { files: &disk, paths: &pool };
         match (path, name, text) {
             (Some(path), _, _) => {
                 let path = std::path::absolute(&path).map_err(|e| format!("{path}: {e}"))?;
                 let entry = path.to_string_lossy().into_owned();
                 // the text applied is what is solved, over the files on disk
                 let held = files::held(&entry, &edits.unwrap_or_default());
-                let disk = FsProvider::new(&[]);
                 preview(&entry, &files::layered(&held, &disk), &options, &clock, &watch)
             }
             (None, Some(name), Some(text)) => {
                 let entry = format!("/{name}");
-                preview(&entry, &MemoryProvider::new().with(&entry, &text), &options, &clock, &watch)
+                preview(
+                    &entry,
+                    &files::layered(&files::held_text(&entry, &text, &edits.unwrap_or_default()), &disk),
+                    &options,
+                    &clock,
+                    &watch,
+                )
             }
             _ => Err("nothing to solve: open a netlist first".to_string()),
         }

@@ -781,6 +781,22 @@ impl Interp<'_> {
                 );
                 continue;
             };
+            let mut occurrences = params.named.iter().filter(|field| field.name == n.name);
+            let first = occurrences.next().unwrap();
+            if let Some(second) = occurrences.next() {
+                if n.off == first.off {
+                    self.diag_in(
+                        Severity::Error,
+                        format!(
+                            "record header field {} is written more than once; treated as not written (2.8)",
+                            n.name
+                        ),
+                        Some(self.recs[rec].loc(second.off)),
+                        &pkg,
+                    );
+                }
+                continue;
+            }
             let Value::Str(v) = &n.value else {
                 self.diag_in(
                     Severity::Error,
@@ -1469,22 +1485,30 @@ impl Interp<'_> {
 
     // ------------------------------------------------------------------ packages (16.2)
 
-    pub(crate) fn scan_packages(&mut self) {
-        if self.pkg_files.is_some() {
+    pub(crate) fn scan_packages(&mut self, name: &str) {
+        if self.pkg_files.contains_key(name) {
             return;
         }
         let mut out = Vec::new();
-        for f in self.provider.package_files() {
-            if let Some(text) = self.provider.read(&f) {
-                if let Some((n, v)) = scan_package_decl(&text) {
-                    // the language version it is written in, the tool's default when it declares none (16.1)
-                    let language = scan_language_decl(&text).unwrap_or_else(|| DEFAULT_VERSION.to_string());
-                    self.pkg_languages.insert(f.clone(), language);
-                    out.push((n, v, f));
-                }
+        for f in self.provider.package_candidates(name) {
+            let header = if let Some(header) = self.pkg_headers.get(&f) {
+                header.clone()
+            } else {
+                let text = self.provider.read(&f).unwrap_or_default();
+                let header = scan_package_decl(&text);
+                let language = scan_language_decl(&text).unwrap_or_else(|| DEFAULT_VERSION.to_string());
+                self.pkg_languages.insert(f.clone(), language);
+                self.pkg_headers.insert(f.clone(), header.clone());
+                header
+            };
+            if file_name(&f) == format!("{name}.rnl") && header.as_ref().is_none_or(|(n, _)| n != name) {
+                self.sink.warning(format!("{f}: filename suggests package {name}, but its @PACKAGE header does not match; continuing package search"), Some(Loc::line(&f, 1)));
+            }
+            if let Some((n, v)) = header {
+                out.push((n, v, f));
             }
         }
-        self.pkg_files = Some(out);
+        self.pkg_files.insert(name.to_string(), out);
     }
 
     /// Find a package by path= or in the package directories (16.2). path= is relative to the
@@ -1513,7 +1537,7 @@ impl Interp<'_> {
             self.read_embedded(id, body.clone(), decl.rec);
             return Some(id);
         }
-        self.scan_packages();
+        self.scan_packages(&decl.name);
         let mut cand: Option<(String, String, String)> = None;
         if let Some(path) = &decl.path {
             let target = join(&base.unwrap_or_else(|| self.file_dir(decl.unit)), path);
@@ -1545,7 +1569,7 @@ impl Interp<'_> {
         }
         if cand.is_none() {
             let same: Vec<(String, String, String)> =
-                self.pkg_files.as_ref().unwrap().iter().filter(|c| c.0 == decl.name).cloned().collect();
+                self.pkg_files[&decl.name].iter().filter(|c| c.0 == decl.name).cloned().collect();
             if let Some(want) = &decl.version {
                 if let Some(c) = same.iter().find(|c| c.1 == *want) {
                     cand = Some(c.clone());

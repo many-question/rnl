@@ -1,5 +1,5 @@
 // The side panel and its parts: the view it shows, what is folded, and the sizes the splitters
-// set, all kept in localStorage for the next start.
+// set, all kept through the shell's settings storage for the next start.
 
 import { setCheck } from "./commands.js";
 import { updateHierarchy } from "./hierarchy.js";
@@ -34,8 +34,8 @@ export function setSidebar(shown) {
  */
 export function setPane(name) {
   const view =
-    name === "hierarchy" || name === "unplaced" || (name === "solve" && !$("tab-solve").hidden) ? name : "netlist";
-  const panes = { netlist: netlistPane, hierarchy: hierarchyPane, unplaced: $("pane-unplaced"), solve: $("pane-solve") };
+    name === "files" || name === "hierarchy" || name === "unplaced" || (name === "solve" && !$("tab-solve").hidden) ? name : "netlist";
+  const panes = { files: $("pane-files"), netlist: netlistPane, hierarchy: hierarchyPane, unplaced: $("pane-unplaced"), solve: $("pane-solve") };
   for (const [k, el] of Object.entries(panes)) {
     el.hidden = k !== view;
     $(`tab-${k}`).setAttribute("aria-selected", String(k === view));
@@ -141,6 +141,7 @@ window.addEventListener("resize", () => {
 $("hide-sidebar").addEventListener("click", () => setSidebar(false));
 $("show-sidebar").addEventListener("click", () => setSidebar(true));
 $("problems-head").addEventListener("click", () => setProblems(netlistPane.classList.contains("problems-folded")));
+$("tab-files").addEventListener("click", () => setPane("files"));
 $("tab-netlist").addEventListener("click", () => setPane("netlist"));
 $("tab-hierarchy").addEventListener("click", () => setPane("hierarchy"));
 $("tab-unplaced").addEventListener("click", () => setPane("unplaced"));

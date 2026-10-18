@@ -188,6 +188,26 @@ async function version() {
 
 /** @type {import("../../apps/viewer-ui/shell.js").Shell} */
 export default {
+  include: async (kind) => { fake.calls.push(["include", kind]); return fake.includes || []; },
+  ...(params.has("pool") ? {
+    bundledFiles: async () => ({ "<bundled>/0.3/rnl-std.rnl": "@RNL(type=\"header\") { @PACKAGE(name=\"rnl-std\", version=\"0.3\") }" }),
+    include: async (kind) => { fake.calls.push(["include", kind]); return fake.includes || []; },
+    setPool: (items) => { fake.pool = items.filter((item) => !item.builtin).map((item) => item.path); },
+    ...(platform === "desktop" ? { pickPath: async () => fake.path || null } : {}),
+  } : {}),
+  ...(params.has("settings") ? {
+    loadSettings: async (legacy) => {
+      fake.legacy = legacy;
+      const values = JSON.parse(sessionStorage.getItem("fake-settings") || JSON.stringify(legacy));
+      sessionStorage.setItem("fake-settings", JSON.stringify(values));
+      return { path: "/user/config/settings.json", values };
+    },
+    saveSetting: async (key, value) => {
+      const values = JSON.parse(sessionStorage.getItem("fake-settings"));
+      values[key] = value;
+      sessionStorage.setItem("fake-settings", JSON.stringify(values));
+    },
+  } : {}),
   platform,
   nativeMenu: platform === "desktop",
   ...(platform === "desktop" ? { version, ...solving } : {}),

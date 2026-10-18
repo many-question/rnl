@@ -46,6 +46,10 @@ export async function openSource(source, keep, edited) {
     else resetBuffers(d);
     showBuilt(d, keep);
   } catch (e) {
+    if (keep && edited) {
+      await inform({ title: "Rebuild", paragraphs: [`The document could not be rebuilt: ${e}. Your edits are still kept.`] });
+      return;
+    }
     endPreview();
     resetBuffers(null);
     setDoc(null);

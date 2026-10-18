@@ -64,7 +64,7 @@ export default defineConfig({
   use: { trace: "retain-on-failure" },
   webServer: web
     ? {
-        command: `node apps/web/build.mjs --samples && node apps/web/serve.mjs --port ${process.env.RNL_WEB_PORT}`,
+        command: `node apps/web/build.mjs --samples ${process.env.RNL_WEB_NO_CORE ? "--no-core" : ""} && node apps/web/serve.mjs --port ${process.env.RNL_WEB_PORT}`,
         cwd: root,
         url: `${process.env.RNL_WEB_URL}/about.json`,
         // building the core from nothing takes minutes

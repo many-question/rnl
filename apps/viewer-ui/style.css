@@ -1075,3 +1075,19 @@ body.dropping::after {
 .pick-row .kind { flex: none; min-width: 5.2em; font-size: 11px; color: var(--muted); }
 .pick-row .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pick-row[aria-selected="true"] { background: var(--select-text); box-shadow: inset 3px 0 0 var(--select); }
+
+/* File pool and search paths, independent of the open document. */
+.files-pane { display: flex; flex-direction: column; min-height: 0; }
+.files-pane[hidden] { display: none; }
+.pool-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; }
+.pool-list, .path-list { list-style: none; margin: 0; padding: 4px 10px; overflow: auto; }
+.pool-list { flex: 1; min-height: 100px; }
+.pool-row { display: flex; align-items: center; gap: 6px; padding: 5px 0; }
+.pool-open { flex: 1; min-width: 0; overflow-wrap: anywhere; text-align: left; }
+button.pool-open { background: transparent; border: 0; color: inherit; cursor: pointer; }
+button.pool-open:hover { text-decoration: underline; }
+.pool-badge { font-size: 10px; color: #687386; max-width: 80px; }
+.pool-note { font-size: 11px; color: #687386; margin: 4px 10px 10px; overflow-wrap: anywhere; }
+.path-section { border-top: 1px solid #d9dee7; max-height: 42%; overflow: auto; }
+.path-section .sub-head { justify-content: space-between; gap: 8px; }
+.view-tabs { overflow-x: auto; }

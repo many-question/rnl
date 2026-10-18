@@ -1,5 +1,5 @@
 // Step 1 settings: a TOML configuration file and scalar rule overrides. Numeric text is
-// preserved through localStorage and IPC; objective editing returns in Step 3.
+// preserved through the shell settings store and IPC; objective editing returns in Step 3.
 import { form, inform, modal } from "./dialog.js";
 import { shell } from "./shell.js";
 import { load, save, span } from "./util.js";
