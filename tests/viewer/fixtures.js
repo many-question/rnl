@@ -20,6 +20,7 @@ export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 /** The fixtures by name, and the files of the corpus they are built from. */
 export const FILES = {
   "01-rc-lowpass": "tests/conformance/cases/01-rc-lowpass.sp",
+  "03-five-transistor-ota": "tests/conformance/cases/03-five-transistor-ota.sp",
   "04-hierarchy": "tests/conformance/cases/04-hierarchy.sp",
   "10-constraints-and-priority": "tests/conformance/cases/10-constraints-and-priority.sp",
   "12-diagnostics": "tests/conformance/cases/12-diagnostics.sp",
@@ -105,6 +106,41 @@ export const UNPLACED = [
   ...Array.from({ length: 60 }, (_, k) => `Rn${String(k + 1).padStart(2, "0")} n${k + 1} 0 2k`),
   "* @RNL {", "*   #R1 @PLACE(0, 0)", "* }",
   '* @RNL(scope="cell") {', "*   #R1 @PLACE(0, 0)", "* }",
+  ".model nmos nmos",
+  ".end",
+];
+
+/**
+ * Transistors whose model card is not found, which are not drawn at all: `nch` has its card, so M1
+ * has a symbol, and R1 is placed; M2 and M3 name the missing card `pch`, and Q1 the missing `qm`.
+ */
+export const UNDRAWN = [
+  "* devices that cannot be drawn",
+  ".model nch nmos",
+  "R1 a b 1k",
+  "M1 d g s b nch",
+  "M2 d g s b pch",
+  "M3 d g s b pch",
+  "Q1 c b e qm",
+  "* @RNL { #R1 @PLACE(0, 0) }",
+  ".end",
+];
+
+/**
+ * Two resistors and a capacitor for what a click and the pointer find: R2 is placed so that its box
+ * overlaps R1's, and R1's name label is inside R2's box; a text is attached to R1's first terminal,
+ * which is no instance or net, so that clicking it selects nothing; and a wire of net c runs
+ * through C1's box, clear of its pins and of its middle.
+ */
+export const PICK = [
+  "* hover names, labels and overlapping objects",
+  "R1 a b 1k", "R2 b c 2k", "C1 c 0 1p",
+  '* @RNL(type="header") { @VERSION("0.2")}',
+  "* @RNL {",
+  "*   #R1 @PLACE(0, 0); #R2 @PLACE(0.8, 1.5); #C1 @PLACE(10, 0);",
+  '*   #R1:1 @TEXT("t1", dx=-1);',
+  "*   &c @WIRE {(8.5, 1) (11.5, 1)}",
+  "* }",
   ".end",
 ];
 
@@ -136,6 +172,7 @@ export const UNCALLED = {
       ".ends Testbench",
       '* @RNL(scope="ota_5t") { #M1 @PLACE(0, 0); #M2 @PLACE(8, 0) }',
       '* @RNL(scope="Testbench") { #XDUT @PLACE(0, 0); #R1 @PLACE(10, 0) }',
+      ".model nmos nmos",
       ".end",
     ],
   ],
@@ -279,7 +316,7 @@ function view(rnl, file, cwd) {
  * the netlist of NESTED, and "nested-changed", the same file after XB2 was named XB3;
  * "continued" and "continued-spectre", the netlists of CONTINUED; "edit", "edit-changed", the
  * same file after the edit, and "edit-crlf", the same with CRLF line ends, from EDITED; "unicode",
- * the netlist of UNICODE; the netlists of UNCALLED; "unplaced", the netlist of UNPLACED; "long", a title, LONG lines of a bare
+ * the netlist of UNICODE; the netlists of UNCALLED; "unplaced", the netlist of UNPLACED; "undrawn", the netlist of UNDRAWN; "pick", the netlist of PICK; "long", a title, LONG lines of a bare
  * `*`, R1, a record that places it and `.end`; and those of SOLVED, from the files that `rnl solve`
  * writes under `solved` in `dir`; and those of PREVIEWS.
  */
@@ -335,6 +372,10 @@ export function writeFixtures(rnl, dir) {
 
   fs.writeFileSync(path.join(dir, "unplaced.sp"), UNPLACED.concat("").join("\n"));
   fs.writeFileSync(path.join(dir, "unplaced.json"), view(rnl, "unplaced.sp", dir));
+  fs.writeFileSync(path.join(dir, "undrawn.sp"), UNDRAWN.concat("").join("\n"));
+  fs.writeFileSync(path.join(dir, "undrawn.json"), view(rnl, "undrawn.sp", dir));
+  fs.writeFileSync(path.join(dir, "pick.sp"), PICK.concat("").join("\n"));
+  fs.writeFileSync(path.join(dir, "pick.json"), view(rnl, "pick.sp", dir));
 
   const long = ["* a long file"].concat(new Array(LONG).fill("*"), "R1 a 0 1k", "* @RNL { #R1 @PLACE(0, 0) }", ".end", "");
   fs.writeFileSync(path.join(dir, "long.sp"), long.join("\n"));

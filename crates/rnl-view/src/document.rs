@@ -13,7 +13,7 @@ use rnl_runtime::geom::{Orient, Pt};
 use rnl_runtime::host::{file_name, HostDocument, LevelKind};
 use rnl_runtime::interp::obj::{Lit, WStr};
 use rnl_runtime::markup;
-use rnl_runtime::model::{ItemView, Layer, LevelView, RefTarget, Style, SymbolView, TextView};
+use rnl_runtime::model::{ItemView, Layer, LevelView, RefTarget, Style, SymbolView, TextTarget, TextView};
 use rnl_runtime::source::{dirname, relative_to};
 use rnl_runtime::Interpretation;
 use serde::Serialize;
@@ -90,8 +90,10 @@ pub struct Level {
     pub hits: Vec<Hit>,
     /// The subcircuit instances of the level, in netlist order: the hierarchy below it.
     pub children: Vec<Child>,
-    /// The objects of the level that have no position and so are not drawn on it, each with its
-    /// symbol drawn alone, in the order of the netlist. Their number is the one `status` gives.
+    /// The objects of the level that are not drawn on it: those that have no position, each with
+    /// its symbol drawn alone, in the order of the netlist (their number is the one `status`
+    /// gives), then those that are not drawn at all, since no symbol can be chosen for them, each
+    /// with its `reason` and no symbol.
     pub unplaced: Vec<Unplaced>,
 }
 
@@ -106,8 +108,14 @@ pub struct Unplaced {
     /// An instance's name; for a bundle or a usage, the label the diagnostics give it, such as
     /// "a usage of $GND".
     pub name: String,
-    /// The name of the symbol it is drawn with.
+    /// The name of the symbol it is drawn with; empty for an object that has none (see `reason`).
     pub symbol: String,
+    /// Why it is not drawn at all, whatever its position, such as `model card not found` for a
+    /// transistor whose model the netlist does not define; absent for an object that only lacks a
+    /// position, which a solver can place. Such an object has no symbol and no drawing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub reason: Option<String>,
     /// The instances it stands for, indexes into `Document::objects`: one for an instance, its
     /// members for a bundle, none for a usage. A viewer shows the first one's statement.
     pub objects: Vec<usize>,
@@ -240,14 +248,23 @@ pub struct Child {
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Hit {
     /// "box": a symbol, given by its top-left and bottom-right corners; "pin": a pin, one point;
-    /// "wire": a wire, its vertices.
+    /// "wire": a wire, its vertices; "label": a label of an object, given by its top-left and
+    /// bottom-right corners, which stands for what that object stands for, and for nothing when
+    /// it is not an instance, a bundle, a usage, a wire or a net.
     pub kind: &'static str,
     /// In SVG pixels, y down.
     pub points: Vec<[f64; 2]>,
     /// The objects it stands for: an instance (several for a bundle), or nets.
     pub objects: Vec<usize>,
-    /// The `data-id` of the SVG groups that draw it, and the owner of its primitives.
+    /// The `data-id` of the SVG groups that draw it, and the owner of its primitives. A label
+    /// has one only when no other text of the level has the same.
     pub id: Option<String>,
+    /// The name a netlist gives a usage, such as a ground or a port, for the box of one that has a
+    /// name (`%gnd1`: "gnd1"); a viewer names an instance or a net by `objects`. Absent for the
+    /// others, the usages that are not named among them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub name: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -554,6 +571,8 @@ impl<'a> Index<'a> {
         let prims = rnl_render::primitives(lv, &render);
         let px = |p: Pt| [p.0 * render.scale, -p.1 * render.scale];
         let mut hits = Vec::new();
+        // what each item stands for, for the labels attached to it
+        let mut item_objects: Vec<Vec<usize>> = Vec::with_capacity(lv.items.len());
         for it in &lv.items {
             let sym = &lv.symbols[it.symbol];
             let [x0, y0, x1, y1] = sym.bbox;
@@ -571,18 +590,26 @@ impl<'a> Index<'a> {
                     objects = nets;
                 }
             }
+            item_objects.push(objects.clone());
+            // a usage the level names, such as `%gnd1`, has that name; the others have none
+            let name = (it.kind == "usage")
+                .then(|| it.object_id.strip_prefix('%'))
+                .flatten()
+                .map(|n| n.trim_matches(['\'', '"']).to_string());
             hits.push(Hit {
                 kind: "box",
                 points: vec![px((left, top)), px((right, bottom))],
                 objects,
                 id: Some(it.id.clone()),
+                name,
             });
             for (pin, nets) in sym.pins.iter().zip(&it.pin_nets) {
                 if nets.is_empty() {
                     continue;
                 }
                 let objects = nets.iter().map(|n| self.net(lv.level, n)).collect();
-                hits.push(Hit { kind: "pin", points: vec![px(place(it.at, it.orient, pin.pos))], objects, id: None });
+                let points = vec![px(place(it.at, it.orient, pin.pos))];
+                hits.push(Hit { kind: "pin", points, objects, id: None, name: None });
             }
         }
         for w in &lv.wires {
@@ -592,6 +619,34 @@ impl<'a> Index<'a> {
                 points: w.points.iter().map(|p| px(*p)).collect(),
                 objects,
                 id: Some(w.id.clone()),
+                name: None,
+            });
+        }
+        // a label stands for what it is attached to, and for nothing when that cannot be selected:
+        // a click on it is then not a click on whatever is under it. Its group is its own only when
+        // no other text has the same id.
+        let boxes = rnl_render::text_boxes(lv, &render);
+        let mut same_id: HashMap<&str, usize> = HashMap::new();
+        for t in &lv.texts {
+            *same_id.entry(t.id.as_str()).or_default() += 1;
+        }
+        for (t, bbox) in lv.texts.iter().zip(boxes) {
+            let (true, Some([x0, y0, x1, y1])) = (t.attach.is_some(), bbox) else { continue };
+            let objects = match &t.target {
+                Some(TextTarget::Item(i)) => item_objects.get(*i).cloned().unwrap_or_default(),
+                Some(TextTarget::Wire(i)) => {
+                    lv.wires.get(*i).map(|w| w.nets.iter().map(|n| self.net(lv.level, n)).collect()).unwrap_or_default()
+                }
+                Some(TextTarget::Net(n)) => vec![self.net(lv.level, n)],
+                None => Vec::new(),
+            };
+            let alone = same_id[t.id.as_str()] == 1;
+            hits.push(Hit {
+                kind: "label",
+                points: vec![px((x0.min(x1), y0.max(y1))), px((x0.max(x1), y0.min(y1)))],
+                objects,
+                id: alone.then(|| t.id.clone()),
+                name: None,
             });
         }
         Level {
@@ -636,9 +691,26 @@ impl<'a> Index<'a> {
                 kind: it.kind,
                 name: name.unwrap_or_else(|| it.id.clone()),
                 symbol: sym.name.clone(),
+                reason: None,
                 objects: it.host.iter().filter_map(|i| self.insts.get(&(lv.level, *i)).copied()).collect(),
                 svg: drawn.as_ref().and_then(|d| d.svg.clone()),
                 primitives: drawn.and_then(|d| d.primitives),
+            });
+        }
+        // the devices that are not drawn at all: listed after, with the reason and no drawing
+        for u in &lv.undrawn {
+            let name = match u.host.as_slice() {
+                [i] => self.doc.levels[lv.level].instances.get(*i).map(|inst| inst.name.clone()),
+                _ => None,
+            };
+            out.push(Unplaced {
+                kind: if u.host.len() == 1 { "instance" } else { "bundle" },
+                name: name.unwrap_or_else(|| u.id.clone()),
+                symbol: String::new(),
+                reason: Some(u.reason.clone()),
+                objects: u.host.iter().filter_map(|i| self.insts.get(&(lv.level, *i)).copied()).collect(),
+                svg: None,
+                primitives: None,
             });
         }
         out
@@ -689,6 +761,7 @@ fn net_labels(it: &ItemView, sym: &SymbolView) -> Vec<TextView> {
             id: format!("net-{k}"),
             object_id: format!("net-{k}"),
             attach: None,
+            target: None,
             key: None,
             markup: text.clone(),
             written: false,
@@ -855,6 +928,7 @@ mod tests {
         let text = "* two of three are left to a solver
 R1 a b 1k
 C1 b 0 1p
+.model nmos nmos
 M1 d g s 0 nmos
 * @RNL { #R1 @PLACE(0, 0) }
 .end
@@ -897,7 +971,7 @@ M1 d g s 0 nmos
 
     #[test]
     fn the_drawings_of_the_unplaced_can_be_asked_for_instead_of_carried() {
-        let text = "* some left\nR1 a b 1k\nC1 b 0 1p\nM1 d g s 0 nmos\nR2 a d 2k\n* @RNL { #R1 @PLACE(0, 0) }\n.end\n";
+        let text = "* some left\n.model nmos nmos\nR1 a b 1k\nC1 b 0 1p\nM1 d g s 0 nmos\nR2 a d 2k\n* @RNL { #R1 @PLACE(0, 0) }\n.end\n";
         let files = rnl_runtime::source::MemoryProvider::new().with("a.sp", text);
         let options = BuildOptions { primitives: true, ..BuildOptions::default() };
         let carried = crate::build("a.sp", &files, &options).unwrap();
@@ -931,6 +1005,77 @@ M1 d g s 0 nmos
         assert!(drawings.unplaced(0, &[99], &[]).is_err());
         assert!(drawings.unplaced(7, &[0], &[]).is_err());
         assert!(drawings.unplaced(0, &[0, 1], &["R2".to_string()]).is_err());
+    }
+
+    #[test]
+    fn a_label_stands_for_what_it_is_attached_to() {
+        let text = "* labels
+R1 a b 1k
+C1 b 0 1p
+* @RNL(type=\"header\") { @VERSION(\"0.2\")}
+* @RNL {
+*   #R1 @PLACE(0, 0);
+*   #C1 @PLACE(6, 0);
+*   (-3, 5) @TEXT(\"free\");
+*   #R1:1 @TEXT(\"pin\", dy=1)
+* }
+.end
+";
+        let files = rnl_runtime::source::MemoryProvider::new().with("a.sp", text);
+        let d = crate::build("a.sp", &files, &BuildOptions::default()).unwrap();
+        let level = &d.levels[0];
+        let labels: Vec<&Hit> = level.hits.iter().filter(|h| h.kind == "label").collect();
+        let names = |h: &Hit| h.objects.iter().map(|o| d.objects[*o].name.as_str()).collect::<Vec<_>>();
+        // the name and value of each instance stand for it; the text at a point is no label
+        let of = |name: &str| labels.iter().filter(|h| names(h) == [name]).count();
+        assert!((of("R1"), of("C1")) == (2, 2) || (of("R1"), of("C1")) == (2, 1), "{labels:?}");
+        assert!(labels.iter().all(|h| h.points.len() == 2 && h.points[0][0] < h.points[1][0]));
+        assert!(labels.iter().all(|h| h.points[0][1] < h.points[1][1]));
+        // a label of something that cannot be selected stands for nothing, and is still a hit
+        let nothing: Vec<&&Hit> = labels.iter().filter(|h| h.objects.is_empty()).collect();
+        assert_eq!(nothing.len(), 1, "{labels:?}");
+        // a label's group is in the SVG, and its box is around the text
+        let svg = level.svg.as_deref().unwrap();
+        for h in labels.iter().filter(|h| !h.objects.is_empty()) {
+            let id = h.id.as_deref().unwrap();
+            assert!(svg.contains(&format!("data-id=\"{id}\"")), "{id}");
+        }
+        // none of it changes the other hits
+        assert_eq!(level.hits.iter().filter(|h| h.kind == "box").count(), 2);
+    }
+
+    #[test]
+    fn labels_of_equal_ids_have_no_group_of_their_own() {
+        // the supply symbols of the corpus: four unnamed usages, whose labels are all `%s::name`
+        let d = load(&case("03-five-transistor-ota.sp")).unwrap();
+        let level = &d.levels[0];
+        let on_vdd = |kind: &str| {
+            let hits = level.hits.iter();
+            hits.filter(|h| {
+                h.kind == kind && !h.objects.is_empty() && h.objects.iter().all(|o| d.objects[*o].name == "vdd")
+            })
+            .collect::<Vec<&Hit>>()
+        };
+        let vdd = on_vdd("label");
+        assert!(vdd.len() >= 3, "{vdd:?}");
+        assert!(vdd.iter().all(|h| h.id.is_none()), "{vdd:?}");
+        // and each stands for the net its symbol is on
+        assert_eq!(vdd.len(), on_vdd("box").len());
+        // the supply symbols have no name of their own, the ports of the netlist have
+        let named: Vec<(&str, Vec<&str>)> = level
+            .hits
+            .iter()
+            .filter_map(|h| {
+                h.name.as_deref().map(|n| (n, h.objects.iter().map(|o| d.objects[*o].name.as_str()).collect()))
+            })
+            .collect();
+        assert!(on_vdd("box").iter().all(|h| h.name.is_none()));
+        assert_eq!(
+            named,
+            [("pi", vec!["inp"]), ("pn", vec!["inn"]), ("po", vec!["out"])],
+            "the ports of the netlist have their names"
+        );
+        assert!(named.iter().all(|(_, nets)| nets.len() == 1), "{named:?}");
     }
 
     #[test]
@@ -1111,5 +1256,39 @@ R1 a b 1k
         let (last, tokens) = statement(&lines, 0).unwrap();
         assert_eq!(last, 1);
         assert_eq!(tokens.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(), ["m1", "d", "g", "s", "b", "nch"]);
+    }
+
+    #[test]
+    fn a_device_that_cannot_be_drawn_is_listed_after_the_unplaced_with_its_reason() {
+        let text = "* a transistor without its model card is not drawn
+.model nch nmos
+R1 a b 1k
+M1 d g s b nch
+M2 d g s b pch
+* @RNL { #R1 @PLACE(0, 0) }
+.end
+";
+        let files = rnl_runtime::source::MemoryProvider::new().with("a.sp", text);
+        let d = crate::build("a.sp", &files, &BuildOptions::default()).unwrap();
+        let level = &d.levels[0];
+        let listed: Vec<(&str, &str, Option<&str>)> =
+            level.unplaced.iter().map(|u| (u.name.as_str(), u.symbol.as_str(), u.reason.as_deref())).collect();
+        let names: Vec<&str> = listed.iter().map(|l| l.0).collect();
+        assert_eq!(names.last(), Some(&"M2"), "{listed:?}");
+        assert_eq!(listed.last().unwrap(), &("M2", "", Some("model card not found")));
+        // the others, which a solver can place, have a symbol and no reason
+        assert!(listed[..listed.len() - 1].iter().all(|(_, symbol, reason)| !symbol.is_empty() && reason.is_none()));
+        // it has no drawing, and stands for its instance in the objects
+        let m2 = level.unplaced.last().unwrap();
+        assert!(m2.svg.is_none() && m2.primitives.is_none());
+        assert_eq!((m2.kind, m2.objects.len()), ("instance", 1));
+        assert_eq!(d.objects[m2.objects[0]].name, "M2");
+        // the status counts the objects without a position, not the ones that cannot be drawn
+        assert!(level.status.as_deref().unwrap().starts_with("1 without a position"), "{:?}", level.status);
+        // in the JSON the reason is there for it alone
+        let json = serde_json::to_value(&d).unwrap();
+        let rows = json["levels"][0]["unplaced"].as_array().unwrap();
+        assert_eq!(rows.iter().filter(|u| u.get("reason").is_some()).count(), 1);
+        assert_eq!(rows.last().unwrap()["reason"], "model card not found");
     }
 }

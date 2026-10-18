@@ -80,6 +80,17 @@ pub struct NestedView {
     pub orient: Orient,
 }
 
+/// A device that is not drawn since no symbol can be chosen for it, with the reason.
+#[derive(Clone, Debug)]
+pub struct UndrawnView {
+    /// As `ItemView::id`.
+    pub id: String,
+    /// The host instances: the index of each in its level's instances.
+    pub host: Vec<usize>,
+    /// Why, such as "model card not found".
+    pub reason: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct SymbolView {
     pub name: String,
@@ -114,6 +125,9 @@ pub enum SymbolOrigin {
 #[derive(Clone, Debug)]
 pub struct ItemView {
     pub id: String,
+    /// Its id in the editor interface: [`ObjectInfo::id`], `#M1` for an instance, `%gnd1` for a usage
+    /// the level names, else where the statement is. Empty for an item that is not drawn on a level.
+    pub object_id: String,
     pub kind: &'static str,
     pub symbol: usize,
     pub at: Pt,
@@ -188,6 +202,17 @@ pub struct ShapeView {
     pub order: Vec<f64>,
 }
 
+/// What a text is attached to, as the level draws it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TextTarget {
+    /// The item at this index of `LevelView::items`: an instance, a bundle or a usage.
+    Item(usize),
+    /// The wire at this index of `LevelView::wires`; the first run of one drawn in several.
+    Wire(usize),
+    /// The net of this displayed name.
+    Net(String),
+}
+
 #[derive(Clone, Debug)]
 pub struct TextView {
     pub id: String,
@@ -195,6 +220,10 @@ pub struct TextView {
     pub object_id: String,
     /// The id of the object it is attached to; None for a text at a point.
     pub attach: Option<String>,
+    /// What a click on it stands for in the drawing: where the object it is attached to is drawn,
+    /// or its net. None for a text at a point, and for one attached to an object that is not drawn
+    /// as an item or a wire (a terminal, a point).
+    pub target: Option<TextTarget>,
     /// The key of a label, such as "name".
     pub key: Option<String>,
     /// The text as written, before `${…}` is read (13.6).
@@ -251,6 +280,10 @@ pub struct LevelView {
     /// are `unplaced_symbols`, not `symbols`: nothing here is drawn on the level.
     pub unplaced_items: Vec<ItemView>,
     pub unplaced_symbols: Vec<SymbolView>,
+    /// The devices the level does not draw whatever their position, since no symbol can be chosen
+    /// for them, such as a transistor whose model card is not found; a viewer lists them with the
+    /// objects that are not drawn, each with its reason.
+    pub undrawn: Vec<UndrawnView>,
     /// The instances, bundles and usages of the level, drawn or not, as the editor interface
     /// sees them.
     pub objects: Vec<ObjectInfo>,
