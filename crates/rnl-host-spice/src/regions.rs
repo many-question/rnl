@@ -261,16 +261,14 @@ impl Regions {
                 self.title = Some(no);
                 return Some(TITLE);
             }
-        } else if !text.starts_with("//") && !text.starts_with('*') {
-            if reliability_header(text) {
-                let mut braces = Braces { start: no, ..Braces::default() };
-                if braces.line(raw) {
-                    self.spans.push((no, no));
-                } else {
-                    self.braces = Some(braces);
-                }
-                return Some(RELIABILITY);
+        } else if !text.starts_with("//") && !text.starts_with('*') && reliability_header(text) {
+            let mut braces = Braces { start: no, ..Braces::default() };
+            if braces.line(raw) {
+                self.spans.push((no, no));
+            } else {
+                self.braces = Some(braces);
             }
+            return Some(RELIABILITY);
         }
         None
     }
