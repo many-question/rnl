@@ -31,6 +31,13 @@
         { "id": "zoom-in", "label": "Zoom &In", "keys": ["Ctrl+=", "Ctrl++"], "shown": "Ctrl++" },
         { "id": "zoom-out", "label": "Zoom &Out", "keys": ["Ctrl+-"] },
         {
+          "label": "&Background",
+          "items": [
+            { "id": "background-light", "label": "&Light", "check": true, "radio": true },
+            { "id": "background-dark", "label": "&Dark", "check": true, "radio": true }
+          ]
+        },
+        {
           "label": "&Grid",
           "items": [
             { "id": "toggle-grid", "label": "Show &Grid", "keys": ["G"], "check": true, "page": true },

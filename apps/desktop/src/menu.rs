@@ -323,6 +323,10 @@ mod tests {
                     item("fit", "&Fit to Window\tF", None),
                     item("zoom-in", "Zoom &In\tCtrl++", None),
                     item("zoom-out", "Zoom &Out\tCtrl+-", None),
+                    Shown::Submenu(
+                        "&Background".into(),
+                        vec![check("background-light", "&Light", None), check("background-dark", "&Dark", None)],
+                    ),
                     grid("Show &Grid\tG"),
                     check("toggle-hover-names", "Show &Names on Hover", None),
                     Shown::Separator,
@@ -367,6 +371,10 @@ mod tests {
                     item("fit", "&Fit to Window", Some("F")),
                     item("zoom-in", "Zoom &In", Some("CmdOrCtrl+=")),
                     item("zoom-out", "Zoom &Out", Some("CmdOrCtrl+-")),
+                    Shown::Submenu(
+                        "&Background".into(),
+                        vec![check("background-light", "&Light", None), check("background-dark", "&Dark", None)],
+                    ),
                     grid("Show &Grid"),
                     check("toggle-hover-names", "Show &Names on Hover", None),
                     Shown::Separator,

@@ -35,8 +35,9 @@ impl Line<'_> {
     /// - "dotted": dots m long and gaps of 2.5m;
     /// - "dash-dot": a dash of 5m, a gap of 2m, a dot of m and a gap of 2m;
     /// - "double": two lines d wide with a gap of d between them, where d is the width, but at
-    ///   least 0.12, in scene units: a stroke 3d wide in the colour under a stroke d wide in the
-    ///   inner colour, both with butt caps and miter joins whatever the style's;
+    ///   least 0.12, in scene units (or the hairline in pixels when width is zero): a stroke 3d
+    ///   wide in the colour under a stroke d wide in the inner colour, both with butt caps and
+    ///   miter joins whatever the style's;
     /// - "none": no stroke.
     ///
     /// The language allows no other styles (9.3); any other is drawn as "solid".
@@ -60,11 +61,11 @@ impl Line<'_> {
             "dotted" => vec![stroke(self.color, width, pixels, vec![m, 2.5 * m])],
             "dash-dot" => vec![stroke(self.color, width, pixels, vec![5.0 * m, 2.0 * m, m, 2.0 * m])],
             "double" => {
-                let d = self.width.max(DOUBLE);
+                let d = if pixels { width } else { self.width.max(DOUBLE) };
                 let line = |color: &str, width: f64| Stroke {
                     cap: "butt".into(),
                     join: "miter".into(),
-                    ..stroke(color, width, false, Vec::new())
+                    ..stroke(color, width, pixels, Vec::new())
                 };
                 vec![line(self.color, 3.0 * d), line(self.inner, d)]
             }
@@ -163,11 +164,11 @@ mod tests {
                 assert_eq!(line(style, width).strokes(scale), want, "{style} {width}");
             }
             // two lines d wide and a gap of d, in scene units, with butt caps and miter joins
-            let d = width.max(0.12);
+            let d = if pixels { w } else { width.max(0.12) };
             let butt = |color: &str, width: f64| Stroke {
                 cap: "butt".into(),
                 join: "miter".into(),
-                ..plain(color, width, false, &[])
+                ..plain(color, width, pixels, &[])
             };
             assert_eq!(line("double", width).strokes(scale), [butt("#102030", 3.0 * d), butt("#405060", d)]);
         }
@@ -183,15 +184,14 @@ mod tests {
         Some(&element[at..at + element[at..].find('"')?])
     }
 
-    /// The SVG of each line style on each shape draws what the SVG writer drew before the renderer
-    /// resolved the styles: w is the width in pixels, 1.2 for the hairline, and m the larger of w
-    /// and 1. Only "double" on a rectangle, circle or ellipse changed: it was drawn as "solid".
+    /// Each line style on each shape has the resolved width and dashes, with a non-scaling stroke
+    /// only for zero widths. Double hairlines use pixels for both strokes too.
     /// The numbers are those written before, except a dash or a gap that is not a whole number of
     /// tenths of a pixel, such as a gap of 3.15 pixels: that was rounded to a tenth, which put a
     /// long line's dashes out of step with the primitives', and is now written to at most 6
     /// decimals.
     #[test]
-    fn the_svg_draws_each_style_as_before() {
+    fn the_svg_draws_resolved_styles_and_preserves_pixel_units() {
         let scale = RenderOptions::default().scale;
         // a number written with `decimals` decimals, as near as that allows to `want`
         let near = |written: &str, want: f64, decimals: usize| {
@@ -227,6 +227,11 @@ mod tests {
                     let svg = svg(shape, line(style, width).strokes(scale));
                     assert_eq!(svg.matches("stroke=").count(), 1, "{style} {width}: {svg}");
                     assert!(near(stroke_attr(&svg, "stroke-width").unwrap(), w, 2), "{style} {width}: {svg}");
+                    assert_eq!(
+                        stroke_attr(&svg, "vector-effect"),
+                        (width == 0.0).then_some("non-scaling-stroke"),
+                        "{svg}"
+                    );
                     assert_eq!(stroke_attr(&svg, "stroke-linecap"), Some("square"), "{svg}");
                     assert_eq!(stroke_attr(&svg, "stroke-linejoin"), Some("bevel"), "{svg}");
                     let written: Vec<&str> =
@@ -240,7 +245,7 @@ mod tests {
             // "double": the colour 3d wide under the inner colour d wide, with SVG's own caps and
             // joins, butt and miter; on a path as before, and now on the other shapes too. The
             // inner stroke has the class "inner", which a selection leaves as it is.
-            let d = width.max(0.12) * scale;
+            let d = if width == 0.0 { 1.2 } else { width.max(0.12) * scale };
             for shape in SHAPES {
                 let svg = svg(shape, line("double", width).strokes(scale));
                 let elements: Vec<&str> = svg.lines().filter(|l| l.contains(" stroke=")).collect();
@@ -254,12 +259,18 @@ mod tests {
                     let at = element.find(&end).unwrap_or_else(|| panic!("{width}: {svg}")) + end.len();
                     // the width and nothing after it
                     let (written, after) = element[at..].split_once('"').unwrap();
-                    assert!(near(written, w, 2) && after.is_empty(), "{width}: {svg}");
+                    let effect = if width == 0.0 { " vector-effect=\"non-scaling-stroke\"" } else { "" };
+                    assert!(near(written, w, 2) && after == effect, "{width}: {svg}");
                 }
             }
         }
         let flyline = svg(|strokes| Kind::Flyline { a: (0.0, 0.0), b: (1.0, 0.0), strokes }, vec![flyline()]);
-        assert!(flyline.contains("stroke=\"#8a8a8a\" stroke-width=\"1\" stroke-dasharray=\"4,3\"/>"), "{flyline}");
+        assert!(
+            flyline.contains(
+                "stroke=\"#8a8a8a\" stroke-width=\"1\" stroke-dasharray=\"4,3\" vector-effect=\"non-scaling-stroke\"/>"
+            ),
+            "{flyline}"
+        );
     }
 
     /// The SVG's dashes are the primitives', not rounded to a tenth of a pixel: rounded, the gaps

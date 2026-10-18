@@ -10,6 +10,7 @@
 // it (`shell.unplacedDrawings`), and a Document that carries them is drawn from itself.
 
 import { setPane, setSidebar } from "./panels.js";
+import { colourDrawing } from "./background.js";
 import { select } from "./selection.js";
 import { shell } from "./shell.js";
 import { current, doc } from "./state.js";
@@ -171,6 +172,7 @@ function show(box, { svg, error }) {
   el.removeAttribute("width");
   el.removeAttribute("height");
   el.setAttribute("aria-hidden", "true");
+  colourDrawing(el);
   box.append(el);
 }
 

@@ -126,6 +126,9 @@ impl W {
                 let _ = write!(a, " stroke-dashoffset=\"{}\"", dash(st.dash_offset));
             }
         }
+        if st.pixels {
+            a.push_str(" vector-effect=\"non-scaling-stroke\"");
+        }
         a
     }
 

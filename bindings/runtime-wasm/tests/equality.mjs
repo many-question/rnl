@@ -64,6 +64,10 @@ for (const dir of ["tests/conformance/cases", "tests/conformance/equivalence", "
   entries.push(...files(join(root, dir)).filter((path) => /\.(sp|scs|inc|rnl)$/.test(path)));
 }
 if (entries.length < 20) fail(`only ${entries.length} files found under ${root}`);
+// Explicit/default zero widths, double hairlines and the viewer's dark-colour boundary cases.
+entries.push(join(root, "tests/viewer/inputs/view-improvements.sp"));
+const defaultHairlines = join(root, "tests/viewer/inputs/default-hairlines.sp");
+entries.push(defaultHairlines);
 // and a file that is not UTF-8, which rnl reads as Latin-1
 const temp = mkdtempSync(join(tmpdir(), "rnl-equality-"));
 process.on("exit", () => rmSync(temp, { recursive: true, force: true }));
@@ -136,6 +140,7 @@ function files(dir) {
 /** The Document `rnl view` prints, or with --snapshot the snapshot `rnl snapshot` prints; or its error. */
 function native(entry) {
   const command = snapshot ? ["snapshot", entry, "--parts", "host,model"] : ["view", entry];
+  if (entry === defaultHairlines) command.push("--no-std");
   try {
     const out = execFileSync(rnl, [...command, ...view], { encoding: "utf8", maxBuffer: 1 << 30, stdio: "pipe" });
     return { value: JSON.parse(out) };
@@ -164,12 +169,13 @@ async function webAssembly(entry) {
   const counted = { build: (request) => (builds++, core.build(request)) };
   try {
     const lazy = snapshot ? {} : { lazy_unplaced: true };
-    const { document, files } = await collect(counted, { ...extra, ...lazy, entry, files: packages }, readText);
+    const defaults = entry === defaultHairlines ? { std: false } : {};
+    const { document, files } = await collect(counted, { ...extra, ...lazy, ...defaults, entry, files: packages }, readText);
     const read = Object.keys(files).length - Object.keys(packages).length;
     if (!snapshot) return [{ value: withDrawings(document) }, read];
     builds++;
     const parts = { drawing: false, host: true, model: true };
-    return [{ value: core.snapshot({ ...extra, entry, files, parts }) }, read];
+    return [{ value: core.snapshot({ ...extra, ...defaults, entry, files, parts }) }, read];
   } catch (e) {
     return [{ error: e.message }, 0];
   }

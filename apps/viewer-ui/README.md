@@ -26,6 +26,7 @@ find apps/viewer-ui -name '*.js' -print0 | xargs -0 -n 1 node --check
 | `picker.js` | The list beside the pointer that a click on several objects opens, to choose from with the mouse or the keys. |
 | `hover.js` | The name beside the pointer while it rests on an instance or a net, and View › Show Names on Hover. |
 | `grid.js` | The grid under the drawing, a view aid of the page on a canvas of its own (see [The grid](#the-grid)), and its settings dialog. |
+| `background.js` | View > Background, kept as `background` in native settings on desktop and localStorage on web; Light by default. Dark uses a deep grey canvas and reflects HSL lightness strictly below 25%, keeping hue, saturation and alpha. It changes imported SVG elements, including lazy thumbnails, without changing the Document. Highlights retain their normal styles and apply the same colour rule, with no added glow; hover tips follow the drawing background. The menus and side panel keep their system colour scheme. |
 | `selection.js` | Selecting an instance or a net. |
 | `subcircuits.js` | The hierarchy path of the level shown and the bar above the drawing that shows it (see [The hierarchy path](#the-hierarchy-path)): going down into a subcircuit instance and back along the path, each level with the view it had on it. |
 | `text.js` | The text pane: the tabs and the lines of each file, the statements that do not take effect, the places of the selection, revealing a line, the text outside the definition of the subcircuit drawn dimmed (`Level.lines`), the statements of the objects that are not drawn greyed (`Level.unplaced`), and clicks in the text. |
@@ -48,6 +49,31 @@ find apps/viewer-ui -name '*.js' -print0 | xargs -0 -n 1 node --check
 | `fonts/` | The drawing's web fonts, which [`scripts/fonts.py`](../../scripts/README.md) writes and git ignores (see [Fonts](#fonts)). |
 
 The modules import each other in cycles. At its top level a module only looks up its elements, keeps its own state and adds listeners; it calls nothing of another module there, so no imported binding is read before its module has run.
+
+## Viewing and output
+
+Drag with the right mouse button to fit a rectangle to the drawing viewport, keeping its aspect ratio
+and the existing 2%–5000% zoom limits. A drag must exceed 4 CSS pixels in both dimensions; a shorter
+press does nothing (the canvas has no context menu). Escape, pointer cancellation, loss of capture
+or window focus cancels the rectangle. Left-button selection and left/middle-button panning are
+unchanged. With focus on the drawing or the page body, arrow keys move the viewing window by 10%
+of its width or height, or 30% with Shift. Inputs, text editors, lists, menus and other controls
+keep their own keyboard navigation.
+
+An instance's selection rectangle follows its `box` hit exactly, including the instance's
+orientation and boxes inferred from graphics when no explicit symbol box was given. The 1.5 CSS-pixel
+non-scaling stroke is centred on that boundary (0.75 pixels on either side). The open badge sits
+above and to the right of the box, with a fixed 4 CSS-pixel gap in each direction, independent of
+zoom. Label margins and hit-testing tolerances are separate and unchanged.
+
+Zero and omitted line widths use the renderer's 1.2 CSS-pixel hairline, with SVG non-scaling strokes;
+double hairlines use two 1.2-pixel lines separated by a 1.2-pixel gap. Nonzero widths keep their
+scene units. This also applies to standalone `rnl render` SVG files. Exported SVGs retain the
+original colours and white backdrop regardless of the viewing preference. There is no PNG export
+or print command in the viewer. When a standalone SVG is rasterized, hairlines use the rasterizer's
+output pixels; printed SVG hairlines use the print engine's CSS-pixel mapping (normally 96 CSS px
+per inch, so 1.2 px is 0.9 pt). Printing the viewer page through a browser prints its current display,
+including its chosen background, subject to the browser's background-printing option.
 
 ## The hierarchy path
 

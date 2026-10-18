@@ -93,6 +93,11 @@ function* steps() {
   }
 }
 
+export function refreshGridColours() {
+  colours = null;
+  paint();
+}
+
 function paint() {
   const dpr = window.devicePixelRatio || 1;
   const [w, h] = [holder.clientWidth, holder.clientHeight];

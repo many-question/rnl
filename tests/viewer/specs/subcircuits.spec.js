@@ -78,15 +78,15 @@ test("the badge on a selected subcircuit instance sits on its box and opens it",
     const [u, v] = await page.evaluate(() => {
       const v = window.viewer;
       const box = v.doc.levels[v.level].hits.find((h) => h.kind === "box" && h.objects.includes(v.selected));
-      return [box.points[1][0] + 3, box.points[0][1] - 3];
+      return [box.points[1][0], box.points[0][1]];
     });
     return viewer.point(u, v);
   };
   for (const key of [null, "Control+=", "Control+="]) {
     if (key) await page.keyboard.press(key);
-    const [at, want] = [await viewer.middle(badge), await corner()];
-    expect(Math.abs(at.x - want.x)).toBeLessThan(1);
-    expect(Math.abs(at.y - want.y)).toBeLessThan(1);
+    const [at, want] = [await badge.boundingBox(), await corner()];
+    expect(at.x - want.x).toBeCloseTo(4, 1);
+    expect(want.y - (at.y + at.height)).toBeCloseTo(4, 1);
   }
   await badge.click();
   await expect(page.locator("#level-name")).toHaveText("rdiv");
