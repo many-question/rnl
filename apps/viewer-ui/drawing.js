@@ -24,6 +24,7 @@ const MIN_ZOOM = 0.02;
 const MAX_ZOOM = 50;
 const FIT_MARGIN = 24; // pixels around the drawing when it is fitted
 const CLICK_SLOP = 4; // pixels a press may move and still be a click
+const BADGE_GAP = 4; // CSS pixels from the box's top-right corner to the badge's bottom-left
 let svg = null; // the <svg> element of the level drawn
 let overlay = null; // the selection marks drawn over it
 let groups = new Map(); // data-id -> the SVG groups that draw it
@@ -358,7 +359,6 @@ export function paintDrawingSelection() {
   overlay.replaceChildren();
   if (selected === null) return;
   const isInstance = doc.objects[selected].kind === "instance";
-  const pad = 3;
   for (const h of doc.levels[current].hits) {
     if (!h.objects.includes(selected)) continue;
     if (h.id) for (const g of groups.get(h.id) || []) g.classList.add("sel");
@@ -369,8 +369,8 @@ export function paintDrawingSelection() {
       overlay.append(r);
     } else if (h.kind === "box" && isInstance) {
       const [[x0, y0], [x1, y1]] = h.points;
-      if (opens(selected) !== null && !badgeAt) badgeAt = [x1 + pad, y0 - pad];
-      const r = svgElement("rect", { x: x0 - pad, y: y0 - pad, width: x1 - x0 + 2 * pad, height: y1 - y0 + 2 * pad });
+      if (opens(selected) !== null && !badgeAt) badgeAt = [x1, y0];
+      const r = svgElement("rect", { x: x0, y: y0, width: x1 - x0, height: y1 - y0 });
       r.setAttribute("vector-effect", "non-scaling-stroke");
       overlay.append(r);
     } else if (h.kind === "pin" && !isInstance) {
@@ -390,8 +390,8 @@ function positionBadge() {
     return;
   }
   badge.hidden = false;
-  badge.style.left = `${(badgeAt[0] - view.x) * view.k}px`;
-  badge.style.top = `${(badgeAt[1] - view.y) * view.k}px`;
+  badge.style.left = `${(badgeAt[0] - view.x) * view.k + BADGE_GAP}px`;
+  badge.style.top = `${(badgeAt[1] - view.y) * view.k - BADGE_GAP}px`;
 }
 
 $("enter-badge").addEventListener("pointerdown", (e) => e.stopPropagation());

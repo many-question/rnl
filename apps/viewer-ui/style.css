@@ -372,6 +372,8 @@ button.crumb:hover:not(:disabled) { color: var(--fg); }
 /* ------------------------------------------------------------------ drawing */
 
 .canvas {
+  --select: var(--drawing-select);
+  --sub: var(--drawing-sub);
   position: relative;
   overflow: hidden;
   background: var(--drawing-background);
@@ -392,20 +394,12 @@ button.crumb:hover:not(:disabled) { color: var(--fg); }
 .zoom-box[hidden] { display: none; }
 body[data-background="dark"] { --drawing-background: #18181c; }
 body[data-background="dark"] .canvas {
-  --select: #ffffff;
-  --sub: #ffffff;
-  --select-fill: rgba(255, 255, 255, 0.12);
-  --sub-fill: rgba(255, 255, 255, 0.12);
   --grid-dot: #50505a;
   --grid-line: #2b2b33;
   --grid-major: #3c3c48;
   --grid-axis: #77778a;
 }
-body[data-background="dark"] .canvas svg g.sel {
-  filter: drop-shadow(0 0 2px #ffffff) drop-shadow(0 0 4px #ffffff);
-}
-body[data-background="dark"] .canvas .enter-badge { color: #18181c; }
-body[data-background="dark"] .hover-tip { color: #ffffff; background: #28282e; border-color: #ffffff; }
+body[data-background="dark"] .hover-tip { color: var(--drawing-ink); background: #28282e; }
 body[data-background="dark"] .thumb > svg > rect.backdrop { display: none; }
 body[data-background="dark"] .unplaced-row .thumb { background: var(--drawing-background); }
 .canvas > svg, .canvas > .grid {
@@ -784,7 +778,7 @@ mark { background: rgba(255, 196, 61, 0.55); color: inherit; border-radius: 2px;
   padding: 0;
   display: grid;
   place-items: center;
-  transform: translate(-50%, -50%);
+  transform: translate(0, -100%);
   color: #ffffff;
   background: var(--sub);
   border: 0;

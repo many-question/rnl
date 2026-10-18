@@ -43,6 +43,15 @@ export function setBackground(mode) {
   save("background", dark ? "dark" : "light");
   setCheck("background-light", !dark);
   setCheck("background-dark", dark);
+  // Keep the normal highlight styles. Their colours obey the same rule as drawing colours.
+  const style = getComputedStyle(document.body);
+  const canvas = document.getElementById("canvas");
+  for (const name of ["select", "sub"]) {
+    const colour = style.getPropertyValue(`--${name}`).trim();
+    canvas.style.setProperty(`--drawing-${name}`, dark ? darkColour(colour) : colour);
+  }
+  const ink = style.getPropertyValue("--fg").trim();
+  document.body.style.setProperty("--drawing-ink", dark ? darkColour(ink) : ink);
   for (const svg of document.querySelectorAll("#canvas > svg, .thumb svg")) colourDrawing(svg);
   refreshGridColours();
 }

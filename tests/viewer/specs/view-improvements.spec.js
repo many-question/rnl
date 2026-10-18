@@ -124,16 +124,24 @@ for (const [platform, query] of Object.entries(modes)) {
       expect(await page.evaluate(() => [window.viewer.checked("background-dark"), window.viewer.checked("background-light")])).toEqual([true, false]);
     });
 
-    test("white selection glows against white hairlines, hover tips and lazy thumbnails stay legible", async ({ page, viewer }) => {
-      await page.evaluate(() => window.viewer.command("background-dark"));
+    test("normal highlights follow the colour rule without glow; hover tips and lazy thumbnails stay legible", async ({ page, viewer }) => {
       await viewer.click("R1");
       const marked = page.locator("#canvas g.sel").first();
-      await expect(marked.locator('[stroke]:not([stroke="none"]):not(.inner)').first()).toHaveCSS("stroke", "rgb(255, 255, 255)");
-      await expect(marked).toHaveCSS("filter", /drop-shadow/);
+      const stroke = marked.locator('[stroke]:not([stroke="none"]):not(.inner)').first();
+      await expect(stroke).toHaveCSS("stroke", "rgb(232, 89, 12)");
+      await page.evaluate(() => window.viewer.command("background-dark"));
+      await expect(stroke).toHaveCSS("stroke", "rgb(232, 89, 12)");
+      await expect(marked).toHaveCSS("filter", "none");
+      // A dark highlight colour receives the same HSL conversion as ordinary drawing colours.
+      await page.evaluate(() => {
+        document.body.style.setProperty("--select", "#00007f");
+        window.viewer.command("background-dark");
+      });
+      await expect(stroke).toHaveCSS("stroke", "rgb(128, 128, 255)");
       const p = await viewer.where("R1");
       await page.mouse.move(p.x + 1, p.y);
       await expect(page.locator("#hover-tip")).toBeVisible();
-      await expect(page.locator("#hover-tip")).toHaveCSS("color", "rgb(255, 255, 255)");
+      await expect(page.locator("#hover-tip")).toHaveCSS("color", "rgb(224, 224, 226)");
       await viewer.open("unplaced", query);
       await page.locator("#tab-unplaced").click();
       await expect(page.locator(".thumb svg").first()).toBeVisible();
