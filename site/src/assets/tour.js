@@ -102,9 +102,14 @@
   function initFile() {
     var el = $('#file-code');
     if (!el) return;
+    var openLink = $('#file-open');
     var btns = PG.initSeg($('#file-style'), 'data-style', show);
     function show(style) {
       C.render(el, SC.otaCode(2, style).map(function (l) { return { t: l.t }; }));
+      if (openLink) {
+        var target = style === 'zh' ? 'ota5t-zh.sp' : 'ota5t.sp';
+        openLink.setAttribute('href', openLink.getAttribute('href').replace(/url=samples\/site\/[^&#]*/, 'url=samples/site/' + target));
+      }
     }
     var first = '<zh>zh</zh><en>en</en>';
     PG.setPressed(btns, btns.filter(function (b) { return b.getAttribute('data-style') === first; })[0]);

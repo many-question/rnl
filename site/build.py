@@ -46,19 +46,23 @@ Usage, from the repository root (standard library only, and git for the tags):
     python site/build.py --zip FILE   also pack the built site into FILE
     python site/build.py --viewer-version 0.1.0   link the files of this release of the desktop
                                       viewer, whatever the tags say; "none" for no release yet
+    python site/build.py --check --rnl PATH       also check and render site/examples/*.sp with rnl
 """
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 SRC = HERE / "src"
+EXAMPLES = HERE / "examples"
 DEFAULT_OUT = HERE / "dist"
 SITE_URL = "https://rich-netlist.github.io/rnl/"
 
@@ -209,6 +213,109 @@ def sources():
     return files
 
 
+def examples():
+    if not EXAMPLES.is_dir():
+        return {}
+    return {path.name: path.read_text(encoding="utf-8")
+            for path in sorted(EXAMPLES.iterdir()) if path.suffix == ".sp"}
+
+
+SAMPLES_SITE = re.compile(r"(?:samples/site/|')(ota5t[\w.-]*\.sp)")
+COUNTS = re.compile(r"(\d+) errors?, (\d+) warnings?, (\d+) hints?")
+
+
+def check_examples(files, ex):
+    """Check that every samples/site/<name>.sp referenced in src/ exists in site/examples/, and that
+    the 5T OTA netlist excerpts and coordinates in src/assets/scenes.js stay in step with them."""
+    errors = []
+    linked = {m.group(1) for text in files.values() for m in SAMPLES_SITE.finditer(text)}
+    have = set(ex)
+    for name in sorted(linked - have):
+        errors.append("src/: references samples/site/%s, which is not in site/examples/" % name)
+    for name in sorted(have - linked):
+        errors.append("examples/%s: not referenced in src/" % name)
+    scenes = files.get("assets/scenes.js", "")
+    if not scenes or not ex:
+        return errors
+
+    def block(pattern):
+        m = re.search(pattern, scenes, re.S)
+        if not m:
+            errors.append("src/assets/scenes.js: missing %s" % pattern)
+            return ""
+        return m.group(1)
+
+    for bare, en in re.findall(r"u\d+:\s*\['([^']+)',\s*'([^']+)'\]", block(r"var U = \{(.*?)\n  \};")):
+        if "ota5t-edits.sp" in ex and bare not in ex["ota5t-edits.sp"]:
+            errors.append("examples/ota5t-edits.sp: missing %r from U in src/assets/scenes.js" % bare)
+        for target in ("ota5t.sp", "ota5t-resolved.sp"):
+            if target in ex and en not in ex[target]:
+                errors.append("examples/%s: missing %r from U in src/assets/scenes.js" % (target, en))
+    for zh in re.findall(r"u\d+:\s*'([^']+)'", block(r"var UZ = \{(.*?)\n  \};")):
+        if "ota5t-zh.sp" in ex and zh not in ex["ota5t-zh.sp"]:
+            errors.append("examples/ota5t-zh.sp: missing %r from UZ in src/assets/scenes.js" % zh)
+    for line in re.findall(r"add\('(?:[hm]\d+|end)',\s*'([^']+)'", scenes):
+        for target in ("ota5t.sp", "ota5t-zh.sp", "ota5t-edits.sp", "ota5t-resolved.sp", "ota5t_tb.sp"):
+            if target in ex and line not in ex[target]:
+                errors.append("examples/%s: missing %r from otaCode in src/assets/scenes.js" % (target, line))
+    for tbl_name, targets in (("L_SYM", ("ota5t.sp", "ota5t-zh.sp", "ota5t-edits.sp")),
+                              ("L_RESOLVED", ("ota5t-resolved.sp",))):
+        for dev, x, y, o in re.findall(r"(M\d):\s*\[(-?\d+),\s*(-?\d+),\s*'(\w+)'\]",
+                                       block(r"var %s = \{(.*?)\};" % tbl_name)):
+            stmt = ('#%s @PLACE(%s, %s);' % (dev, x, y) if dev == "M5" and o == "R0"
+                    else '#%s @PLACE(%s, %s) => @ORIENT("%s")' % (dev, x, y, o))
+            for target in targets:
+                if target in ex and stmt not in ex[target]:
+                    errors.append("examples/%s: missing %r from %s in src/assets/scenes.js" % (target, stmt, tbl_name))
+    for line, rest in re.findall(r"\{\s*t:\s*'([^']+)'([^}]*)\}", block(r"var E5_LINES = \[(.*?)\n  \];")):
+        if "sig1:" in line:
+            continue
+        needle = line.lstrip("* ").strip() if "is-err" in rest else line.rstrip(";")
+        if "ota5t-edits.sp" in ex and needle not in ex["ota5t-edits.sp"]:
+            errors.append("examples/ota5t-edits.sp: missing %r from E5_LINES in src/assets/scenes.js" % needle)
+    for line in re.findall(r"\{\s*t:\s*'([^']+)'", block(r"var E2_LINES = \[(.*?)\n  \];")):
+        if "<zh>" in line:
+            continue
+        if "ota5t_tb.sp" in ex and line not in ex["ota5t_tb.sp"]:
+            errors.append("examples/ota5t_tb.sp: missing %r from E2_LINES in src/assets/scenes.js" % line)
+    return errors
+
+
+def find_rnl(given):
+    """The rnl command: --rnl, else $RNL, else the one cargo built here, else the one on PATH."""
+    exe = ".exe" if os.name == "nt" else ""
+    for cand in (given, os.environ.get("RNL"), ROOT / "target" / "debug" / ("rnl" + exe),
+                 ROOT / "target" / "release" / ("rnl" + exe), shutil.which("rnl")):
+        if cand and Path(cand).is_file():
+            return Path(cand)
+    raise BuildError("no rnl command: build it with `cargo build -p rnl-cli` or give --rnl PATH")
+
+
+def check_examples_rnl(rnl):
+    """Check that every file in site/examples/*.sp passes `rnl check` with 0 errors and 0 warnings
+    and renders with `rnl render`."""
+    errors = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for idx, path in enumerate(sorted(EXAMPLES.glob("*.sp"))):
+            rel = "examples/" + path.name
+            chk = subprocess.run([str(rnl), "check", str(path)], capture_output=True, text=True, encoding="utf-8")
+            m = COUNTS.search(chk.stdout)
+            if not m:
+                errors.append("%s: rnl check printed no summary:\n%s%s" % (rel, chk.stdout, chk.stderr))
+                continue
+            n_err, n_warn = int(m.group(1)), int(m.group(2))
+            if n_err or n_warn:
+                errors.append("%s: rnl check finds %d errors and %d warnings:\n%s"
+                              % (rel, n_err, n_warn, "\n".join(
+                                  l for l in chk.stdout.splitlines() if l.startswith(("error", "warning")))))
+            out_dir = Path(tmp) / str(idx)
+            rnd = subprocess.run([str(rnl), "render", str(path), "--out", str(out_dir)],
+                                 capture_output=True, text=True, encoding="utf-8")
+            if rnd.returncode != 0 or not list(out_dir.glob("*.svg")):
+                errors.append("%s: rnl render failed:\n%s%s" % (rel, rnd.stdout, rnd.stderr))
+    return errors
+
+
 def build_language(files, index, version, linux=False):
     """Return {relative path: text} for one language, including the standalone pages. Both kinds
     of release block are checked for Chinese before the ones that do not apply are dropped."""
@@ -307,9 +414,11 @@ def build(version=None):
     """Build every page in every language, with the files of the desktop viewer's release `version`,
     or None for no release yet, and the pages at the root that lead to them."""
     files = sources()
+    ex = examples()
     errors = []
     for path, text in files.items():
         errors += check_groups(text, "src/" + path) + check_release(text, "src/" + path)
+    errors += check_examples(files, ex)
     if errors:
         raise BuildError("\n".join(errors))
     result = {}
@@ -317,6 +426,8 @@ def build(version=None):
     for index, (code, prefix) in enumerate(LANGS):
         for path, text in build_language(files, index, version, linux).items():
             result[prefix + path] = text
+    for name, text in ex.items():
+        result["examples/" + name] = text
     result.update(redirects())
     return result
 
@@ -376,6 +487,8 @@ def main():
     ap.add_argument("--viewer-version", metavar="VERSION",
                     help="link the files of this release of the desktop viewer, such as 0.1.0, instead of the "
                          "newest tag viewer-vX.Y.Z; none for no release yet")
+    ap.add_argument("--rnl", metavar="PATH",
+                    help="also check and render site/examples/*.sp with this rnl command")
     args = ap.parse_args()
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(errors="backslashreplace")
@@ -389,13 +502,21 @@ def main():
         ap.error("--viewer-version takes a version such as 0.1.0, or none")
     try:
         result = build(version)
+        if args.rnl is not None:
+            rnl = find_rnl(args.rnl)
+            rnl_errors = check_examples_rnl(rnl)
+            if rnl_errors:
+                raise BuildError("\n".join(rnl_errors))
     except BuildError as e:
         print(e, file=sys.stderr)
         print("build failed", file=sys.stderr)
         return 1
     groups = len(GROUP.findall("\n".join(sources().values())))
     if args.check:
-        print("ok: %d text groups, each in %s" % (groups, " and ".join(CODES)))
+        msg = "ok: %d text groups, each in %s, and %d example files" % (groups, " and ".join(CODES), len(examples()))
+        if args.rnl is not None:
+            msg += " (checked and rendered with rnl)"
+        print(msg)
         return 0
     out = args.out.resolve()
     write(result, out)
