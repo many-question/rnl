@@ -318,3 +318,98 @@ fn a_connection_counts_the_turns_of_a_jog_an_l_and_a_straight_line() {
     assert_eq!(connection_turns(&p(0, 0), None, &p(5, 3), None), 1);
     assert_eq!(connection_turns(&p(0, 0), None, &p(5, 0), None), 0);
 }
+
+#[test]
+fn symbol_direction_counts_real_pinless_attachments_and_all_same_named_symbols() {
+    use rnl_runtime::source::MemoryProvider;
+    const SOURCE: &str = include_str!("../data/pinless-instance-attachment.sp");
+    let mut options = SolverOptions::from_toml(include_str!("../data/pinless-symbol-direction.toml")).unwrap();
+    options.time_limit = None;
+    for (host_orientation, extra_orientation, marker, expected) in [
+        ("R0", None, false, 1), ("R180", None, false, 1),
+        ("R0", Some("R0"), false, 2), ("R0", Some("R180"), false, 1),
+        ("R0", None, true, 1),
+    ] {
+        let mut source = SOURCE.replace("@PLACE(0,0) => @ORIENT(\"R0\")",
+            &format!("@PLACE(0,0) => @ORIENT(\"{host_orientation}\")"));
+        if let Some(orientation) = extra_orientation {
+            source = source.replace("*   &n @ROUTE",
+                &format!("*   %second_badge = $BADGE @ATTACH #XA => @SET-SYMBOL $BADGE_SYMBOL => @ORIENT(\"{orientation}\");\n*   &n @ROUTE"));
+        }
+        if marker {
+            source = source.replace("%badge = $BADGE @ATTACH #XH", "%marker_at = (0,0); %badge = $BADGE @ATTACH %marker_at");
+        }
+        let files = MemoryProvider::new().with("direction.sp", &source);
+        let input = rnl_view::interpret("direction.sp", None, &files, &rnl_runtime::Options::solver()).unwrap();
+        assert!(!input.diagnostics().iter().any(|d| d.severity == rnl_runtime::diag::Severity::Error));
+        let p = input.problems.iter().find(|p| p.kind == "file").unwrap();
+        let badge = p.objects.iter().position(|o| o.label == "%badge").unwrap();
+        let host = p.objects.iter().position(|o| o.label == "#XH").unwrap();
+        let main = if marker { p.objects.iter().position(|o| o.label == "%marker_at").unwrap() } else { host };
+        assert_eq!(p.objects[badge].position, rnl_runtime::problem::Position::At(rnl_runtime::problem::PointRef::Origin(main)));
+        assert_eq!(p.objects[main].kind, if marker { rnl_runtime::problem::ObjectKind::Point } else { rnl_runtime::problem::ObjectKind::Instance });
+        let resolved = crate::resolve(p, &options);
+        assert_eq!(resolved.kept.len(), p.facts.len());
+        let s = crate::structure::analyse(p, &resolved, &options, crate::options::CAPS, &mut crate::Work::default());
+        assert!(s.pins(badge).is_empty() && !s.objects[badge].left_free);
+        assert!(!s.components().any(|object| object == badge), "search classification is unchanged");
+        let g = &resolved.witness.geometry;
+        assert_eq!(g.orient[badge], Orient::R0, "an instance-origin attachment has its own fixed orientation");
+        assert_eq!(g.orient[host], if host_orientation == "R0" { Orient::R0 } else { Orient::R180 });
+        let at = s.origins(p, g);
+        let view = View { s: &s, at: &at, orient: &g.orient };
+        let term = &options.objectives.layers[0].items[0];
+        assert_eq!(symbol_term(term, &view), int(expected));
+        assert_eq!(term_status(term, &view), (false, Vec::new()));
+        let report = s.active.report(&view, None, &options);
+        assert_eq!(report.levels.len(), 1);
+        assert_eq!(report.levels[0].terms.len(), 1);
+        assert_eq!(report.levels[0].terms[0].raw, expected.to_string());
+        assert!(!report.levels[0].terms[0].inactive);
+        assert!(report.levels[0].terms[0].diagnostics.is_empty());
+    }
+}
+
+#[test]
+fn symbol_direction_eligibility_and_reference_status_agree_on_boundary_inputs() {
+    use rnl_runtime::source::MemoryProvider;
+    let source = include_str!("../data/pinless-instance-attachment.sp");
+    let files = MemoryProvider::new().with("direction.sp", source);
+    let input = rnl_view::interpret("direction.sp", None, &files, &rnl_runtime::Options::solver()).unwrap();
+    assert!(!input.diagnostics().iter().any(|d| d.severity == rnl_runtime::diag::Severity::Error));
+    let p = input.problems.iter().find(|p| p.kind == "file").unwrap();
+    let badge = p.objects.iter().position(|o| o.label == "%badge").unwrap();
+    let mut options = SolverOptions::from_toml(include_str!("../data/pinless-symbol-direction.toml")).unwrap();
+    options.time_limit = None;
+    let resolved = crate::resolve(p, &options);
+    let mut s = crate::structure::analyse(p, &resolved, &options, crate::options::CAPS, &mut crate::Work::default());
+    let g = &resolved.witness.geometry;
+    let at = s.origins(p, g);
+    let original = options.objectives.layers[0].items[0].clone();
+    let check = |s: &Structure, term: &Term, expected: i64, inactive: bool, diagnostics: usize| {
+        let view = View { s, at: &at, orient: &g.orient };
+        assert_eq!(symbol_term(term, &view), int(expected));
+        let status = term_status(term, &view);
+        assert_eq!(status.0, inactive);
+        assert_eq!(status.1.len(), diagnostics);
+    };
+    check(&s, &original, 1, false, 0);
+    let mut per_name = original.clone();
+    per_name.references.insert("$BADGE_SYMBOL".into(), Direction::Down);
+    check(&s, &per_name, 0, false, 0); // per-symbol reference wins over the common up reference
+    per_name.reference = None;
+    per_name.references.insert("$BADGE_SYMBOL".into(), Direction::Up);
+    check(&s, &per_name, 1, false, 0);
+    let mut missing_reference = original.clone();
+    missing_reference.reference = None;
+    check(&s, &missing_reference, 0, true, 1); // pinless has no inferred direction
+    let mut absent = original.clone();
+    absent.symbols = vec!["$MISSING_SYMBOL".into()];
+    check(&s, &absent, 0, true, 0); // a missing configured name is inactive, not an error
+    let mut natural_zero = missing_reference;
+    natural_zero.symbols = vec!["$PIN_SYMBOL".into()];
+    check(&s, &natural_zero, 0, true, 3); // each pin is at its symbol centre; no cardinal reference
+    s.objects[badge].left_free = true;
+    check(&s, &original, 0, true, 0); // the same drawn predicate is used by score and status
+}
+

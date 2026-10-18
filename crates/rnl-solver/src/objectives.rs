@@ -470,10 +470,15 @@ fn current_term(t: &Term, view: &View) -> Q {
         .count()
         .into_q()
 }
+/// Symbol-direction matches all actually drawn objects, independently of search
+/// components or collision-marker exemptions (phase0 reply B03).
+fn symbol_direction_objects(s: &Structure) -> impl Iterator<Item = usize> + '_ {
+    s.objects.iter().enumerate()
+        .filter_map(|(object, info)| (info.symbol.is_some() && !info.left_free).then_some(object))
+}
 fn symbol_term(t: &Term, view: &View) -> Q {
     let target = t.direction.unwrap_or(Direction::Down).vector();
-    view.s
-        .components()
+    symbol_direction_objects(view.s)
         .filter(|&k| {
             let Some(symbol) = view.s.objects[k].symbol else { return false };
             let name = &view.s.symbol_names[symbol];
@@ -528,7 +533,7 @@ fn term_status(t: &Term, view: &View) -> (bool, Vec<String>) {
         }
         "symbol_direction" => {
             let mut count = 0;
-            for k in view.s.components() {
+            for k in symbol_direction_objects(view.s) {
                 let Some(symbol) = view.s.objects[k].symbol else { continue };
                 let name = &view.s.symbol_names[symbol];
                 if !t.symbols.contains(name) {
