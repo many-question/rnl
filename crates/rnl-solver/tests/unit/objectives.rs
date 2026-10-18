@@ -421,21 +421,11 @@ fn symbol_direction_eligibility_and_reference_status_agree_on_boundary_inputs() 
         &missing_reference,
         0,
         true,
-        &[
-            "symbol %badge requires a cardinal reference direction",
-            "this term has no eligible objects in this level",
-        ],
+        &["symbol %badge requires a cardinal reference direction", "this term has no eligible objects in this level"],
     );
     let mut absent = original.clone();
     absent.symbols = vec!["$MISSING_SYMBOL".into()];
-    check(
-        "configured symbol absent",
-        &s,
-        &absent,
-        0,
-        true,
-        &["this term has no eligible objects in this level"],
-    );
+    check("configured symbol absent", &s, &absent, 0, true, &["this term has no eligible objects in this level"]);
     let mut natural_zero = missing_reference;
     natural_zero.symbols = vec!["$PIN_SYMBOL".into()];
     check(
