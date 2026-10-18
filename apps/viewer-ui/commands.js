@@ -4,8 +4,9 @@
 // whether it comes from the platform's menu, the HTML menu bar or a key.
 
 import { includeFiles } from "./pool.js";
+import { setBackground } from "./background.js";
 import { inform } from "./dialog.js";
-import { fit, zoomCenter } from "./drawing.js";
+import { cancelGesture, fit, pan, zoomCenter } from "./drawing.js";
 import { applyChanges, save, saveAs, toggleEdit } from "./editor.js";
 import { gridCommand } from "./grid.js";
 import { hoverNamesOn, setHoverNames } from "./hover.js";
@@ -52,6 +53,8 @@ export function command(id) {
     case "fit": fit(); break;
     case "zoom-in": zoomCenter(1.25); break;
     case "zoom-out": zoomCenter(0.8); break;
+    case "background-light": setBackground("light"); break;
+    case "background-dark": setBackground("dark"); break;
     case "toggle-grid":
     case "grid-none":
     case "grid-dots":
@@ -189,7 +192,19 @@ function keyCommand(e, typing) {
 
 document.addEventListener("keydown", (e) => {
   const ctrl = e.ctrlKey || e.metaKey;
-  const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+  const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target.isContentEditable;
+  if (e.defaultPrevented) return;
+  if (e.key === "Escape" && cancelGesture()) {
+    e.preventDefault();
+    return;
+  }
+  const direction = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+  // Lists, menus, editors and controls retain their own navigation. Body and the drawing pan.
+  if (direction && !typing && !ctrl && !e.altKey &&
+      (e.target === document.body || e.target === $("canvas"))) {
+    if (pan(...direction, e.shiftKey ? 0.3 : 0.1)) e.preventDefault();
+    return;
+  }
   let id = null;
   if (e.key === "F5" || (ctrl && e.key.toLowerCase() === "r")) id = "reload"; // re-read the file, not the page
   else if (e.key === "Escape" && !typing) {

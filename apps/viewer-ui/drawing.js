@@ -6,6 +6,7 @@
 // follows the view, and the status bar shows where the pointer is in the scene.
 
 import { current, doc, selected, setCurrent, setPath } from "./state.js";
+import { colourDrawing } from "./background.js";
 import { paintGrid } from "./grid.js";
 import { updateHierarchy } from "./hierarchy.js";
 import { boxAt, hitsAt, nameOf, objectsOf } from "./hits.js";
@@ -33,12 +34,17 @@ let size = { w: 0, h: 0 }; // the canvas size the view was last applied to
 let press = null; // a mouse press on the drawing: where, and whether it became a drag
 let pointer = null; // where the pointer is on the canvas, in its pixels, while it is over it
 let badgeAt = null; // the drawing point of the open badge: a selected subcircuit's box corner
+const zoomBox = document.createElement("div");
+zoomBox.className = "zoom-box";
+zoomBox.hidden = true;
+canvas.append(zoomBox);
 
 /**
  * Draw level `i`, with a view kept for it or else fitted. The hierarchy path that leads to it is set
  * already (subcircuits.js); the bar above the drawing shows it.
  */
 export function showLevel(i, keptView) {
+  cancelGesture();
   setCurrent(i);
   notice("");
   const lv = doc.levels[i];
@@ -77,6 +83,7 @@ export function showLevel(i, keptView) {
   el.removeAttribute("width");
   el.removeAttribute("height");
   el.setAttribute("preserveAspectRatio", "xMinYMin meet");
+  colourDrawing(el);
   for (const g of el.querySelectorAll("[data-id]")) {
     const id = g.getAttribute("data-id");
     if (!groups.has(id)) groups.set(id, []);
@@ -116,6 +123,7 @@ export function notice(text) {
 }
 
 export function clearDrawing(message) {
+  cancelGesture();
   notice("");
   closePicker();
   hideTip();
@@ -171,6 +179,7 @@ function showPointer() {
 }
 
 export function fit() {
+  cancelGesture();
   if (!svg) return;
   const { w, h } = canvasSize();
   const k = clamp(Math.min((w - 2 * FIT_MARGIN) / extent.w, (h - 2 * FIT_MARGIN) / extent.h), MIN_ZOOM, MAX_ZOOM);
@@ -180,6 +189,7 @@ export function fit() {
 
 /** Zoom by `factor` keeping the drawing point under (px, py), in canvas pixels, in place. */
 function zoomAt(px, py, factor) {
+  cancelGesture();
   if (!view) return;
   const k = clamp(view.k * factor, MIN_ZOOM, MAX_ZOOM);
   const ux = view.x + px / view.k;
@@ -191,6 +201,28 @@ function zoomAt(px, py, factor) {
 export function zoomCenter(factor) {
   const { w, h } = canvasSize();
   zoomAt(w / 2, h / 2, factor);
+}
+
+/** Move the viewing window by a fraction of its size; arrows point toward the scene to reveal. */
+export function pan(dx, dy, fraction) {
+  if (!view || press) return false;
+  const { w, h } = canvasSize();
+  view = { ...view, x: view.x + dx * w * fraction / view.k, y: view.y + dy * h * fraction / view.k };
+  hideTip();
+  closePicker();
+  apply();
+  return true;
+}
+
+/** Abandon a drag without selecting or changing a right-button zoom rectangle's original view. */
+export function cancelGesture() {
+  if (!press) return false;
+  const id = press.id;
+  press = null;
+  zoomBox.hidden = true;
+  canvas.classList.remove("dragging");
+  if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
+  return true;
 }
 
 function canvasPoint(e) {
@@ -213,7 +245,7 @@ canvas.addEventListener(
 );
 
 canvas.addEventListener("pointerdown", (e) => {
-  if (!view || (e.button !== 0 && e.button !== 1)) return;
+  if (!view || press || ![0, 1, 2].includes(e.button)) return;
   e.preventDefault();
   hideTip();
   canvas.focus({ preventScroll: true }); // so that Enter and Backspace act on the drawing
@@ -230,9 +262,19 @@ canvas.addEventListener("pointermove", (e) => {
   }
   if (!press.drag && Math.hypot(e.clientX - press.x0, e.clientY - press.y0) > CLICK_SLOP) {
     press.drag = true;
-    canvas.classList.add("dragging");
+    if (press.button !== 2) canvas.classList.add("dragging");
   }
   if (!press.drag) return;
+  if (press.button === 2) {
+    const r = canvas.getBoundingClientRect();
+    const x = clamp(e.clientX, r.left, r.right), y = clamp(e.clientY, r.top, r.bottom);
+    zoomBox.hidden = false;
+    Object.assign(zoomBox.style, {
+      left: `${Math.min(press.x0, x) - r.left}px`, top: `${Math.min(press.y0, y) - r.top}px`,
+      width: `${Math.abs(x - press.x0)}px`, height: `${Math.abs(y - press.y0)}px`,
+    });
+    return;
+  }
   view = { ...view, x: view.x - (e.clientX - press.x) / view.k, y: view.y - (e.clientY - press.y) / view.k };
   press.x = e.clientX;
   press.y = e.clientY;
@@ -242,8 +284,20 @@ canvas.addEventListener("pointermove", (e) => {
 function endPress(e, cancelled) {
   if (!press || e.pointerId !== press.id) return;
   const click = !press.drag && press.button === 0 && !cancelled;
-  press = null;
-  canvas.classList.remove("dragging");
+  if (press.button === 2 && press.drag && !cancelled) {
+    const r = canvas.getBoundingClientRect();
+    const x = clamp(e.clientX, r.left, r.right), y = clamp(e.clientY, r.top, r.bottom);
+    const w = Math.abs(x - press.x0), h = Math.abs(y - press.y0);
+    if (w > CLICK_SLOP && h > CLICK_SLOP) {
+      const { w: cw, h: ch } = canvasSize();
+      const cx = view.x + ((x + press.x0) / 2 - r.left) / view.k;
+      const cy = view.y + ((y + press.y0) / 2 - r.top) / view.k;
+      const k = clamp(view.k * Math.min(cw / w, ch / h), MIN_ZOOM, MAX_ZOOM);
+      view = { k, x: cx - cw / (2 * k), y: cy - ch / (2 * k) };
+      apply();
+    }
+  }
+  cancelGesture();
   if (!click) return;
   const { hits, blocked } = hitsAt(doc && doc.levels[current], view, canvasPoint(e));
   const objects = objectsOf(hits);
@@ -267,6 +321,8 @@ function pointOut(e) {
 }
 canvas.addEventListener("pointerup", (e) => endPress(e, false));
 canvas.addEventListener("pointercancel", (e) => endPress(e, true));
+canvas.addEventListener("lostpointercapture", (e) => endPress(e, true));
+window.addEventListener("blur", cancelGesture);
 canvas.addEventListener("pointerleave", () => {
   pointer = null;
   showPointer();

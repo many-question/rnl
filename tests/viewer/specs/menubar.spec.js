@@ -73,6 +73,7 @@ test.describe("on the web", () => {
         letter: "V",
         items: [
           "Fit to WindowF", "Zoom InCtrl++", "Zoom OutCtrl+-",
+          "Background", "Light", "Dark",
           "Grid", "Show GridG", "", "None", "Dots", "Lines", "", "Axes", "", "Grid Settings...", "Show Names on Hover", "",
           "Open SubcircuitEnter", "Up to Parent LevelBackspace", "",
           "Netlist PanelCtrl+B", "ProblemsCtrl+Shift+M",

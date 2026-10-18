@@ -4,6 +4,7 @@
 // drawing and the text. Each part is a module of its own (README.md); this one starts the page.
 
 import { startPool } from "./pool.js";
+import { setBackground } from "./background.js";
 import { command, isChecked, setCheck, startCommands } from "./commands.js";
 import { closeRequested } from "./editor.js";
 import { dirtyPaths, unappliedPaths } from "./edits.js";
@@ -23,6 +24,7 @@ import { $, load, startSettings } from "./util.js";
 async function start() {
   const shell = await loadShell();
   await startSettings(shell);
+  setBackground(load("background", "light"));
   setSidebarWidth(load("sidebar-width", 420));
   setProblemsHeight(load("problems-height", 180));
   setSidebar(load("sidebar-shown", true));

@@ -862,9 +862,9 @@ mod tests {
             (
                 Unit::Pixel,
                 [
-                    "stroke=\"#102030\" stroke-width=\"0.75\" stroke-linecap=\"square\" stroke-linejoin=\"bevel\" stroke-dasharray=\"0.3,0.225,0.075,0.225\" stroke-dashoffset=\"0.1125\"/>",
-                    "stroke=\"#405060\" stroke-width=\"0.25\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>",
-                    "stroke=\"#506070\" stroke-width=\"0.50\" stroke-dasharray=\"0.5,0.5\"/>",
+                    "stroke=\"#102030\" stroke-width=\"0.75\" stroke-linecap=\"square\" stroke-linejoin=\"bevel\" stroke-dasharray=\"0.3,0.225,0.075,0.225\" stroke-dashoffset=\"0.1125\" vector-effect=\"non-scaling-stroke\"/>",
+                    "stroke=\"#405060\" stroke-width=\"0.25\" stroke-linecap=\"round\" stroke-linejoin=\"round\" vector-effect=\"non-scaling-stroke\"/>",
+                    "stroke=\"#506070\" stroke-width=\"0.50\" stroke-dasharray=\"0.5,0.5\" vector-effect=\"non-scaling-stroke\"/>",
                 ],
             ),
         ] {
@@ -890,7 +890,7 @@ mod tests {
         // a flyline as a line, its numbers written short
         let flyline = stroke("#8a8a8a", 1.0, Unit::Pixel, &[4.0, 3.0], 0.0, Cap::Butt, Join::Miter);
         let flyline = svg(Kind::Flyline { a: (0.0, 0.0), b: (1.0, 0.0), strokes: vec![back_stroke(&flyline)] });
-        let want = "<line x1=\"0.00\" y1=\"-0.00\" x2=\"14.00\" y2=\"-0.00\" stroke=\"#8a8a8a\" stroke-width=\"1\" stroke-dasharray=\"4,3\"/>";
+        let want = "<line x1=\"0.00\" y1=\"-0.00\" x2=\"14.00\" y2=\"-0.00\" stroke=\"#8a8a8a\" stroke-width=\"1\" stroke-dasharray=\"4,3\" vector-effect=\"non-scaling-stroke\"/>";
         assert!(flyline.contains(want), "{flyline}");
         // shapes of no size written as they are, so that SVG's rules for them hold: it draws no
         // rect with no width, no circle or ellipse with a radius of 0, and only the caps of a path

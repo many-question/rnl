@@ -64,6 +64,8 @@ for (const dir of ["tests/conformance/cases", "tests/conformance/equivalence", "
   entries.push(...files(join(root, dir)).filter((path) => /\.(sp|scs|inc|rnl)$/.test(path)));
 }
 if (entries.length < 20) fail(`only ${entries.length} files found under ${root}`);
+// Explicit/default zero widths, double hairlines and the viewer's dark-colour boundary cases.
+entries.push(join(root, "tests/viewer/inputs/view-improvements.sp"));
 // and a file that is not UTF-8, which rnl reads as Latin-1
 const temp = mkdtempSync(join(tmpdir(), "rnl-equality-"));
 process.on("exit", () => rmSync(temp, { recursive: true, force: true }));
