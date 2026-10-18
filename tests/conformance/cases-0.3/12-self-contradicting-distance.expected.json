@@ -9,10 +9,10 @@
         {
           "name": "$NMOS_4TERM",
           "box": [
-            -3.4,
-            -2.4,
-            1.4,
-            2.4
+            -3.0,
+            -2.0,
+            1.0,
+            2.0
           ],
           "box_written": true,
           "default": false,

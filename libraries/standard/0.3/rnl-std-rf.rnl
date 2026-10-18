@@ -11,7 +11,7 @@
 /* ---------------------------------------------------------------- symbols (9.2) drawn from Analog Canvas */
 @RNL {
   /* n1 n2 tap; from Analog Canvas center-tap-inductor */
-  $CENTER_TAP_INDUCTOR = @DEFINE-SYMBOL(box=[-5.4, -2.4, 5.4, 1.6]) {
+  $CENTER_TAP_INDUCTOR = @DEFINE-SYMBOL(box=[-5, -2, 5, 1.6]) {
     (-5, 0) @PIN(terminal=1, direction="left");
     (5, 0) @PIN(terminal=2, direction="right");
     (0, -2) @PIN(terminal=3, direction="down");
@@ -36,7 +36,7 @@
   };
 
   /* n1 n2 tap; from Analog Canvas tcoil */
-  $T_COIL = @DEFINE-SYMBOL(box=[-9.4, -3.4, 9.4, 5.6]) {
+  $T_COIL = @DEFINE-SYMBOL(box=[-9, -2, 9, 5.6]) {
     (-9, 0) @PIN(terminal=1, direction="left");
     (9, 0) @PIN(terminal=2, direction="right");
     (0, -2) @PIN(terminal=3, direction="down");

@@ -166,7 +166,7 @@
    have 4 terminals (a b ct sub). All pins sit on integer grid points (9.2.4). */
 @RNL {
   /* r0 r1 b (or r0 r1 sub, r1 r2 b, t1 t2 b) = 1 2 3; 3-terminal resistor with substrate/bulk pin */
-  $SKY130_RESISTOR_3TERM = @DEFINE-SYMBOL(box=[-2.4, -2.4, 1, 2.4]) {
+  $SKY130_RESISTOR_3TERM = @DEFINE-SYMBOL(box=[-2, -2, 1, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     (-2, 0) @PIN(terminal=3, direction="left");
@@ -178,7 +178,7 @@
   };
 
   /* c0 c1 b = 1 2 3; 3-terminal capacitor (VPP / MOS cap) with substrate/bulk pin */
-  $SKY130_CAPACITOR_3TERM = @DEFINE-SYMBOL(box=[-2.4, -2.4, 1.2, 2.4]) {
+  $SKY130_CAPACITOR_3TERM = @DEFINE-SYMBOL(box=[-2, -2, 1.2, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     (-2, 0) @PIN(terminal=3, direction="left");
@@ -193,7 +193,7 @@
   };
 
   /* c0 c1 b shield = 1 2 3 4; 4-terminal shielded VPP capacitor */
-  $SKY130_CAPACITOR_4TERM = @DEFINE-SYMBOL(box=[-2.4, -2.4, 2.4, 2.4]) {
+  $SKY130_CAPACITOR_4TERM = @DEFINE-SYMBOL(box=[-2, -2, 2, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     (-2, 0) @PIN(terminal=3, direction="left");
@@ -211,7 +211,7 @@
   };
 
   /* c0 c1 b = 1 2 3; 3-terminal MOS varactor with bulk pin */
-  $SKY130_VARACTOR_3TERM = @DEFINE-SYMBOL(box=[-2.4, -2.4, 1.6, 2.4]) {
+  $SKY130_VARACTOR_3TERM = @DEFINE-SYMBOL(box=[-2, -2, 1.6, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     (-2, 0) @PIN(terminal=3, direction="left");
@@ -228,7 +228,7 @@
   };
 
   /* c b e s = 1 2 3 4; 4-terminal NPN BJT with substrate pin at (1, 0) */
-  $SKY130_NPN_4TERM = @DEFINE-SYMBOL(box=[-3.4, -2.4, 1.4, 2.4]) {
+  $SKY130_NPN_4TERM = @DEFINE-SYMBOL(box=[-3, -2, 1, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, -2) @PIN(terminal=3, direction="down");
@@ -246,7 +246,7 @@
   };
 
   /* c b e s = 1 2 3 4; 4-terminal PNP BJT with substrate pin at (1, 0) */
-  $SKY130_PNP_4TERM = @DEFINE-SYMBOL(box=[-3.4, -2.4, 1.4, 2.4]) {
+  $SKY130_PNP_4TERM = @DEFINE-SYMBOL(box=[-3, -2, 1, 2]) {
     (0, -2) @PIN(terminal=1, direction="down");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, 2) @PIN(terminal=3, direction="up");
@@ -263,7 +263,7 @@
   };
 
   /* d g s b sub = 1 2 3 4 5; 5-terminal isolated 20 V drain-extended NMOS */
-  $SKY130_NMOS_5TERM = @DEFINE-SYMBOL(box=[-3.4, -2.4, 1.4, 2.4]) {
+  $SKY130_NMOS_5TERM = @DEFINE-SYMBOL(box=[-3, -2, 1, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, -2) @PIN(terminal=3, direction="down");
@@ -285,7 +285,7 @@
   };
 
   /* a b ct sub = 1 2 3 4; 4-terminal center-tapped RF spiral inductor */
-  $SKY130_INDUCTOR_4TERM = @DEFINE-SYMBOL(box=[-1.4, -2.4, 1, 2.4]) {
+  $SKY130_INDUCTOR_4TERM = @DEFINE-SYMBOL(box=[-1, -2, 1, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     (-1, 0) @PIN(terminal=3, direction="left");

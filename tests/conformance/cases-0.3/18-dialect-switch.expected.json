@@ -10,9 +10,9 @@
           "name": "$RESISTOR",
           "box": [
             -1.0,
-            -2.4,
+            -2.0,
             1.0,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -349,9 +349,9 @@
           "name": "$RESISTOR",
           "box": [
             -1.0,
-            -2.4,
+            -2.0,
             1.0,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -553,9 +553,9 @@
           "name": "$RESISTOR",
           "box": [
             -1.0,
-            -2.4,
+            -2.0,
             1.0,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -876,9 +876,9 @@
           "name": "$RESISTOR",
           "box": [
             -1.0,
-            -2.4,
+            -2.0,
             1.0,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -1064,9 +1064,9 @@
           "name": "$RESISTOR",
           "box": [
             -1.0,
-            -2.4,
+            -2.0,
             1.0,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,

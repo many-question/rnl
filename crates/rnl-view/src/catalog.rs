@@ -349,7 +349,7 @@ mod tests {
             pins,
             [(Terminal::Number(1), [0.0, 2.0], Some("up")), (Terminal::Number(2), [0.0, -2.0], Some("down"))]
         );
-        assert_eq!(r.bbox, [-1.0, -2.4, 1.0, 2.4]);
+        assert_eq!(r.bbox, [-1.0, -2.0, 1.0, 2.0]);
         let keys: Vec<&str> = r.labels.iter().map(|l| l.key.as_str()).collect();
         assert_eq!(keys, ["name", "value"]);
         // no rule draws the usages of a definition with it
@@ -357,7 +357,7 @@ mod tests {
         // as JSON, a terminal by number is a number
         let v = serde_json::to_value(r).unwrap();
         assert_eq!(v["pins"][1], json!({"terminal": 2, "at": [0.0, -2.0], "direction": "down"}));
-        assert_eq!(v["box"], json!([-1.0, -2.4, 1.0, 2.4]));
+        assert_eq!(v["box"], json!([-1.0, -2.0, 1.0, 2.0]));
         assert_eq!(
             v["labels"][0],
             json!({"key": "name", "text": "${name}", "at": [0.95, 0.25], "halign": "start", "valign": "baseline"})
@@ -367,6 +367,44 @@ mod tests {
         let order: Vec<Terminal> = t.pins.iter().map(|p| p.terminal.clone()).collect();
         assert_eq!(order, [1, 2, 3, 4].map(Terminal::Number));
         assert_eq!(t.pins[0].at, [2.0, 1.0]);
+    }
+
+    #[test]
+    fn every_symbol_of_0_3_has_its_pin_sides_on_its_outermost_pins() {
+        let c = default();
+        let symbols_03: Vec<&CatalogSymbol> =
+            c.symbols.iter().filter(|s| s.version == "0.3" || s.package == "analog-canvas-extensions").collect();
+        assert_eq!(symbols_03.len(), 126);
+        for s in symbols_03 {
+            let [x1, y1, x2, y2] = s.bbox;
+            for p in &s.pins {
+                let [px, py] = p.at;
+                assert!(
+                    px >= x1 && px <= x2 && py >= y1 && py <= y2,
+                    "{} ({}) pin {:?} lies outside box {:?}",
+                    s.symbol,
+                    s.package,
+                    p,
+                    s.bbox
+                );
+            }
+            let left: Vec<f64> = s.pins.iter().filter(|p| p.direction == Some("left")).map(|p| p.at[0]).collect();
+            let down: Vec<f64> = s.pins.iter().filter(|p| p.direction == Some("down")).map(|p| p.at[1]).collect();
+            let right: Vec<f64> = s.pins.iter().filter(|p| p.direction == Some("right")).map(|p| p.at[0]).collect();
+            let up: Vec<f64> = s.pins.iter().filter(|p| p.direction == Some("up")).map(|p| p.at[1]).collect();
+            if let Some(min_x) = left.into_iter().reduce(f64::min) {
+                assert_eq!(x1, min_x, "{} ({}) left box edge", s.symbol, s.package);
+            }
+            if let Some(min_y) = down.into_iter().reduce(f64::min) {
+                assert_eq!(y1, min_y, "{} ({}) down box edge", s.symbol, s.package);
+            }
+            if let Some(max_x) = right.into_iter().reduce(f64::max) {
+                assert_eq!(x2, max_x, "{} ({}) right box edge", s.symbol, s.package);
+            }
+            if let Some(max_y) = up.into_iter().reduce(f64::max) {
+                assert_eq!(y2, max_y, "{} ({}) up box edge", s.symbol, s.package);
+            }
+        }
     }
 
     #[test]

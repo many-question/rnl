@@ -11,7 +11,7 @@
 /* ---------------------------------------------------------------- symbols (9.2) drawn from Analog Canvas */
 @RNL {
   /* a b y (vp) (vn); from Analog Canvas adder */
-  $ADDER = @DEFINE-SYMBOL(box=[-2.4, -2.4, 2.4, 1.6]) {
+  $ADDER = @DEFINE-SYMBOL(box=[-2, -2, 2, 1.6]) {
     (-2, 0) @PIN(terminal=1, direction="left");
     (0, -2) @PIN(terminal=2, direction="down");
     (2, 0) @PIN(terminal=3, direction="right");
@@ -25,7 +25,7 @@
   };
 
   /* a b y (vp) (vn); from Analog Canvas multiplier */
-  $MULTIPLIER = @DEFINE-SYMBOL(box=[-2.4, -2.4, 2.4, 1.6]) {
+  $MULTIPLIER = @DEFINE-SYMBOL(box=[-2, -2, 2, 1.6]) {
     (-2, 0) @PIN(terminal=1, direction="left");
     (0, -2) @PIN(terminal=2, direction="down");
     (2, 0) @PIN(terminal=3, direction="right");
@@ -39,7 +39,7 @@
   };
 
   /* draws $INTEGRATOR; a y; from Analog Canvas integrator */
-  $INTEGRATOR_SYMBOL = @DEFINE-SYMBOL(box=[-3.4, -2.4, 3.4, 2.4]) {
+  $INTEGRATOR_SYMBOL = @DEFINE-SYMBOL(box=[-3, -2.4, 3, 2.4]) {
     (-3, 0) @PIN(terminal=1, direction="left");
     (3, 0) @PIN(terminal=2, direction="right");
     @LINE {(-3, 0) (-2, 0)};
@@ -49,7 +49,7 @@
   };
 
   /* draws $DISCRETE_TIME_INTEGRATOR; a y; from Analog Canvas discrete-time-integrator */
-  $DISCRETE_TIME_INTEGRATOR_SYMBOL = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $DISCRETE_TIME_INTEGRATOR_SYMBOL = @DEFINE-SYMBOL(box=[-4, -2.4, 4, 2.4]) {
     (-4, 0) @PIN(terminal=1, direction="left");
     (4, 0) @PIN(terminal=2, direction="right");
     @LINE {(-4, 0) (-3, 0)};
@@ -59,7 +59,7 @@
   };
 
   /* draws $QUANTIZER; a y; from Analog Canvas quantizer */
-  $QUANTIZER_SYMBOL = @DEFINE-SYMBOL(box=[-3.4, -2.4, 3.4, 2.4]) {
+  $QUANTIZER_SYMBOL = @DEFINE-SYMBOL(box=[-3, -2.4, 3, 2.4]) {
     (-3, 0) @PIN(terminal=1, direction="left");
     (3, 0) @PIN(terminal=2, direction="right");
     @LINE {(-3, 0) (-2, 0)};
@@ -69,7 +69,7 @@
   };
 
   /* draws $UNIT_DELAY; a y; from Analog Canvas unit-delay */
-  $UNIT_DELAY_SYMBOL = @DEFINE-SYMBOL(box=[-3.4, -2.4, 3.4, 2.4]) {
+  $UNIT_DELAY_SYMBOL = @DEFINE-SYMBOL(box=[-3, -2.4, 3, 2.4]) {
     (-3, 0) @PIN(terminal=1, direction="left");
     (3, 0) @PIN(terminal=2, direction="right");
     @LINE {(-3, 0) (-2, 0)};

@@ -11,7 +11,7 @@
 /* ---------------------------------------------------------------- symbols (9.2) drawn from Analog Canvas */
 @RNL {
   /* a b y (vp) (vn); from Analog Canvas and-gate */
-  $AND_2INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $AND_2INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 2, 2.4]) {
     (-3, 1) @PIN(terminal=1, direction="left");
     (-3, -1) @PIN(terminal=2, direction="left");
     (2, 0) @PIN(terminal=3, direction="right");
@@ -24,7 +24,7 @@
   };
 
   /* a b c y (vp) (vn); from Analog Canvas and-gate-3 */
-  $AND_3INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $AND_3INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 2, 2.4]) {
     (-3, 1) @PIN(terminal=1, direction="left");
     (-3, 0) @PIN(terminal=2, direction="left");
     (-3, -1) @PIN(terminal=3, direction="left");
@@ -39,7 +39,7 @@
   };
 
   /* a b y (vp) (vn); from Analog Canvas nand-gate */
-  $NAND_2INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $NAND_2INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 3, 2.4]) {
     (-3, 1) @PIN(terminal=1, direction="left");
     (-3, -1) @PIN(terminal=2, direction="left");
     (3, 0) @PIN(terminal=3, direction="right");
@@ -53,7 +53,7 @@
   };
 
   /* a b c y (vp) (vn); from Analog Canvas nand-gate-3 */
-  $NAND_3INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $NAND_3INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 3, 2.4]) {
     (-3, 1) @PIN(terminal=1, direction="left");
     (-3, 0) @PIN(terminal=2, direction="left");
     (-3, -1) @PIN(terminal=3, direction="left");
@@ -69,7 +69,7 @@
   };
 
   /* a b y (vp) (vn); from Analog Canvas or-gate */
-  $OR_2INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $OR_2INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 2, 2.4]) {
     (-3, 1) @PIN(terminal=1, direction="left");
     (-3, -1) @PIN(terminal=2, direction="left");
     (2, 0) @PIN(terminal=3, direction="right");
@@ -83,7 +83,7 @@
   };
 
   /* a b c y (vp) (vn); from Analog Canvas or-gate-3 */
-  $OR_3INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $OR_3INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 2, 2.4]) {
     (-3, 1) @PIN(terminal=1, direction="left");
     (-3, 0) @PIN(terminal=2, direction="left");
     (-3, -1) @PIN(terminal=3, direction="left");
@@ -99,7 +99,7 @@
   };
 
   /* a b y (vp) (vn); from Analog Canvas nor-gate */
-  $NOR_2INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $NOR_2INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 3, 2.4]) {
     (-3, 1) @PIN(terminal=1, direction="left");
     (-3, -1) @PIN(terminal=2, direction="left");
     (3, 0) @PIN(terminal=3, direction="right");
@@ -114,7 +114,7 @@
   };
 
   /* a b c y (vp) (vn); from Analog Canvas nor-gate-3 */
-  $NOR_3INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $NOR_3INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 3, 2.4]) {
     (-3, 1) @PIN(terminal=1, direction="left");
     (-3, 0) @PIN(terminal=2, direction="left");
     (-3, -1) @PIN(terminal=3, direction="left");
@@ -131,7 +131,7 @@
   };
 
   /* a b y (vp) (vn); from Analog Canvas xor-gate */
-  $XOR_2INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $XOR_2INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 3, 2.4]) {
     (-3, 1) @PIN(terminal=1, direction="left");
     (-3, -1) @PIN(terminal=2, direction="left");
     (3, 0) @PIN(terminal=3, direction="right");
@@ -146,7 +146,7 @@
   };
 
   /* a b c y (vp) (vn); from Analog Canvas xor-gate-3 */
-  $XOR_3INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $XOR_3INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 3, 2.4]) {
     (-3, 1) @PIN(terminal=1, direction="left");
     (-3, 0) @PIN(terminal=2, direction="left");
     (-3, -1) @PIN(terminal=3, direction="left");
@@ -163,7 +163,7 @@
   };
 
   /* a b y (vp) (vn); from Analog Canvas xnor-gate */
-  $XNOR_2INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $XNOR_2INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 4, 2.4]) {
     (-3, 1) @PIN(terminal=1, direction="left");
     (-3, -1) @PIN(terminal=2, direction="left");
     (4, 0) @PIN(terminal=3, direction="right");
@@ -179,7 +179,7 @@
   };
 
   /* a b c y (vp) (vn); from Analog Canvas xnor-gate-3 */
-  $XNOR_3INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $XNOR_3INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 4, 2.4]) {
     (-3, 1) @PIN(terminal=1, direction="left");
     (-3, 0) @PIN(terminal=2, direction="left");
     (-3, -1) @PIN(terminal=3, direction="left");
@@ -197,7 +197,7 @@
   };
 
   /* a y (vp) (vn); from Analog Canvas buffer */
-  $BUFFER = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $BUFFER = @DEFINE-SYMBOL(box=[-3, -2.4, 1, 2.4]) {
     (-3, 0) @PIN(terminal=1, direction="left");
     (1, 0) @PIN(terminal=2, direction="right");
     @LINE {(-3, 0) (-2, 0)};
@@ -207,7 +207,7 @@
   };
 
   /* a y (vp) (vn); from Analog Canvas inverter */
-  $INVERTER = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $INVERTER = @DEFINE-SYMBOL(box=[-3, -2.4, 2, 2.4]) {
     (-3, 0) @PIN(terminal=1, direction="left");
     (2, 0) @PIN(terminal=2, direction="right");
     @LINE {(-3, 0) (-2, 0)};
@@ -218,7 +218,7 @@
   };
 
   /* d ck q qb (vp) (vn); from Analog Canvas d-flip-flop */
-  $D_FLIP_FLOP = @DEFINE-SYMBOL(box=[-4.2, -2.7, 4.2, 2.7]) {
+  $D_FLIP_FLOP = @DEFINE-SYMBOL(box=[-4, -2.7, 4, 2.7]) {
     (-4, 1) @PIN(terminal=1, direction="left");
     (-4, -1) @PIN(terminal=2, direction="left");
     (4, 1) @PIN(terminal=3, direction="right");
@@ -236,7 +236,7 @@
   };
 
   /* d ck q (vp) (vn); from Analog Canvas d-flip-flop-q */
-  $D_FLIP_FLOP_Q_ONLY = @DEFINE-SYMBOL(box=[-4.2, -2.7, 4.2, 2.7]) {
+  $D_FLIP_FLOP_Q_ONLY = @DEFINE-SYMBOL(box=[-4, -2.7, 4, 2.7]) {
     (-4, 1) @PIN(terminal=1, direction="left");
     (-4, -1) @PIN(terminal=2, direction="left");
     (4, 0) @PIN(terminal=3, direction="right");
@@ -251,7 +251,7 @@
   };
 
   /* d ck rst q qb (vp) (vn); from Analog Canvas d-flip-flop-reset */
-  $D_FLIP_FLOP_WITH_RESET = @DEFINE-SYMBOL(box=[-4.2, -5.2, 4.2, 2.7]) {
+  $D_FLIP_FLOP_WITH_RESET = @DEFINE-SYMBOL(box=[-4, -5, 4, 2.7]) {
     (-4, 1) @PIN(terminal=1, direction="left");
     (-4, -1) @PIN(terminal=2, direction="left");
     (0, -5) @PIN(terminal=3, direction="down");
@@ -272,7 +272,7 @@
   };
 
   /* draws $DELAY_CELL; a y; from Analog Canvas delay-cell */
-  $DELAY_CELL_SYMBOL = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $DELAY_CELL_SYMBOL = @DEFINE-SYMBOL(box=[-4, -2.4, 4, 2.4]) {
     (-4, 0) @PIN(terminal=1, direction="left");
     (4, 0) @PIN(terminal=2, direction="right");
     @LINE {(-4, 0) (-2.4, 0)};
@@ -294,7 +294,7 @@
 
   /* a b c d y (vp) (vn); from Analog Canvas and-gate-4, the inputs on integer points: the
      outer two reach the input side drawn on to them */
-  $AND_4INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $AND_4INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 2, 2.4]) {
     (-3, 2) @PIN(terminal=1, direction="left");
     (-3, 1) @PIN(terminal=2, direction="left");
     (-3, -1) @PIN(terminal=3, direction="left");
@@ -314,7 +314,7 @@
 
   /* a b c d y (vp) (vn); from Analog Canvas nand-gate-4, the inputs on integer points: the
      outer two reach the input side drawn on to them */
-  $NAND_4INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $NAND_4INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 3, 2.4]) {
     (-3, 2) @PIN(terminal=1, direction="left");
     (-3, 1) @PIN(terminal=2, direction="left");
     (-3, -1) @PIN(terminal=3, direction="left");
@@ -335,7 +335,7 @@
 
   /* a b c d y (vp) (vn); from Analog Canvas or-gate-4, the inputs on integer points: the
      outer two reach the input side drawn on to them */
-  $OR_4INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $OR_4INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 2, 2.4]) {
     (-3, 2) @PIN(terminal=1, direction="left");
     (-3, 1) @PIN(terminal=2, direction="left");
     (-3, -1) @PIN(terminal=3, direction="left");
@@ -356,7 +356,7 @@
 
   /* a b c d y (vp) (vn); from Analog Canvas nor-gate-4, the inputs on integer points: the
      outer two reach the input side drawn on to them */
-  $NOR_4INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $NOR_4INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 3, 2.4]) {
     (-3, 2) @PIN(terminal=1, direction="left");
     (-3, 1) @PIN(terminal=2, direction="left");
     (-3, -1) @PIN(terminal=3, direction="left");
@@ -378,7 +378,7 @@
 
   /* a b c d y (vp) (vn); from Analog Canvas xor-gate-4, the inputs on integer points: the
      outer two reach the input side drawn on to them */
-  $XOR_4INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $XOR_4INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 3, 2.4]) {
     (-3, 2) @PIN(terminal=1, direction="left");
     (-3, 1) @PIN(terminal=2, direction="left");
     (-3, -1) @PIN(terminal=3, direction="left");
@@ -400,7 +400,7 @@
 
   /* a b c d y (vp) (vn); from Analog Canvas xnor-gate-4, the inputs on integer points: the
      outer two reach the input side drawn on to them */
-  $XNOR_4INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $XNOR_4INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 4, 2.4]) {
     (-3, 2) @PIN(terminal=1, direction="left");
     (-3, 1) @PIN(terminal=2, direction="left");
     (-3, -1) @PIN(terminal=3, direction="left");

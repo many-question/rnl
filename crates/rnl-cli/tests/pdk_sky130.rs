@@ -58,6 +58,34 @@ fn package_checked_on_its_own_has_zero_diagnostics_and_integer_pins() {
 
     let r = interpret_file(&package_file(), None, &FsProvider::new(&[]), &Options::default()).unwrap();
     assert!(diags(&r).is_empty(), "{:?}", diags(&r));
+
+    let options = rnl_view::CatalogOptions { packages: Some(vec!["rnl-pdk-sky130".into()]), ..Default::default() };
+    let c = rnl_view::catalog(&FsProvider::new(&[pdk_dir()]), &options);
+    assert_eq!(c.symbols.len(), CUSTOM_SYMBOLS.len());
+    for s in &c.symbols {
+        let [x1, y1, x2, y2] = s.bbox;
+        assert!(!s.pins.is_empty(), "{} has no pins", s.symbol);
+        for p in &s.pins {
+            let [px, py] = p.at;
+            assert!(px >= x1 && px <= x2 && py >= y1 && py <= y2, "{} pin {:?} outside {:?}", s.symbol, p, s.bbox);
+        }
+        let left: Vec<f64> = s.pins.iter().filter(|p| p.direction == Some("left")).map(|p| p.at[0]).collect();
+        let down: Vec<f64> = s.pins.iter().filter(|p| p.direction == Some("down")).map(|p| p.at[1]).collect();
+        let right: Vec<f64> = s.pins.iter().filter(|p| p.direction == Some("right")).map(|p| p.at[0]).collect();
+        let up: Vec<f64> = s.pins.iter().filter(|p| p.direction == Some("up")).map(|p| p.at[1]).collect();
+        if let Some(min_x) = left.into_iter().reduce(f64::min) {
+            assert_eq!(x1, min_x, "{} left box edge", s.symbol);
+        }
+        if let Some(min_y) = down.into_iter().reduce(f64::min) {
+            assert_eq!(y1, min_y, "{} down box edge", s.symbol);
+        }
+        if let Some(max_x) = right.into_iter().reduce(f64::max) {
+            assert_eq!(x2, max_x, "{} right box edge", s.symbol);
+        }
+        if let Some(max_y) = up.into_iter().reduce(f64::max) {
+            assert_eq!(y2, max_y, "{} up box edge", s.symbol);
+        }
+    }
 }
 
 #[test]

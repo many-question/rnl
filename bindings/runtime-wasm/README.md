@@ -119,7 +119,7 @@ A request with a `catalog` field lists the symbols, ordinary definitions and set
 ```json
 { "symbol": "$RESISTOR", "package": "rnl-std-basic", "version": "0.3", "file": "rnl-std-basic.rnl", "definition": null,
   "pins": [{ "terminal": 1, "at": [0, 2], "direction": "up" }, { "terminal": 2, "at": [0, -2], "direction": "down" }],
-  "box": [-1, -2.4, 1, 2.4],
+  "box": [-1, -2, 1, 2],
   "labels": [{ "key": "name", "text": "${name}", "at": [0.95, 0.25], "halign": "start", "valign": "baseline" },
              { "key": "value", "text": "${value}", "at": [0.95, -0.95], "halign": "start", "valign": "baseline" }] }
 ```

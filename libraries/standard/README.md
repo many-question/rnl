@@ -75,7 +75,7 @@ What the series 0.3 does otherwise than 0.2, beyond its names and drawings:
 
 The names of 0.3 are those of the symbol list of the series, such as `$RESISTOR` and `$GROUND` where 0.2 has `$RES` and `$GND`; how a file moves from one to the other is in [Annex D of standard 0.3](../../spec/0.3/en/annex-d.md) ([Chinese](../../spec/0.3/zh/annex-d.md)).
 
-Every symbol writes its box, Analog Canvas's view box of it, and binds its pins by terminal number, so it fits any dialect. The drawings are converted from Analog Canvas's component definitions, whose copyright holder publishes them here under CC0-1.0, as the drawings of 0.2; the few that Analog Canvas has none of, such as the JFET, the transmission lines and the marks, are drawn by hand in its manner.
+Every symbol writes its box (`box=[x1, y1, x2, y2]`): on any side that has pins, the box edge lies on the outermost pin of that side (`direction="left"` sets `x1`, `"down"` sets `y1`, `"right"` sets `x2`, `"up"` sets `y2`), while sides without pins (and symbols without pins) keep the view-box extent around the drawing. Because symbol boxes enter the solver's problem digest (`sig2:`), existing `@RNL(type="solver")` records written against earlier boxes will be flagged as not matching the current input (stale) until re-solved. Every symbol binds its pins by terminal number, so it fits any dialect. The drawings are converted from Analog Canvas's component definitions, whose copyright holder publishes them here under CC0-1.0, as the drawings of 0.2; the few that Analog Canvas has none of, such as the JFET, the transmission lines and the marks, are drawn by hand in its manner.
 
 ## Symbols of 0.2
 
