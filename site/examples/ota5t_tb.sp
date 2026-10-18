@@ -69,12 +69,12 @@ CL  out 0 1p
 * }
 * @RNL(type="generated", priority="high", author="rnl-solver", hash="sig2:a282bc208d796358.ffc36700559c31e7") {
 *   #VIP @PLACE(4, 13) => @ORIENT("R0");
-*   #VIN @PLACE(9, 10) => @ORIENT("R0");
+*   #VIN @PLACE(7, 10) => @ORIENT("R0");
 *   #VB @PLACE(17, 4) => @ORIENT("R0");
 *   #VDD @PLACE(35, 17) => @ORIENT("R0");
 *   #CL @PLACE(29, 12) => @ORIENT("R0");
 *   %g1 = $GROUND_STUB @ATTACH #VIP:n;  %g1::g @PLACE(4, 9);
-*   %g2 = $GROUND_STUB @ATTACH #VIN:n;  %g2::g @PLACE(9, 6);
+*   %g2 = $GROUND_STUB @ATTACH #VIN:n;  %g2::g @PLACE(7, 6);
 *   %g3 = $GROUND_STUB @ATTACH #VB:n;  %g3::g @PLACE(17, 0);
 *   %g4 = $GROUND_STUB @ATTACH #XU1:vss;  %g4::g @PLACE(21, 10);
 *   %g5 = $GROUND_STUB @ATTACH #VDD:n;  %g5::g @PLACE(35, 13);
@@ -85,6 +85,7 @@ CL  out 0 1p
 *   &vdd @WIRE(mode="vertical-horizontal") {#XU1:vdd #VDD:p};
 *   &out @WIRE {#XU1:out #CL:p};
 *   #VIP::name @PLACE(0, 13.25);  #VIP::value @PLACE(-4.5, 12.05);
+*   #VIN::name @PLACE(8.3, 9.5);  #VIN::value @PLACE(7.7, 7.8);
 *   #VB::name @PLACE(13.2, 4.25);  #VB::value @PLACE(13, 3.05);
 *   &inp @TEXT("inp") => @PLACE(9.5, 16.75);  &inn @TEXT("inn") => @PLACE(12, 12.75);
 *   &vdd @TEXT("vdd") => @PLACE(27, 19.75);  &out @TEXT("out") => @PLACE(27, 14.75)
