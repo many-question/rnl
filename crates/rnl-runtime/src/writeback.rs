@@ -1316,6 +1316,7 @@ mod tests {
             "* models\n.lib tt\nR0 a 0 1k\n.subckt s a b\nR1 a b 1k\n.ends\n* @RNL(type=\"header\") { }\n.endl tt\n";
         let mut d = doc(lib, "models.lib", "*");
         d.levels[0].section = Some("tt".into());
+        d.levels[0].section_lines = Some((2, 8));
         let out = replace_generated_with_header(&d, 1, lib, "@RNL(type=\"generated\") {}", "0.2");
         let want =
             "* models\n.lib tt\nR0 a 0 1k\n* @RNL(type=\"header\") { @VERSION(\"0.2\") }\n.subckt s a b\nR1 a b 1k\n\
@@ -1473,6 +1474,7 @@ mod tests {
         let mut d = doc("* t\n.end\n", "a.sp", "*");
         let mut tt = Level::new(LevelKind::File, "models.lib (tt)", "models.lib", "models.lib");
         tt.section = Some("tt".into());
+        tt.section_lines = Some((2, 6));
         d.add_level(tt, Some(0));
         let lib = "* models\n.lib tt\n.subckt pair a b\nR1 a b 1k\n.ends\n.endl tt\n";
         assert_eq!(with_header(&d, "models.lib", lib, "0.2"), lib);
@@ -1548,6 +1550,7 @@ mod tests {
                    * @RNL(type=\"header\") { }\n.endl tt\n";
         let mut d = doc(lib, "models.lib", "*");
         d.levels[0].section = Some("tt".into());
+        d.levels[0].section_lines = Some((2, 10));
         let out = replace_generated_with_header(&d, 1, lib, "@RNL(type=\"generated\") {}", "0.2");
         let want =
             "* models\n.lib tt\nR0 a 0 1k\n* @RNL(type=\"header\") { @VERSION(\"0.2\") }\n.prot\n.subckt s a b\n\

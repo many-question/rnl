@@ -461,3 +461,82 @@ fn reliability_as_an_instance_name_does_not_open_a_foreign_block() {
     assert_eq!(record_texts(&r).len(), 1);
     assert!(r.doc.excluded.is_empty());
 }
+
+#[test]
+fn selected_library_headers_move_before_subcircuits_with_real_reader_boundaries() {
+    for (main, prefix, lib, marker, include, open, close, subckt, ends, protect, unprotect, instance) in [
+        (
+            "t.sp",
+            "* title\n",
+            "lib.sp",
+            "*",
+            ".lib lib.sp tt",
+            ".lib",
+            ".endl",
+            ".subckt",
+            ".ends",
+            ".prot",
+            ".unprot",
+            "a b 1k",
+        ),
+        (
+            "t.scs",
+            "// title\nsimulator lang=spice\n",
+            "lib.sp",
+            "*",
+            ".lib lib.sp tt",
+            ".lib",
+            ".endl",
+            ".subckt",
+            ".ends",
+            ".prot",
+            ".unprot",
+            "a b 1k",
+        ),
+        (
+            "t.scs",
+            "// title\n",
+            "lib.scs",
+            "//",
+            "include \"lib.scs\" section=tt",
+            "section",
+            "endsection",
+            "subckt",
+            "ends",
+            "protect",
+            "unprotect",
+            "(a b) resistor r=1k",
+        ),
+    ] {
+        for protected in [false, true] {
+            let text = format!("{prefix}{include}\n");
+            let protect = if protected { format!("{protect}\n") } else { String::new() };
+            let unprotect = if protected { format!("{unprotect}\n") } else { String::new() };
+            let source = format!(
+                "{marker} models\n{open} tt\nR0 {instance}\n{protect}{subckt} cell a b\n\
+                 {unprotect}R1 {instance}\n{ends} cell\n{marker} @RNL(type=\"header\") {{ }}\n{close} tt\n"
+            );
+            let options = Options { std: false, ..Options::default() };
+            let files = MemoryProvider::new().with(main, &text).with(lib, &source);
+            let r = interpret_file(Path::new(main), None, &files, &options).unwrap();
+            let selected = r.doc.levels.iter().position(|l| l.section.as_deref() == Some("tt")).unwrap();
+            let cell = r.doc.levels.iter().position(|l| l.name == "cell").unwrap();
+            assert_eq!(r.doc.levels[selected].section_lines, Some((2, if protected { 10 } else { 8 })));
+            let record = "@RNL(type=\"generated\") {}";
+            let out = replace_generated_with_header(&r.doc, cell, &source, record, "0.3");
+            let expected = format!(
+                "{marker} models\n{open} tt\nR0 {instance}\n\
+                 {marker} @RNL(type=\"header\") {{ @VERSION(\"0.3\") }}\n\
+                 {protect}{subckt} cell a b\n{unprotect}R1 {instance}\n\
+                 {marker} @RNL(type=\"generated\") {{}}\n{ends} cell\n{close} tt\n"
+            );
+            assert_eq!(out, expected, "{main}, protected={protected}");
+            let files = MemoryProvider::new().with(main, &text).with(lib, &out);
+            let reread = interpret_file(Path::new(main), None, &files, &options).unwrap();
+            assert_eq!(reread.doc.levels[selected].records.len(), 1);
+            assert!(reread.doc.levels[selected].records[0].text.contains("VERSION(\"0.3\")"));
+            assert_eq!(reread.doc.levels[cell].records.len(), 1);
+            assert_eq!(replace_generated_with_header(&reread.doc, cell, &out, record, "0.3"), out);
+        }
+    }
+}
