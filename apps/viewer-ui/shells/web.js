@@ -26,6 +26,7 @@ let lastUrl = ""; // the URL opened last, which Open URL offers again
  *
  * @typedef {object} WebSource
  * @property {string} name How the page names it: the entry's file name, its path in a folder, or the URL.
+ * @property {string} path The entry's rooted workspace path; a URL updates it after redirects.
  * @property {(again: boolean) => Promise<{ path: string, text: string }>} open Read the entry: its
  *   path in the workspace, rooted, such as "/top.sp", and its text; rejects with an Error that says
  *   why it cannot be read. `again` when the source is read again (File > Reload).
@@ -57,6 +58,7 @@ function filesSource(files, entry) {
   }
   return {
     name: entry.slice(1),
+    path: entry,
     async open() {
       return { path: entry, text: await read(entry) };
     },
@@ -100,11 +102,13 @@ function urlSource(url) {
   let dir = []; // the entry's directory in the workspace, by its names
   return {
     name: url.href,
+    path: serverPath(url),
     async open(again) {
       const got = await fetchBytes(url.href, again);
       if (!got.bytes) throw new Error(`${url.href} could not be fetched: ${got.why}.`);
       served = new URL(got.url || url.href);
       const path = serverPath(served);
+      this.path = path;
       dir = path.split("/").slice(0, -1);
       return { path, text: decodeText(got.bytes) };
     },
@@ -266,7 +270,7 @@ async function includeLibrary() {
   if (!response.ok) throw new Error(`The package library could not be read (${response.status}).`);
   const catalog = await response.json();
   const packages = catalog.filter((p) => !p.builtin);
-  const selected = await choose({ title: "Include Package from Library", text: "Choose a package to add to the file pool.",
+  const selected = await choose({ title: "Include Public Package", text: "Choose a package to add to the file pool.",
     items: packages.map((p) => ({ label: `${p.name} ${p.version} — ${p.description}`, value: p })), filter: true });
   if (!selected) return [];
   const url = new URL(selected.path, new URL("libraries/", location.href));
@@ -468,6 +472,14 @@ export default {
     return response.json();
   },
   includeLibrary,
+  poolItem(source) {
+    const path = source.path;
+    return { path, name: source.name, source, read: async () => {
+      const text = await source.read(path, false);
+      if (text === null) throw new Error(`${source.name} could not be read. Open it again.`);
+      return new File([text], source.name);
+    } };
+  },
   include(kind) {
     if (kind === "library") return includeLibrary();
     return chooseFiles(kind === "folder" ? folderInput : includeInput).then((files) => poolItems(files, kind === "folder"));
@@ -507,7 +519,9 @@ export default {
       // An independently opened source owns its relative paths. Put the pool in a separate
       // namespace so preloaded pool text cannot hide a source-relative file collect has yet to read.
       const poolPath = (path) => source.fromPool ? path : `/<pool>${path}`;
-      for (const [path, read] of poolFiles) files[poolPath(path)] = decodeText(await (await read()).arrayBuffer());
+      for (const [path, read] of poolFiles) {
+        files[poolPath(path)] = path === entry.path ? entry.text : decodeText(await (await read()).arrayBuffer());
+      }
       files[entry.path] = entry.text;
       for (const [path, text] of Object.entries(edits || {})) files[joined(dir, path)] = text;
       const request = { entry: entry.path, files, pool: [...poolFiles.keys()].map(poolPath), svg: true, primitives: false, lazy_unplaced: true };

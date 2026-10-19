@@ -50,6 +50,8 @@ export function setPane(name) {
     updateHierarchy();
   } else if (view === "unplaced") {
     showUnplaced();
+  } else if (view === "files") {
+    window.dispatchEvent(new Event("library-shown"));
   }
 }
 

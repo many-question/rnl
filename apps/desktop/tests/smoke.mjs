@@ -691,13 +691,14 @@ async function filePoolSmoke(page) {
     const util = await import('./util.js'); await util.flushSettings(); return util.settingsPath;
   })()`);
   same(JSON.parse(fs.readFileSync(settings, "utf8"))["search-paths"], [slashed(parts)], "native settings file PATH");
-  check(await page.evaluate(`Array.from(document.querySelectorAll('#pool-list .pool-row')).filter(r => r.querySelector('.pool-badge')).every(r => !r.textContent.includes('Exclude'))`), "a built-in can be excluded");
+  check(await page.evaluate(`Array.from(document.querySelectorAll('[data-group="builtin"] .pool-row')).every(r => !r.textContent.includes('Exclude'))`), "a built-in can be excluded");
+  await page.evaluate(`document.querySelector('[data-group="builtin"] .lib-toggle').click()`);
   await page.evaluate(`document.querySelector('[aria-label="Open 0.3/rnl-std.rnl"]').click()`);
   await until("a built-in package opened", () => page.evaluate(`window.viewer.doc.path.includes('<bundled>') && !document.body.classList.contains('busy')`));
   check(await page.evaluate(`(async () => (await import('./open.js')).currentSource().readonly)()`), "built-in package is not read-only");
   await page.send("Page.reload");
-  await until("settings after reload", () => page.evaluate(`window.viewer && window.viewer.doc && document.querySelectorAll('#path-list li').length === 1 && !document.body.classList.contains('busy')`));
-  same(await page.evaluate(`document.querySelectorAll('#pool-list .pool-row:not(:has(.pool-badge))').length`), 0, "pool lifetime");
+  await until("settings after reload", () => page.evaluate(`window.viewer && window.viewer.doc && document.querySelectorAll('.lib-path').length === 1 && !document.body.classList.contains('busy')`));
+  same(await page.evaluate(`document.querySelectorAll('#pool-list .pool-row').length`), 1, "only the initially opened file joins the new session");
   console.log("The native file pool resolves packages/includes, opens and excludes files; PATH persists and built-ins are read-only");
 }
 

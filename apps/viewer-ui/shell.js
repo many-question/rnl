@@ -11,6 +11,8 @@
  * @property {(kind: string) => Promise<object[]>} [include] Include files, a folder or a library package.
  * @property {(items: object[]) => void} [setPool] Replace the session's search pool.
  * @property {() => Promise<string | null>} [pickPath] Pick a desktop search directory.
+ * @property {(dir: string) => Promise<string[]>} [pathPackages] Package paths in a desktop PATH directory.
+ * @property {(source: Source) => object} [poolItem] A web source's entry as a searchable file.
  * @property {(legacy: object) => Promise<{ path: string, values: object }>} [loadSettings] Native settings and migration.
  * @property {(key: string, value: unknown) => Promise<void>} [saveSetting] Persist a native setting.
  * @property {boolean} nativeMenu Whether the platform shows the menu bar itself; if not, the page shows
@@ -145,14 +147,16 @@
 
 /**
  * Something a shell can open. The page keeps it to read it again (File > Reload) and shows its
- * name; anything else in it is the shell's own: a path, files held in memory, a URL. A source
+ * name and file path; other details are the shell's own: files held in memory or a URL. A source
  * with `text`, as File > Load from Clipboard makes it, holds its text itself: every shell builds
  * that text as the file `name`, such as "clipboard.sp", whose extension says how it is read, with
  * no other file beside it.
  *
  * @typedef {object} Source
  * @property {string} name How the page names it, such as a file's path.
+ * @property {string} [path] A real file's identity, native or in the browser's workspace, for the Library.
  * @property {string} [text] The text itself, for a source that holds it.
+ * @property {boolean} [temporary] Content without a file, kept in the Library's single temporary slot.
  */
 
 /** @type {Shell | null} the shell chosen at start */

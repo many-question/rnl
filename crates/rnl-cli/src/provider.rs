@@ -61,7 +61,7 @@ impl Provider for FsProvider {
 }
 
 /// Direct files and one level of version directories, sorted for reproducible fallback order.
-fn directory_packages(dir: &Path) -> Vec<String> {
+pub fn directory_packages(dir: &Path) -> Vec<String> {
     let mut out = Vec::new();
     let Ok(entries) = std::fs::read_dir(dir) else { return out };
     for entry in entries.flatten() {

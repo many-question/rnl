@@ -54,6 +54,10 @@ const fake = {
    * ["version"].
    */
   calls: [],
+  packages: {},
+  pathErrors: {},
+  /** Deliver a source as a desktop drop or other unsolicited open. */
+  open(src) { if (opening) opening(source(src)); },
   /** The check marks as the platform's menu shows them, by command id. */
   checks: {},
   /** What the next picks choose, in order: a source each; nothing is chosen once it is empty. */
@@ -129,6 +133,7 @@ let heldDrawings = []; // the requests for drawings that wait: their resolve
 let kept = null; // the drawings of the last build that left them out of its Document, by level: { names, drawings }
 let closing = null; // the page's handler of a request to close the window
 let progress = null; // the page's handler of each level a solve begins
+let opening = null;
 
 /**
  * The desktop's Solve menu: a solve records ["solve", name, settings] and gives the fixture
@@ -187,7 +192,14 @@ export default {
     bundledFiles: async () => ({ "<bundled>/0.3/rnl-std.rnl": "@RNL(type=\"header\") { @PACKAGE(name=\"rnl-std\", version=\"0.3\") }" }),
     include: async (kind) => { fake.calls.push(["include", kind]); return fake.includes || []; },
     setPool: (items) => { fake.pool = items.filter((item) => !item.builtin).map((item) => item.path); },
-    ...(platform === "desktop" ? { pickPath: async () => fake.path || null } : {}),
+    ...(platform === "desktop" ? {
+      pickPath: async () => fake.path || null,
+      pathPackages: async (dir) => {
+        fake.calls.push(["pathPackages", dir]);
+        if (fake.pathErrors[dir]) throw fake.pathErrors[dir];
+        return fake.packages[dir] || [];
+      },
+    } : { includeLibrary: async () => [] }),
   } : {}),
   ...(params.has("settings") ? {
     loadSettings: async (legacy) => {
@@ -217,7 +229,7 @@ export default {
   async build(src, edits) {
     fake.calls.push(src.text === undefined ? ["build", src.name] : ["build", src.name, src.text]);
     fake.buildEdits.push(edits);
-    const [fail, name] = [fake.fail, fake.next || src.fixture];
+    const [fail, name] = [fake.fail, fake.next || src.fixture || (params.has("pool") ? "04-hierarchy" : undefined)];
     fake.fail = null;
     fake.next = null;
     // a plain message, as the desktop shell's invoke rejects with
@@ -225,6 +237,10 @@ export default {
     const response = await fetch(`/fixtures/${encodeURIComponent(name)}.json`);
     if (!response.ok) throw `${src.name}: there is no such fixture`;
     const document = await response.json();
+    if (params.has("pool") && src.temporary) {
+      src.fixture = name;
+      document.files[0].text = edits?.[document.files[0].path] ?? src.text;
+    }
     if (!fake.carry) {
       kept = document.levels.map((level) => ({
         names: level.unplaced.map((u) => u.name),
@@ -260,6 +276,7 @@ export default {
   onCommand(h) {
     handler = h;
   },
+  onOpen(h) { opening = h; },
   browse(url) {
     fake.calls.push(["browse", url]);
   },
