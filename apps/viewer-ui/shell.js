@@ -6,6 +6,7 @@
  * What the page asks of its platform.
  *
  * @typedef {object} Shell
+ * @property {boolean} [embed] The web shell's canvas-only mode, with no persisted preferences.
  * @property {"desktop" | "web"} platform The platform, which picks the commands of commands.json it offers.
  * @property {() => Promise<Record<string, string>>} [bundledFiles] Built-in package texts by path.
  * @property {() => Promise<Array<{name: string, version: string, path: string, description: string, builtin: boolean}>>} [publicPackages] Published package metadata for lookup hints.

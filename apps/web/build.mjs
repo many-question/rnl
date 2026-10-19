@@ -65,6 +65,7 @@ if (!existsSync(licence)) {
 
 // The core, which the web shell imports from core/client.js, without the package.json for Node.
 cpSync(core, join(out, "core"), { recursive: true, filter: (from) => relative(core, from) !== "package.json" });
+for (const name of ["embed-demo.html", "embed-demo.js"]) cpSync(join(here, name), join(out, name));
 
 // What the About box names: the version of the workspace, and the commit when git knows it.
 const manifest = readFileSync(join(root, "Cargo.toml"), "utf8");

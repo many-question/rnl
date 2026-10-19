@@ -12,6 +12,21 @@ const NETLISTS = ["sp", "spi", "spice", "cir", "ckt", "net", "scs"];
 const PARTS = ["inc", "lib", "rnl"];
 /** How long a server may send nothing, before or during its answer, until a fetch is given up (ms). */
 const STALL = 30000;
+const embed = new URLSearchParams(location.search).get("embed") === "1";
+let embedStyle = Promise.resolve();
+
+if (embed) {
+  document.body.classList.add("embed");
+  const style = document.createElement("link");
+  style.rel = "stylesheet";
+  style.href = "embed.css";
+  embedStyle = new Promise((resolve, reject) => {
+    style.onload = resolve;
+    style.onerror = () => reject(new Error("The embed stylesheet could not be loaded."));
+  });
+  embedStyle.catch(() => {});
+  document.head.append(style);
+}
 
 const core = startCore();
 const built = new WeakSet(); // the sources built before: building one again reads it again
@@ -208,6 +223,24 @@ function parseUrl(text) {
   return url.protocol === "http:" || url.protocol === "https:" ? url : null;
 }
 
+/** Resolve embed URLs exactly as File > Open URL and ?url= do. */
+export function sourceFromUrl(text) {
+  const url = parseUrl(text);
+  if (!url) throw new Error("Give an http or https address, or one relative to this page.");
+  return urlSource(url);
+}
+
+/** Warm the actual Worker/core before announcing that messages can be handled. */
+export async function prepareEmbed() {
+  const [response] = await Promise.all([
+    fetch("about.json"),
+    core.build({ entry: "/ready.sp", files: { "/ready.sp": "* Ready\n.end\n" }, svg: false }),
+    embedStyle,
+  ]);
+  if (!response.ok) throw new Error(`The viewer version could not be read (${response.status}).`);
+  return (await response.json()).version;
+}
+
 /** The extension of a path's file name, in lower case; "" when it has none. */
 function extension(path) {
   const name = path.slice(path.lastIndexOf("/") + 1);
@@ -315,9 +348,9 @@ async function openUrl() {
 // They have ids for the tests: files set on one while no chooser is shown, as a test sets them
 // (DOM.setFileInputFiles, or Playwright's setInputFiles), open as if they were chosen.
 
-const fileInput = input("file-input", false);
-const folderInput = input("folder-input", true);
-const includeInput = input("include-input", false);
+const fileInput = embed ? null : input("file-input", false);
+const folderInput = embed ? null : input("folder-input", true);
+const includeInput = embed ? null : input("include-input", false);
 let waiting = null; // resolves the chooser shown with the files chosen
 
 /** A hidden file input in the page, for files or, with `folder`, a folder. */
@@ -372,9 +405,11 @@ function dragging(on) {
 }
 
 document.addEventListener("dragenter", (e) => {
+  if (embed) return;
   if (carriesFiles(e)) dragging(true);
 });
 document.addEventListener("dragleave", (e) => {
+  if (embed) return;
   if (!carriesFiles(e)) return;
   over = Math.max(0, over - 1);
   document.body.classList.toggle("dropping", over > 0);
@@ -382,11 +417,12 @@ document.addEventListener("dragleave", (e) => {
 document.addEventListener("dragover", (e) => {
   if (!carriesFiles(e)) return;
   e.preventDefault(); // else the browser shows the file instead of the page
-  e.dataTransfer.dropEffect = modal() ? "none" : "copy";
+  e.dataTransfer.dropEffect = embed || modal() ? "none" : "copy";
 });
 document.addEventListener("drop", (e) => {
   if (!carriesFiles(e)) return;
   e.preventDefault();
+  if (embed) return;
   dragging(false);
   if (modal() || !opened) return;
   // the items can be read only while the event is dispatched
@@ -477,6 +513,7 @@ async function about() {
 /** @type {import("../shell.js").Shell} */
 export default {
   platform: "web",
+  embed,
   bundledFiles: async () => {
     const response = await fetch("libraries/bundled.json");
     if (!response.ok) throw new Error(`Built-in packages could not be listed (${response.status}).`);
@@ -540,7 +577,7 @@ export default {
       const request = { entry: entry.path, files, pool: [...poolFiles.keys()].map(poolPath), svg: true, primitives: false, lazy_unplaced: true };
       const read = held ? async () => null : (path) => path.startsWith("/<pool>/") ? Promise.resolve(null) : source.read(path, again);
       const { document: doc } = await collect(core, request, read);
-      document.title = `${doc.name} - RNL Viewer`;
+      if (!embed) document.title = `${doc.name} - RNL Viewer`;
       return doc;
     } catch (e) {
       throw e instanceof Error ? e.message : String(e);

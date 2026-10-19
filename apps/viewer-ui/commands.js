@@ -38,6 +38,7 @@ export async function startCommands() {
  * Exit, and shows the shell's About box, or a plain one (about).
  */
 export function command(id) {
+  if (shell?.embed && !["fit", "zoom-in", "zoom-out", "descend", "ascend"].includes(id)) return;
   switch (id) {
     case "open": pickAndOpen("file"); break;
     case "include-file": includeFiles("file"); break;
@@ -191,6 +192,7 @@ function keyCommand(e, typing) {
 }
 
 document.addEventListener("keydown", (e) => {
+  if (shell?.embed && !document.hasFocus()) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target.isContentEditable;
   if (e.defaultPrevented) return;
