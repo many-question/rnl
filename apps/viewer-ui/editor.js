@@ -29,6 +29,10 @@ let noteTimer = 0;
 let exiting = false;
 const positions = new Map(); // per path: caret and first visible line, independent of line height
 
+// A browser can round scrollTop to whole CSS pixels. Snap within one pixel of a line boundary,
+// so a fractional line height does not move the viewport back one row on every mode change.
+const firstLine = (scroll, height) => Math.max(0, Math.floor((scroll - 4 + 1) / height));
+
 function keepPosition() {
   if (!doc) return;
   for (const [k, file] of doc.files.entries()) {
@@ -36,12 +40,12 @@ function keepPosition() {
     const old = positions.get(file.path) || { caret: 0, line: 0 };
     if (editing && e) {
       const height = parseFloat(getComputedStyle(e.area).lineHeight) || 19;
-      positions.set(file.path, { caret: e.area.selectionStart, line: Math.max(0, Math.floor((e.area.scrollTop - 4) / height)) });
+      positions.set(file.path, { caret: e.area.selectionStart, line: firstLine(e.area.scrollTop, height) });
     } else {
       const v = fileViews[k];
       const height = v?.lines[0]?.getBoundingClientRect().height || 19;
       const scroll = k === fileShown ? source.scrollTop : v?.scroll || 0;
-      positions.set(file.path, { ...old, line: Math.max(0, Math.floor((scroll - 4) / height)) });
+      positions.set(file.path, { ...old, line: firstLine(scroll, height) });
     }
   }
 }

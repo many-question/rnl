@@ -158,8 +158,9 @@ test("editing preserves the first visible line across different line heights and
       await page.screenshot({ path: path.join(output, name) });
     }
   };
-  await page.addStyleTag({ content: ".editor .area, .editor .gutter { line-height: 27px; }" });
-  await page.locator("#source").evaluate((el) => { el.scrollTop = 4 + 40 * el.querySelector(".ln").getBoundingClientRect().height; });
+  await page.addStyleTag({ content: ".source .ln { min-height: 0; line-height: 19.2px; } .editor .area, .editor .gutter { line-height: 27px; }" });
+  // Reproduce integer scroll rounding even in engines which retain fractional scroll offsets.
+  await page.locator("#source").evaluate((el) => { el.scrollTop = Math.floor(4 + 40 * el.querySelector(".ln").getBoundingClientRect().height); });
   await screenshot("scroll-01-reading.png");
   await page.keyboard.press("Control+q");
   await expect(area(page)).toBeVisible();
