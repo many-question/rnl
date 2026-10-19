@@ -14,9 +14,12 @@ It defines its own symbols and styles and contains no text. Keep its circuit and
 
 The transparent logos have 6% of the painted width as padding on every side, including strokes.
 The icon centres the painted bounds and makes their longer side 72% of the canvas.
-At 32px and below, icon strokes are 35% heavier, with a minimum screen width of .85px.
-The resulting widths are approximately .85px at 16px, .87px at 24px and 1.17px at 32px.
-SVG media queries apply the same treatment to browser favicons at their actual display size.
+At 32px and below, dedicated 16/24/32px variants fit horizontal and vertical strokes to pixel
+centres, with at least a 1px stroke and `crispEdges` rendering. This avoids blurred grey fringes.
+Diagonal strokes, arrowheads, orange junctions and the rounded backdrop keep their smooth edges;
+diagonal strokes retain the 35% weight increase with a minimum width of .85px.
+SVG media queries select the matching small variant for browser favicons (16px up to 20px,
+24px up to 28px, and 32px up to 32px). Raster icons are rendered directly at their target size.
 Larger icons and the transparent homepage logos retain their original line weights; the source circuit stays unchanged.
 
 ## Regeneration

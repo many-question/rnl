@@ -113,10 +113,35 @@ export function iconSvg(dark, bounds) {
   const body = dark.replace(/^<svg[^>]*>\n/, "").replace(/\n<\/svg>\n$/, "");
   const stroke = Number(dark.match(/stroke-width="([\d.]+)"/)[1]);
   const smallWidth = number(stroke * scale * 1.35 / 1024 * 100);
+  // Fit only orthogonal strokes to the target pixel grid. Keep triangles, circles and the
+  // rounded backdrop smooth; disabling antialiasing on the entire circuit loses tiny arrowheads.
+  const transform = [x, y, scale].map(n => Number(number(n)));
+  function pixelHint(size) {
+    const [tx, ty, s] = transform;
+    const snap = (value, origin) => ((Math.round((value * s + origin) * size / 1024 - .5) + .5) * 1024 / size - origin) / s;
+    return body.replace(/<path\b[^>]*\/>/g, tag => {
+      if (tag.includes('stroke="none"')) return tag;
+      const d = tag.match(/\bd="([^"]+)"/)[1];
+      if (/[^MLZ\d.,\s-]/i.test(d)) return tag;
+      const values = d.match(/-?\d+(?:\.\d+)?/g).map(Number);
+      const points = Array.from({ length: values.length / 2 }, (_, i) => values.slice(i * 2, i * 2 + 2));
+      if (!points.every((p, i) => !i || p[0] === points[i - 1][0] || p[1] === points[i - 1][1])) return tag;
+      return tag.replace("<path ", '<path class="pixel-line" ').replace(/\bd="[^"]+"/, () =>
+        `d="${d.replace(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g, (_, px, py) =>
+          `${number(snap(Number(px), tx))},${number(snap(Number(py), ty))}`)}"`);
+    });
+  }
+  const group = (classes, drawing) => `<g class="${classes}" transform="translate(${number(x)} ${number(y)}) scale(${number(scale)})">\n${drawing}\n</g>\n`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">\n` +
-    `<style>@media (max-width: 32px) { path[stroke]:not([stroke="none"]) { stroke-width: max(.85px, ${smallWidth}vw); vector-effect: non-scaling-stroke; } }</style>\n` +
+    `<style>\n.icon-small { display: none; }\n` +
+    `@media (max-width: 32px) {\n` +
+    `  path[stroke]:not([stroke="none"]) { stroke-width: max(.85px, ${smallWidth}vw); vector-effect: non-scaling-stroke; }\n` +
+    `  path.pixel-line[stroke] { stroke-width: max(1px, ${smallWidth}vw); shape-rendering: crispEdges; }\n` +
+    `  .icon-normal { display: none; } .icon-32 { display: inline; }\n}\n` +
+    `@media (max-width: 28px) { .icon-32 { display: none; } .icon-24 { display: inline; } }\n` +
+    `@media (max-width: 20px) { .icon-24 { display: none; } .icon-16 { display: inline; } }\n</style>\n` +
     `<rect width="1024" height="1024" rx="180" fill="${ICON_BACKGROUND}"/>\n` +
-    `<g transform="translate(${number(x)} ${number(y)}) scale(${number(scale)})">\n${body}\n</g>\n</svg>\n`;
+    group("icon-normal", body) + [16, 24, 32].map(size => group(`icon-small icon-${size}`, pixelHint(size))).join("") + "</svg>\n";
 }
 
 async function png(page, svg, size, path) {

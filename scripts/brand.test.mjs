@@ -19,12 +19,13 @@ test("the current renderer reproduces the committed logo byte for byte", async (
   }
 });
 
-test("small SVG icons gain ink only at 32px and below, including when embedded as images", async () => {
+test("small SVG icons gain sharper ink only at 32px and below, including when embedded as images", async () => {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 400, height: 400 }, deviceScaleFactor: 1 });
     const icon = readFileSync(join(root, "brand/rnl-icon.svg"), "utf8");
-    const normal = icon.replace(/<style>.*?<\/style>\n/s, "");
+    const normal = icon.replace(/<style>.*?<\/style>\n/s, "<style>.icon-small { display: none; }</style>\n");
+    const soft = icon.replace("</style>", ".icon-small { display: none !important; } .icon-normal { display: inline !important; }</style>");
     assert.match(icon, new RegExp(`fill="${ICON_BACKGROUND}"`));
     async function pixels(svg, size) {
       const src = "data:image/svg+xml;base64," + Buffer.from(svg).toString("base64");
@@ -40,9 +41,15 @@ test("small SVG icons gain ink only at 32px and below, including when embedded a
     }
     const ink = data => data.reduce((sum, _, i) => i % 4 ? sum : sum +
       Math.max(0, Math.min(data[i] - 19, data[i + 1] - 32, data[i + 2] - 51)), 0);
+    const fringes = data => data.reduce((sum, _, i) => sum +
+      Number(i % 4 === 0 && data[i] > 32 && data[i] < 223 && data[i + 2] >= data[i]), 0);
     for (const size of [16, 24, 32, 48, 256]) {
       const actual = await pixels(icon, size), original = await pixels(normal, size);
-      if (size <= 32) assert.ok(ink(actual) > ink(original) * 1.2, `${size}px should have stronger visible strokes`);
+      if (size <= 32) {
+        // Pixel fitting replaces fractional coverage with solid pixels; retain a weight increase.
+        assert.ok(ink(actual) > ink(original) * 1.15, `${size}px should have stronger visible strokes`);
+        assert.ok(fringes(actual) < fringes(await pixels(soft, size)) * .7, `${size}px should have fewer blended edge pixels`);
+      }
       else assert.deepEqual(actual, original, `${size}px must retain the original strokes`);
     }
   } finally {
