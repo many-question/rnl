@@ -166,14 +166,22 @@ test("editing preserves the first visible line across different line heights and
   await expect(area(page)).toBeVisible();
   expect(await area(page).evaluate((el) => Math.floor((el.scrollTop - 4) / 27))).toBe(40);
   await screenshot("scroll-02-editing.png");
-  await area(page).evaluate((el) => { el.setSelectionRange(12, 12); el.scrollTop = 4 + 47 * 27; });
+  await area(page).evaluate((el) => { el.setSelectionRange(12, 12); });
+  // Gecko reveals a programmatically moved caret on a later paint. A user's subsequent scroll
+  // happens after that reveal, so settle it before setting the viewport we intend to preserve.
+  const settled = () => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await settled();
+  await area(page).evaluate((el) => { el.scrollTop = 4 + 47 * 27; });
+  expect(await area(page).evaluate((el) => Math.round((el.scrollTop - 4) / 27))).toBe(47);
   await page.keyboard.press("Control+q");
   const firstLine = () => page.locator("#source").evaluate((el) => Math.round((el.scrollTop - 4) / el.querySelector(".ln").getBoundingClientRect().height));
   expect(await firstLine()).toBe(47);
   await screenshot("scroll-03-exited.png");
   await page.keyboard.press("Control+q");
   expect(await area(page).evaluate((el) => el.selectionStart)).toBe(12);
-  await area(page).evaluate((el) => { el.value += "\n* edited"; el.dispatchEvent(new Event("input", { bubbles: true })); el.scrollTop = 4 + 49 * 27; });
+  await area(page).evaluate((el) => { el.value += "\n* edited"; el.dispatchEvent(new Event("input", { bubbles: true })); });
+  await settled();
+  await area(page).evaluate((el) => { el.scrollTop = 4 + 49 * 27; });
   await viewer.build(() => page.keyboard.press("Control+Enter"));
   expect(await firstLine()).toBe(49);
   await screenshot("scroll-04-applied.png");
