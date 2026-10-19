@@ -68,6 +68,12 @@ if (entries.length < 20) fail(`only ${entries.length} files found under ${root}`
 entries.push(join(root, "tests/viewer/inputs/view-improvements.sp"));
 const defaultHairlines = join(root, "tests/viewer/inputs/default-hairlines.sp");
 entries.push(defaultHairlines);
+// A public package, not bundled in either core, exercises custom font hints and every symbol.
+const edaDir = join(root, "libraries/eda-style").replaceAll("\\", "/");
+const edaEntries = new Set(files(edaDir).filter((path) => /\.(rnl|scs)$/.test(path)));
+entries.push(...edaEntries);
+const edaFile = `${edaDir}/eda-style.rnl`;
+const edaText = await readText(edaFile);
 // and a file that is not UTF-8, which rnl reads as Latin-1
 const temp = mkdtempSync(join(tmpdir(), "rnl-equality-"));
 process.on("exit", () => rmSync(temp, { recursive: true, force: true }));
@@ -141,6 +147,7 @@ function files(dir) {
 function native(entry) {
   const command = snapshot ? ["snapshot", entry, "--parts", "host,model"] : ["view", entry];
   if (entry === defaultHairlines) command.push("--no-std");
+  if (edaEntries.has(entry)) command.push("--package-dir", edaDir);
   try {
     const out = execFileSync(rnl, [...command, ...view], { encoding: "utf8", maxBuffer: 1 << 30, stdio: "pipe" });
     return { value: JSON.parse(out) };
@@ -170,12 +177,16 @@ async function webAssembly(entry) {
   try {
     const lazy = snapshot ? {} : { lazy_unplaced: true };
     const defaults = entry === defaultHairlines ? { std: false } : {};
-    const { document, files } = await collect(counted, { ...extra, ...lazy, ...defaults, entry, files: packages }, readText);
+    const external = edaEntries.has(entry)
+      ? { package_dirs: [...(extra.package_dirs ?? []), edaDir], files: { ...packages, [edaFile]: edaText } }
+      : { files: packages };
+    const request = { ...extra, ...lazy, ...defaults, ...external, entry };
+    const { document, files } = await collect(counted, request, readText);
     const read = Object.keys(files).length - Object.keys(packages).length;
     if (!snapshot) return [{ value: withDrawings(document) }, read];
     builds++;
     const parts = { drawing: false, host: true, model: true };
-    return [{ value: core.snapshot({ ...extra, ...defaults, entry, files, parts }) }, read];
+    return [{ value: core.snapshot({ ...request, files, parts }) }, read];
   } catch (e) {
     return [{ error: e.message }, 0];
   }

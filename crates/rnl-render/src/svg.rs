@@ -197,6 +197,10 @@ impl W {
     /// whatever the estimate misses falls to both sides alike.
     fn text(&self, t: &TextPrim) -> String {
         let mut out = String::new();
+        let font = match t.font.as_str() {
+            "" | "sans-serif" | "serif" => String::new(),
+            family => format!(" font-family=\"{}\"", esc(family)),
+        };
         for r in &t.runs {
             let (x, y) = self.px(r.at);
             let mut turn = Vec::new();
@@ -215,7 +219,7 @@ impl W {
             };
             let _ = write!(
                 out,
-                "<text x=\"{x:.2}\" y=\"{y:.2}\" font-size=\"{:.2}\"{}{}{fit} fill=\"{}\" xml:space=\"preserve\">{}</text>",
+                "<text x=\"{x:.2}\" y=\"{y:.2}\" font-size=\"{:.2}\"{font}{}{}{fit} fill=\"{}\" xml:space=\"preserve\">{}</text>",
                 r.size * self.s,
                 if r.bold { " font-weight=\"bold\"" } else { "" },
                 if turn.is_empty() { String::new() } else { format!(" transform=\"{}\"", turn.join(" ")) },
@@ -274,4 +278,55 @@ pub fn svg_document(prims: &[Primitive], o: &RenderOptions) -> String {
     }
     s.push_str("\n</svg>\n");
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::TextRun;
+
+    fn text(font: &str) -> TextPrim {
+        TextPrim {
+            anchor: (1.0, 2.0),
+            lines: Vec::new(),
+            size: 2.0,
+            color: "#102030".into(),
+            font: font.into(),
+            bold: false,
+            italic: false,
+            halign: "start".into(),
+            valign: "baseline".into(),
+            vertical: false,
+            runs: vec![TextRun {
+                text: "A<&\"'".into(),
+                at: (1.0, 2.0),
+                size: 2.0,
+                width: 3.25,
+                bold: false,
+                italic: false,
+                fallback: false,
+            }],
+            bars: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn font_hints_are_written_and_xml_escaped_on_every_run() {
+        let mut t = text("A & <B> \"C\" 'D', monospace");
+        t.runs.push(TextRun { fallback: true, ..t.runs[0].clone() });
+        let svg = W { s: 14.0 }.text(&t);
+        assert_eq!(svg.matches(" font-family=\"A &amp; &lt;B&gt; &quot;C&quot; &#x27;D&#x27;, monospace\"").count(), 2);
+        assert!(svg.contains(" textLength=\"45.50\""));
+        assert!(svg.contains(" text-anchor=\"middle\""));
+        assert!(svg.contains("A&lt;&amp;&quot;&#x27;</text>"));
+    }
+
+    #[test]
+    fn default_and_generic_font_svg_bytes_are_unchanged() {
+        // The pre-font-hint SVG, including attribute order, precision and text escaping.
+        let expected = "<text x=\"14.00\" y=\"-28.00\" font-size=\"28.00\" textLength=\"45.50\" lengthAdjust=\"spacingAndGlyphs\" fill=\"#102030\" xml:space=\"preserve\">A&lt;&amp;&quot;&#x27;</text>";
+        for font in ["", "sans-serif", "serif"] {
+            assert_eq!(W { s: 14.0 }.text(&text(font)).as_bytes(), expected.as_bytes(), "{font}");
+        }
+    }
 }

@@ -5,7 +5,7 @@
 //!
 //! A run is as wide as the sum of its characters' advances, with no kerning, ligatures or other
 //! shaping, so a frontend that draws each run from its start in the same face draws the text as it
-//! is laid out. The font the style names (9.3) is a hint that the layout does not follow.
+//! is laid out. A style's font (9.3) is a hint; a monospace hint estimates ASCII at a fixed advance.
 //!
 //! What the fonts do not map, a frontend draws in a font of the system's, whose advances the core
 //! cannot know. Such characters make runs of their own, with their marks, joiners and selectors
@@ -59,6 +59,10 @@ pub const SLANT: f64 = 0.25;
 /// width space alone, 0; one, a narrow character, `NARROW` em; two or more, a wide or full-width
 /// character, such as a hangul syllable or an emoji with its selectors, modifiers and joiners, 1 em.
 const NARROW: f64 = 0.55;
+/// ASCII advance of Lucida Console Regular 5.01 (Windows lucon.ttf): hmtx gives 1234 units for
+/// U+0020..U+007E, and head.unitsPerEm is 2048. An estimate for any monospace font hint, independent
+/// of installed fonts; other characters keep the shipped metrics or the fallback estimate.
+const MONOSPACE_ADVANCE_EM: f64 = 1234.0 / 2048.0;
 
 fn u16_at(k: usize) -> u16 {
     u16::from_le_bytes([METRICS[k], METRICS[k + 1]])
@@ -272,6 +276,7 @@ struct Frac {
 struct Lay {
     bold: bool,
     italic: bool,
+    mono: bool,
     /// The least width of a bar, in scene units.
     least: f64,
     pieces: Vec<Piece>,
@@ -289,8 +294,17 @@ impl Lay {
 
     /// The parts of the text of a run (`split`) in `face` and of size `size`, each with whether the
     /// fonts do not map it and its width.
-    fn parts(face: Face, text: &str, size: f64) -> impl Iterator<Item = (&str, bool, f64)> {
-        split(text).into_iter().map(move |(part, fallback)| (part, fallback, face.part_width(part, fallback) * size))
+    fn parts(face: Face, text: &str, size: f64, mono: bool) -> impl Iterator<Item = (&str, bool, f64)> {
+        split(text).into_iter().map(move |(part, fallback)| {
+            let em = if mono && !fallback {
+                part.chars()
+                    .filter_map(|c| if c.is_ascii() { Some(MONOSPACE_ADVANCE_EM) } else { face.advance(c) })
+                    .sum()
+            } else {
+                face.part_width(part, fallback)
+            };
+            (part, fallback, em * size)
+        })
     }
 
     /// The width of runs whose levels count from `base`, where the size is `s`.
@@ -299,7 +313,7 @@ impl Lay {
             .map(|r| match r {
                 Run::Text { text, style } => {
                     let (size, _) = script(i32::from(style.level) - base, s);
-                    Self::parts(self.face(style.bold), text, size).map(|(_, _, width)| width).sum::<f64>()
+                    Self::parts(self.face(style.bold), text, size, self.mono).map(|(_, _, width)| width).sum::<f64>()
                 }
                 Run::Frac { num, den, style } => {
                     let (size, _) = script(i32::from(style.level) - base, s);
@@ -371,7 +385,7 @@ impl Lay {
                     let face = self.face(style.bold);
                     let (bold, italic) = (self.bold || style.bold, self.italic || style.italic);
                     let start = u;
-                    for (part, fallback, width) in Self::parts(face, text, size) {
+                    for (part, fallback, width) in Self::parts(face, text, size, self.mono) {
                         let text = part.to_string();
                         self.pieces.push(Piece { text, u, v: v + shift, size, width, bold, italic, fallback });
                         u += width;
@@ -411,8 +425,14 @@ impl Lay {
 pub fn lay_out(t: &mut TextPrim, scale: f64) -> [f64; 4] {
     let face = Face::of(t.bold);
     let s = t.size;
-    let mut lay =
-        Lay { bold: t.bold, italic: t.italic, least: LEAST_BAR / scale, pieces: Vec::new(), bars: Vec::new() };
+    let mut lay = Lay {
+        bold: t.bold,
+        italic: t.italic,
+        mono: t.font.to_ascii_lowercase().contains("monospace"),
+        least: LEAST_BAR / scale,
+        pieces: Vec::new(),
+        bars: Vec::new(),
+    };
     let n = t.lines.len() as f64;
     let pitch = face.line_height() * s;
     let first = match t.valign.as_str() {
@@ -595,6 +615,61 @@ mod tests {
         };
         let bbox = lay_out(&mut t, 14.0);
         (t, bbox)
+    }
+
+    #[test]
+    fn monospace_ascii_uses_a_fixed_advance_and_preserves_non_ascii_metrics() {
+        let ascii: String = (' '..='~').collect();
+        for bold in [false, true] {
+            let face = Face::of(bold);
+            for c in ascii.chars() {
+                let parts: Vec<_> = Lay::parts(face, &c.to_string(), 2.0, true).map(|(_, _, w)| w).collect();
+                assert_eq!(parts, [2.0 * MONOSPACE_ADVANCE_EM], "{c}");
+            }
+            let (mut t, _) = text("Wi 中Ωx\u{301}\u{1F600}", "middle", "baseline", false);
+            t.bold = bold;
+            t.font = "Lucida Console, MonoSpace".into();
+            let bbox = lay_out(&mut t, 14.0);
+            let mapped = (4.0 * MONOSPACE_ADVANCE_EM + face.width("中Ω\u{301}")) * 2.0;
+            close(&[t.runs[0].width, t.runs[1].width, bbox[2] - bbox[0]], &[mapped, 2.0, mapped + 2.0]);
+            assert!(!t.runs[0].fallback);
+            assert!(t.runs[1].fallback);
+            close(&[t.runs[0].at.0], &[10.0 - (mapped + 2.0) / 2.0]);
+        }
+    }
+
+    #[test]
+    fn monospace_widths_also_place_scripts_fractions_and_bars() {
+        let (mut t, _) = text("\\textbf{Wi}_{i}\\frac{WW}{i}", "start", "baseline", false);
+        t.font = "monospace".into();
+        lay_out(&mut t, 14.0);
+        let advance = MONOSPACE_ADVANCE_EM;
+        let fraction_at = 10.0 + 4.0 * advance + 1.4 * advance;
+        let fraction_width = 3.2 * advance + 0.3;
+        close(
+            &t.runs.iter().map(|r| r.width).collect::<Vec<_>>(),
+            &[4.0 * advance, 1.4 * advance, 3.2 * advance, 1.6 * advance],
+        );
+        close(
+            &[t.runs[2].at.0, t.runs[3].at.0, t.bars[0].a.0, t.bars[0].b.0],
+            &[
+                fraction_at + 0.15,
+                fraction_at + (fraction_width - 1.6 * advance) / 2.0,
+                fraction_at + 0.12,
+                fraction_at + fraction_width - 0.12,
+            ],
+        );
+    }
+
+    #[test]
+    fn default_and_generic_fonts_keep_identical_layout() {
+        let (expected, bbox) = text("Wi 中Ω\\textbf{i}_{2}\\frac{ab}{c}\u{1F600}", "end", "middle", true);
+        for font in ["", "sans-serif", "serif"] {
+            let mut t = TextPrim { font: font.into(), ..expected.clone() };
+            assert_eq!(lay_out(&mut t, 14.0), bbox);
+            assert_eq!(t.runs, expected.runs);
+            assert_eq!(t.bars, expected.bars);
+        }
     }
 
     #[test]

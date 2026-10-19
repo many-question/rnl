@@ -597,6 +597,32 @@ test("the web library adds SKY130 without duplicating built-ins, which open read
 });
 
 
+test("the public eda-style package draws its gallery without joining the built-ins", async ({ page }) => {
+  await start(page);
+  const index = await (await page.request.get(`${process.env.RNL_WEB_URL}/libraries/index.json`)).json();
+  expect(index.filter((p) => p.name === "eda-style")).toMatchObject([
+    { version: "0.1", path: "eda-style/eda-style.rnl", builtin: false },
+  ]);
+  expect(index.every((p) => p.path.endsWith(".rnl"))).toBe(true);
+  const bundled = await (await page.request.get(`${process.env.RNL_WEB_URL}/libraries/bundled.json`)).json();
+  expect(Object.keys(bundled).some((p) => p.includes("eda-style"))).toBe(false);
+  await page.locator("#tab-files").click();
+  await page.locator("#include-library").click();
+  const dialog = page.locator("dialog.dialog");
+  await dialog.locator("input[type=search]").fill("eda-style");
+  await expect(dialog.locator(".dialog-option")).toHaveCount(1);
+  await dialog.locator("input[type=search]").press("Enter");
+  await expect(page.getByRole("button", { name: "Exclude eda-style 0.1", exact: true })).toBeVisible();
+  await page.locator("#file-input").setInputFiles(path.join(root, "libraries/eda-style/eda-style-gallery.scs"));
+  const doc = await shown(page);
+  expect(doc.diagnostics.filter((d) => ["error", "warning"].includes(d.severity))).toEqual([]);
+  expect(doc.levels).toHaveLength(7);
+  const svg = doc.levels[0].svg;
+  expect(svg).toContain("#00cc66");
+  expect(svg).toContain("#ff0000");
+  expect(svg).toContain('font-family="Lucida Console, Monaco, DejaVu Sans Mono, Consolas, monospace"');
+});
+
 test("relative files win over pooled files with the same name, including deferred URL collection", async ({ page }) => {
   await start(page);
   await page.locator("#include-input").setInputFiles({ name: "part.inc", mimeType: "text/plain", buffer: Buffer.from("Rpool a 0 1k\n") });

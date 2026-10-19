@@ -122,7 +122,7 @@ pub struct TextPrim {
     /// Text height, the em of the font, in scene units.
     pub size: f64,
     pub color: String,
-    /// The font the style names, a hint (9.3): the text is laid out in the shipped family.
+    /// The style's font hint (9.3), written by SVG; monospace hints use a fixed ASCII advance.
     pub font: String,
     pub bold: bool,
     pub italic: bool,

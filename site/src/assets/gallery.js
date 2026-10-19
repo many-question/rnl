@@ -20,6 +20,7 @@
      its file starts with. A line holds for every version of the package, unless one is written for
      its name and version, such as 'rnl-std-fill 0.3', where the versions differ. */
   var SUMMARY = {
+    'eda-style': '<zh>公开扩展包：137 个绿色细线、红色端子和等宽标签的原理图符号，替换标准符号名，适合深色背景。</zh><en>A public extension package: 137 schematic symbols with green hairlines, red terminals and monospaced labels, replacing standard symbol names and suited to dark backgrounds.</en>',
     'rnl-std': '<zh>标准包。每份网表的根上默认就用它；它只引用别的包，自己没有内容。</zh><en>The standard package, used at the root of every netlist by default. It only references other packages and has no content of its own.</en>',
     'rnl-std-core': '<zh>最小的组合：样式、符号和配符号的规则，把网表画出来，别的什么都不加——不补地、电源和端口标签。</zh><en>The smallest collection: styles, symbols and the rules that give them, enough to draw the netlist and nothing more — no grounds, supplies or port tags filled in.</en>',
     'rnl-std-style': '<zh>样式 $base、$bus、$signal、$note、$grey，和给每类对象默认样式的规则。</zh><en>The styles $base, $bus, $signal, $note and $grey, and the rules that give every kind of object its default style.</en>',
