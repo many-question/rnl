@@ -60,11 +60,17 @@ unchanged. With focus on the drawing or the page body, arrow keys move the viewi
 of its width or height, or 30% with Shift. Inputs, text editors, lists, menus and other controls
 keep their own keyboard navigation.
 
-An instance's selection rectangle follows its `box` hit exactly, including the instance's
+An instance or virtual symbol's selection rectangle follows its primary `box` hit exactly, including its
 orientation and boxes inferred from graphics when no explicit symbol box was given. The 1.5 CSS-pixel
 non-scaling stroke is centred on that boundary (0.75 pixels on either side). The open badge sits
 above and to the right of the box, with a fixed 4 CSS-pixel gap in each direction, independent of
 zoom. Label margins and hit-testing tolerances are separate and unchanged.
+
+Virtual symbols have independent `usage` objects, including junctions without net pins. Their box
+hits put the usage first and retain the associated net for network highlighting. Selecting a wire
+or pin still selects the net, marks its pins with circles, and draws no symbol frames; selecting
+a usage draws its own box without pin circles or an open-subcircuit badge. Usage labels keep the
+net first when present, preserving label clicks and network label highlighting.
 
 Zero and omitted line widths use the renderer's 1.2 CSS-pixel hairline, with SVG non-scaling strokes;
 double hairlines use two 1.2-pixel lines separated by a 1.2-pixel gap. Nonzero widths keep their

@@ -94,9 +94,12 @@ for (const [platform, query] of Object.entries(PLATFORMS)) {
       // the ports of the OTA are %pi, %pn and %po, on the nets inp, inn and out
       const named = await page.evaluate(() => {
         const level = window.viewer.doc.levels[0];
-        return level.hits.filter((h) => h.kind === "box" && h.name).map((h) => [h.name, window.viewer.doc.objects[h.objects[0]].name]);
+        return level.hits.filter((h) => h.kind === "box" && h.name).map((h) => {
+          const objects = h.objects.map((o) => window.viewer.doc.objects[o]);
+          return [h.name, objects[0].kind, objects.find((o) => o.kind === "net").name];
+        });
       });
-      expect(named.sort()).toEqual([["pi", "inp"], ["pn", "inn"], ["po", "out"]]);
+      expect(named.sort()).toEqual([["pi", "usage", "inp"], ["pn", "usage", "inn"], ["po", "usage", "out"]]);
       const [u, v] = await page.evaluate(() => {
         const hit = window.viewer.doc.levels[0].hits.find((h) => h.kind === "box" && h.name === "pi");
         const [a, b] = hit.points;

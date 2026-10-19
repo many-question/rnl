@@ -2,7 +2,7 @@
 //! diagnostics, the source files, and the links between them. The same runtime and renderer as
 //! `rnl render`.
 //!
-//! The links are objects (the host instances and nets of every level) and the places that show
+//! The links are objects (the host instances, nets and drawn usages of every level) and the places that show
 //! them: where the netlist names an instance or one of its nodes, where a record refers to one,
 //! and what on each drawing stands for one (a symbol's box, a pin, a wire).
 
@@ -37,7 +37,7 @@ pub struct Document {
     pub failed: Option<String>,
     /// The host files: the opened file first, then the files it includes.
     pub files: Vec<SourceFile>,
-    /// The instances and nets of every level.
+    /// The instances, nets and drawn usages of every level.
     pub objects: Vec<Object>,
     /// The places in the files that name an object.
     pub spans: Vec<Span>,
@@ -254,7 +254,9 @@ pub struct Hit {
     pub kind: &'static str,
     /// In SVG pixels, y down.
     pub points: Vec<[f64; 2]>,
-    /// The objects it stands for: an instance (several for a bundle), or nets.
+    /// The objects it stands for: an instance (several for a bundle), a usage followed by its
+    /// associated net, or nets. The first object is what clicking the hit selects. A usage's
+    /// label keeps its net first, so clicking a net label continues to select the net.
     pub objects: Vec<usize>,
     /// The `data-id` of the SVG groups that draw it, and the owner of its primitives. A label
     /// has one only when no other text of the level has the same.
@@ -290,8 +292,9 @@ pub struct SourceFile {
 #[derive(Serialize, Debug)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Object {
-    /// "instance" or "net".
+    /// "instance", "net" or "usage".
     pub kind: &'static str,
+    /// An instance or net's name, or a usage's editor identity (`%gnd1` when named).
     pub name: String,
     /// The host level it belongs to, and that level's title.
     pub level: usize,
@@ -603,12 +606,29 @@ impl<'a> Index<'a> {
                     objects = nets;
                 }
             }
-            item_objects.push(objects.clone());
             // a usage the level names, such as `%gnd1`, has that name; the others have none
             let name = (it.kind == "usage")
                 .then(|| it.object_id.strip_prefix('%'))
                 .flatten()
                 .map(|n| n.trim_matches(['\'', '"']).to_string());
+            // A virtual symbol is selectable independently of its net, including a junction
+            // on a point with no pins. Keep the net on the hit for network highlighting.
+            let mut labels = objects.clone();
+            if it.kind == "usage" {
+                let usage = self.objects.len();
+                self.objects.push(Object {
+                    kind: "usage",
+                    name: it.object_id.clone(),
+                    level: lv.level,
+                    level_title: self.doc.levels[lv.level].title(),
+                    lines: None,
+                    opens: None,
+                });
+                objects.insert(0, usage);
+                // Preserve clicking a label to select its net; the usage also owns its label.
+                labels.push(usage);
+            }
+            item_objects.push(labels);
             hits.push(Hit {
                 kind: "box",
                 points: vec![px((left, top)), px((right, bottom))],
@@ -1065,21 +1085,30 @@ C1 b 0 1p
         let on_vdd = |kind: &str| {
             let hits = level.hits.iter();
             hits.filter(|h| {
-                h.kind == kind && !h.objects.is_empty() && h.objects.iter().all(|o| d.objects[*o].name == "vdd")
+                h.kind == kind && h.objects.iter().any(|o| d.objects[*o].kind == "net" && d.objects[*o].name == "vdd")
             })
             .collect::<Vec<&Hit>>()
         };
         let vdd = on_vdd("label");
         assert!(vdd.len() >= 3, "{vdd:?}");
         assert!(vdd.iter().all(|h| h.id.is_none()), "{vdd:?}");
-        // and each stands for the net its symbol is on
+        // Each still stands for the net, as well as its own independently selectable usage.
         assert_eq!(vdd.len(), on_vdd("box").len());
         // the supply symbols have no name of their own, the ports of the netlist have
         let named: Vec<(&str, Vec<&str>)> = level
             .hits
             .iter()
             .filter_map(|h| {
-                h.name.as_deref().map(|n| (n, h.objects.iter().map(|o| d.objects[*o].name.as_str()).collect()))
+                h.name.as_deref().map(|n| {
+                    (
+                        n,
+                        h.objects
+                            .iter()
+                            .filter(|o| d.objects[**o].kind == "net")
+                            .map(|o| d.objects[*o].name.as_str())
+                            .collect(),
+                    )
+                })
             })
             .collect();
         assert!(on_vdd("box").iter().all(|h| h.name.is_none()));
@@ -1186,9 +1215,57 @@ R1 a b 1k
         let svg = d.levels[0].svg.as_deref().unwrap();
         assert!(ids.iter().all(|id| svg.contains(&format!("data-id=\"{id}\""))));
         assert!(hits.iter().any(|h| h.kind == "pin" && h.objects.contains(&out)));
-        // a ground symbol stands for the ground net
+        // A ground symbol selects its own usage, while retaining its ground net for highlighting.
         let gnd = d.objects.iter().position(|o| o.kind == "net" && o.name == "0").unwrap();
-        assert!(hits.iter().any(|h| h.kind == "box" && h.objects == vec![gnd]));
+        assert!(hits.iter().any(|h| h.kind == "box"
+            && h.objects.len() == 2
+            && d.objects[h.objects[0]].kind == "usage"
+            && h.objects[1] == gnd));
+    }
+
+    #[test]
+    fn usages_have_independent_objects_and_preserve_net_hits() {
+        let text = r#"* virtual objects
+R1 rail out 1k
+* @RNL(type="header") { @VERSION("0.3") }
+* @RNL {
+*   #R1 @PLACE(0, 0);
+*   %g = $GROUND @ATTACH &rail; %g @PLACE(-8, -4);
+*   %g2 = $GROUND @ATTACH &rail; %g2 @PLACE(-2, -4);
+*   %s = $SUPPLY @ATTACH &rail; %s @PLACE(8, 6);
+*   %p = $IO_PORT @ATTACH &rail; %p @PLACE(12, 6);
+*   %j = $JUNCTION @ATTACH (4, -5);
+*   &rail @WIRE {%g:1 (-8, 3) #R1:1 (8, 3) %s:1}
+* }
+.end
+"#;
+        let files = rnl_runtime::source::MemoryProvider::new().with("virtual.sp", text);
+        let d = crate::build("virtual.sp", &files, &BuildOptions::default()).unwrap();
+        assert!(d.failed.is_none());
+        assert!(!d.diagnostics.iter().any(|x| x.severity == "error"), "{:?}", d.diagnostics);
+        let hits = &d.levels[0].hits;
+        let net = d.objects.iter().position(|o| o.kind == "net" && o.name == "rail").unwrap();
+        let mut usages = Vec::new();
+        for name in ["g", "g2", "s", "p", "j"] {
+            let hit = hits.iter().find(|h| h.kind == "box" && h.name.as_deref() == Some(name)).unwrap();
+            let usage = hit.objects[0];
+            assert_eq!(d.objects[usage].kind, "usage");
+            assert_eq!(d.objects[usage].name, format!("%{name}"));
+            assert_eq!((d.objects[usage].level, d.objects[usage].opens, d.objects[usage].lines), (0, None, None));
+            assert!(!usages.contains(&usage));
+            usages.push(usage);
+            let nets = if name == "j" { Vec::new() } else { vec![net] };
+            assert_eq!(&hit.objects[1..], nets.as_slice());
+            for label in hits.iter().filter(|h| h.kind == "label" && h.objects.contains(&usage)) {
+                assert_eq!(label.objects, [net, usage]);
+            }
+        }
+        assert!(hits.iter().any(|h| h.kind == "wire" && h.objects == [net]));
+        assert!(hits.iter().any(|h| h.kind == "pin" && h.objects == [net]));
+        assert!(hits
+            .iter()
+            .filter(|h| h.kind == "wire" || h.kind == "pin")
+            .all(|h| h.objects.iter().all(|o| d.objects[*o].kind == "net")));
     }
 
     #[test]
