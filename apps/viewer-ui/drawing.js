@@ -302,6 +302,7 @@ function endPress(e, cancelled) {
   if (!click) return;
   const { hits, blocked } = hitsAt(doc && doc.levels[current], view, canvasPoint(e));
   const objects = objectsOf(hits);
+  if (e.shiftKey && objects.some((o) => opens(o) !== null)) return; // Shift-double-click leaves this viewer unchanged
   if (objects.length > 1) {
     hideTip();
     openPicker(objects, e.clientX, e.clientY, (o) => select(o, "drawing"));
@@ -337,7 +338,7 @@ canvas.addEventListener("dblclick", (e) => {
   if (e.target.closest("#enter-badge")) return;
   const box = boxAt(doc && doc.levels[current], view, canvasPoint(e));
   const o = box ? box.objects.find((k) => opens(k) !== null) : undefined;
-  if (o !== undefined) descend(o);
+  if (o !== undefined) descend(o, { newWindow: e.shiftKey });
   else fit();
 });
 
@@ -396,4 +397,4 @@ function positionBadge() {
 }
 
 $("enter-badge").addEventListener("pointerdown", (e) => e.stopPropagation());
-$("enter-badge").addEventListener("click", () => descend(selected));
+$("enter-badge").addEventListener("click", (e) => descend(selected, { newWindow: e.shiftKey }));

@@ -187,6 +187,7 @@ async function version() {
 
 /** @type {import("../../apps/viewer-ui/shell.js").Shell} */
 export default {
+  newWindow(session) { fake.calls.push(["newWindow", JSON.parse(JSON.stringify(session))]); },
   include: async (kind) => { fake.calls.push(["include", kind]); return fake.includes || []; },
   ...(params.has("pool") ? {
     bundledFiles: async () => ({ "<bundled>/0.3/rnl-std.rnl": "@RNL(type=\"header\") { @PACKAGE(name=\"rnl-std\", version=\"0.3\") }" }),
@@ -241,6 +242,7 @@ export default {
       src.fixture = name;
       document.files[0].text = edits?.[document.files[0].path] ?? src.text;
     }
+    for (const file of document.files) if (edits?.[file.path] !== undefined) file.text = edits[file.path];
     if (!fake.carry) {
       kept = document.levels.map((level) => ({
         names: level.unplaced.map((u) => u.name),

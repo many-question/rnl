@@ -5,6 +5,7 @@
 
 import { collect, decodeText, startCore } from "../core/client.js";
 import { ask, choose, inform, modal } from "../dialog.js";
+import { openWebWindow, receiveWebSession } from "../window-session.js";
 
 /** The extensions of netlists that are opened on their own, listed first as the file to open. */
 const NETLISTS = ["sp", "spi", "spice", "cir", "ckt", "net", "scs"];
@@ -57,6 +58,7 @@ function filesSource(files, entry) {
     }
   }
   return {
+    files,
     name: entry.slice(1),
     path: entry,
     async open() {
@@ -477,6 +479,31 @@ async function about() {
 /** @type {import("../shell.js").Shell} */
 export default {
   platform: "web",
+  newWindow(session, doc) {
+    return openWebWindow(async () => {
+      const files = {};
+      for (const [path, read] of session.entry?.files || []) files[path] = decodeText(await (await read()).arrayBuffer());
+      if (session.entry?.text !== undefined) files[session.entry.path || `/${session.entry.name}`] = session.entry.text;
+      // The document contains applied text, never the pending editor buffer.
+      if (doc) for (const f of doc.files) files[f.path.startsWith("/") || f.path.startsWith("<bundled>") ? f.path : joined(doc.path.slice(0, doc.path.lastIndexOf("/")), f.path)] = f.text;
+      const pool = await Promise.all(session.pool.map(async (item) => ({ path: item.path, name: item.name,
+        text: files[`/<pool>${item.path}`] ?? files[item.path] ?? decodeText(await (await item.read()).arrayBuffer()) })));
+      const source = session.entry;
+      return { ...session, files, pool, entry: source ? { name: source.name, path: source.path || `/${source.name}`,
+        temporary: source.temporary, readonly: source.readonly, fromPool: source.fromPool } : null };
+    });
+  },
+  async initialSession() {
+    const session = await receiveWebSession();
+    if (!session) return null;
+    const files = new Map(Object.entries(session.files || {}).map(([path, text]) => [path, () => new File([text], path)]));
+    session.pool = session.pool.map((item) => {
+      const read = () => new File([item.text], item.name);
+      return { path: item.path, name: item.name, read, source: { ...filesSource(new Map([[item.path, read]]), item.path), fromPool: true } };
+    });
+    if (session.entry) session.entry = { ...filesSource(files, session.entry.path), ...session.entry, snapshot: session.files };
+    return session;
+  },
   bundledFiles: async () => {
     const response = await fetch("libraries/bundled.json");
     if (!response.ok) throw new Error(`Built-in packages could not be listed (${response.status}).`);
@@ -536,6 +563,7 @@ export default {
         files[poolPath(path)] = path === entry.path ? entry.text : decodeText(await (await read()).arrayBuffer());
       }
       files[entry.path] = entry.text;
+      Object.assign(files, source.snapshot || {});
       for (const [path, text] of Object.entries(edits || {})) files[joined(dir, path)] = text;
       const request = { entry: entry.path, files, pool: [...poolFiles.keys()].map(poolPath), svg: true, primitives: false, lazy_unplaced: true };
       const read = held ? async () => null : (path) => path.startsWith("/<pool>/") ? Promise.resolve(null) : source.read(path, again);

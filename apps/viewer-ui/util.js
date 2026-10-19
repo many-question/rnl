@@ -62,6 +62,7 @@ export function load(key, fallback) {
 export function save(key, value) {
   if (preferences) {
     const before = preferences[key];
+    if (JSON.stringify(before) === JSON.stringify(value)) return pending;
     preferences[key] = value;
     pending = pending.catch(() => {}).then(() => persist(key, value)).catch((error) => {
       if (preferences[key] === value) {
