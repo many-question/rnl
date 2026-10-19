@@ -49,6 +49,7 @@ Usage, from the repository root (standard library only, and git for the tags):
     python site/build.py --check --rnl PATH       also check and render site/examples/*.sp with rnl
 """
 import argparse
+from base64 import b64encode
 import json
 import os
 import re
@@ -349,6 +350,12 @@ def standalone(page, out, page_url):
         return "<%s>\n%s\n</%s>" % (tag, body, tag)
     html = STYLE_TAG.sub(lambda m: inline("style", m), html)
     html = SCRIPT_TAG.sub(lambda m: inline("script", m), html)
+
+    def inline_image(m):
+        path = SRC / m.group(2)
+        mime = "image/svg+xml" if path.suffix == ".svg" else "image/png"
+        return m.group(1) + "data:" + mime + ";base64," + b64encode(path.read_bytes()).decode("ascii") + '"'
+    html = re.sub(r'(\s(?:src|href)=")(assets/[^"<>]+\.(?:svg|png))"', inline_image, html)
     if 'src="assets/' in html or 'href="assets/' in html:
         raise BuildError("the standalone version of %s still references assets/" % page)
 
@@ -426,6 +433,10 @@ def build(version=None):
     for index, (code, prefix) in enumerate(LANGS):
         for path, text in build_language(files, index, version, linux).items():
             result[prefix + path] = text
+        # Brand images are copied verbatim; only prose and scripts need localization.
+        for path in sorted((SRC / "assets").rglob("*")):
+            if path.suffix in (".svg", ".png"):
+                result[prefix + path.relative_to(SRC).as_posix()] = path.read_bytes()
     for name, text in ex.items():
         result["examples/" + name] = text
     result.update(redirects())
@@ -444,7 +455,10 @@ def write(result, out):
     for path, text in result.items():
         target = out / path
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding="utf-8", newline="\n")
+        if isinstance(text, bytes):
+            target.write_bytes(text)
+        else:
+            target.write_text(text, encoding="utf-8", newline="\n")
 
 
 GUIDE = """RNL introduction pages / RNL 介绍页

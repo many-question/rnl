@@ -1,2 +1,5 @@
 # Font metrics written by scripts/fonts.py, read as bytes by the renderer
 crates/rnl-render/fonts/*.metrics binary
+
+# The logo regression check compares the renderer's LF output byte for byte.
+brand/*.svg text eol=lf

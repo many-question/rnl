@@ -41,6 +41,7 @@ export async function startCommands() {
  */
 export function command(id, options = {}) {
   if (!isEnabled(id)) return;
+  if (shell?.embed && !["fit", "zoom-in", "zoom-out", "descend", "ascend"].includes(id)) return;
   switch (id) {
     case "new-window": return duplicateWindow();
     case "open": pickAndOpen("file"); break;
@@ -208,6 +209,7 @@ function keyCommand(e, typing) {
 }
 
 document.addEventListener("keydown", (e) => {
+  if (shell?.embed && !document.hasFocus()) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target.isContentEditable ||
     !!e.target.closest('select, [role="listbox"], [role="tree"], #tree, #index, #unplaced-list');

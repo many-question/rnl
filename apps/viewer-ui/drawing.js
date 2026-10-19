@@ -73,6 +73,7 @@ export function showLevel(i, keptView) {
     $("zoom").textContent = "";
     $("empty").textContent = emptyMessage(lv);
     $("empty").hidden = false;
+    window.dispatchEvent(new Event("viewer-level"));
     return;
   }
   const parsed = new DOMParser().parseFromString(lv.svg, "image/svg+xml");
@@ -104,6 +105,7 @@ export function showLevel(i, keptView) {
     fit();
   }
   paintDrawingSelection();
+  window.dispatchEvent(new Event("viewer-level"));
 }
 
 /**

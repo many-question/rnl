@@ -9,7 +9,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&<zh>family=Noto+Sans+SC:wght@400;500;700;900</zh><en>family=IBM+Plex+Sans:wght@400;500;600;700</en>&display=swap">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23132033'/%3E%3Cpath d='M16 7v18M8.2 11.5l15.6 9M23.8 11.5l-15.6 9' stroke='%23ff8c42' stroke-width='3.2' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
 <link rel="stylesheet" href="assets/intro.css">
 <script>
   (function () {
@@ -54,7 +56,7 @@
 
 <header class="topbar">
   <div class="topbar-in">
-    <a class="brand" href="./"><span class="brand-mark">RNL</span><span class="brand-sub">Rich Netlist</span></a>
+    <a class="brand" href="./"><span class="brand-logo theme-logo"><img class="logo-light" src="assets/brand/rnl-logo-small.svg" width="24" height="24" alt=""><img class="logo-dark" src="assets/brand/rnl-logo-small-dark.svg" width="24" height="24" alt=""></span><span class="brand-mark">RNL</span><span class="brand-sub">Rich Netlist</span></a>
     <nav class="pages" aria-label="<zh>页面</zh><en>Pages</en>">
       <a href="./"><zh>介绍</zh><en>Introduction</en></a>
       <a href="language.html"><zh>语言导览</zh><en>Language tour</en></a>
@@ -229,6 +231,9 @@
       <en>The web viewer edits the text and draws it again when the changes are applied, as <a href="#viewers">above</a>. A page cannot write the files it read, so File › Save is a download: of the file shown, with the line ends it had, in UTF-8. Only the desktop viewer solves; the web viewer has no Solve menu.</en></span></p>
     <p class="note"><svg class="ico"><use href="#i-info"/></svg><span><zh>网址里也可以带上要打开的网表，方便把链接发给别人：<a href="../viewer/?url=https://raw.githubusercontent.com/rich-netlist/rnl/main/tests/conformance/cases/04-hierarchy.sp"><code>viewer/?url=https://raw.githubusercontent.com/…/04-hierarchy.sp</code></a> 打开 GitHub 上的一份网表，连同它 include 的文件。</zh>
       <en>The viewer’s address can name the netlist to open, so a link can be shared: <a href="../viewer/?url=https://raw.githubusercontent.com/rich-netlist/rnl/main/tests/conformance/cases/04-hierarchy.sp"><code>viewer/?url=https://raw.githubusercontent.com/…/04-hierarchy.sp</code></a> opens a netlist on GitHub with the file it includes.</en></span></p>
+    <h3 class="sub-h" id="embedding"><zh>嵌入其他网页</zh><en>Embedding in another page</en></h3>
+    <p><zh>用 <code>viewer/?embed=1</code> 在 iframe 中显示只有画布的交互查看器，通过 postMessage 切换网表、层级和背景，无需重新加载。见 <a href="https://github.com/rich-netlist/rnl/blob/main/apps/web/README.md#embedding">嵌入接口与示例</a>，或打开<a href="../viewer/embed-demo.html">演示页</a>。</zh>
+      <en>Use <code>viewer/?embed=1</code> in an iframe for a canvas-only interactive viewer. Switch netlists, levels and backgrounds through postMessage without reloading. See the <a href="https://github.com/rich-netlist/rnl/blob/main/apps/web/README.md#embedding">embedding API and example</a>, or try the <a href="../viewer/embed-demo.html">demo</a>.</en></p>
     <p class="note"><svg class="ico"><use href="#i-info"/></svg><span><zh>这里的网页版按 main 分支的最新提交构建，Help › About 显示它的版本和提交；Help › Desktop Viewer 回到这一页。</zh>
       <en>The web viewer here is built from the newest commit of the main branch; Help › About names its version and commit, and Help › Desktop Viewer leads back to this page.</en></span></p>
   </div>
