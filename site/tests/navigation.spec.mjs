@@ -54,6 +54,7 @@ for (const file of files) {
       await page.locator(target).evaluate(el => window.scrollTo(0, el.getBoundingClientRect().top + scrollY - 70));
       await expect(links.nth(1)).toHaveClass("here");
       await page.evaluate(() => window.scrollTo(0, document.querySelector(".layout").getBoundingClientRect().top + scrollY - 59));
+      await expect(links.first()).toHaveClass("here");
     }
     await capture(page, `zh-light-${file.replace(".html", "")}-1440`, info.project.name);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
