@@ -8,6 +8,7 @@ It defines its own symbols and styles and contains no text. Keep its circuit and
 | `rnl-logo.sp` | Editable source; render with the RNL CLI |
 | `rnl-logo.svg` | Transparent original colours for light backgrounds |
 | `rnl-logo-dark.svg` | Transparent colours for dark backgrounds, using the viewer's `darkColour` rule |
+| `rnl-logo-small.svg`, `rnl-logo-small-dark.svg` | Transparent, pixel-fitted light/dark logos for the site's 24px navigation mark |
 | `rnl-icon.svg` | Responsive 1024-unit icon, dark logo on `#132033`, corner radius 180 |
 | `rnl-icon-1024.png` | Chromium rasterization used as Tauri's input |
 | `rnl-icon-16.png`, `rnl-icon-24.png`, `rnl-icon-32.png` | Small icons with stronger strokes, also packed into the desktop icon containers |
@@ -15,9 +16,9 @@ It defines its own symbols and styles and contains no text. Keep its circuit and
 The transparent logos have 6% of the painted width as padding on every side, including strokes.
 The icon centres the painted bounds and makes their longer side 72% of the canvas.
 At 32px and below, dedicated 16/24/32px variants fit horizontal and vertical strokes to pixel
-centres, with at least a 1px stroke and `crispEdges` rendering. This avoids blurred grey fringes.
-Diagonal strokes, arrowheads, orange junctions and the rounded backdrop keep their smooth edges;
-diagonal strokes retain the 35% weight increase with a minimum width of .85px.
+centres, with at least a 1px stroke and a 35% weight increase. All circuit paths and orange
+junctions use `crispEdges` rendering. The hollow ground becomes a solid stepped triangle:
+3 pixels high at 16/24px, 5 pixels high at 32px. The rounded backdrop retains its smooth edge.
 SVG media queries select the matching small variant for browser favicons (16px up to 20px,
 24px up to 28px, and 32px up to 32px). Raster icons are rendered directly at their target size.
 Larger icons and the transparent homepage logos retain their original line weights; the source circuit stays unchanged.
@@ -51,7 +52,7 @@ The same command also updates:
 
 - `site/src/assets/favicon.svg`, `favicon-32.png` and `apple-touch-icon.png` (180px).
 - `apps/viewer-ui/icons/`: copies of those favicons, carried into the web viewer by its existing build.
-- `site/src/assets/brand/`: copies of both transparent logos for the homepage.
+- `site/src/assets/brand/`: copies of the transparent homepage and small navigation logos.
 
 The site keeps these generated copies in its source assets so its Python-only build and downloadable
 zip work without Rust or Chromium. `site/build.py` publishes them under both `zh/assets/` and
@@ -60,10 +61,12 @@ Normal site and viewer pages use relative icon paths, including when hosted unde
 The standard page template uses the public site's English asset URLs so its downloadable HTML,
 version pages and comparison pages share the same icons without changing the standard publisher.
 
-The homepage's `.hero-logo` is decorative (`alt=""`). CSS follows the same `html[data-theme]`
-and system preference rules as the site; it has no click action. Its `cap`-based image height
+The homepage's `.hero-logo` and the top bar's 24px `.brand-logo` are decorative (`alt=""`).
+Both follow the site's `html[data-theme]` and system preference rules. The top bar mark is
+part of the existing home link; the hero has no click action. Its `cap`-based image height
 accounts for the SVG padding, matching the painted height to the wordmark's capital letters
-(about `.70em` in the site's display font, with an `em` fallback).
+(about `.70em` in the site's display font, with an `em` fallback). The SVG's own side padding
+provides the spacing before RNL, with no additional flex gap, so the mark reads like a prefix.
 
 ## Renderer regression check
 

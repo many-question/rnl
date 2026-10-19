@@ -202,8 +202,10 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible, summary:focus-v
   -webkit-backdrop-filter: saturate(1.2) blur(10px); backdrop-filter: saturate(1.2) blur(10px);
 }
 .topbar-in { display: flex; align-items: center; gap: 18px; height: 56px; padding-inline: 20px; }
-.brand { display: flex; align-items: baseline; gap: 8px; color: var(--ink); }
+.brand { display: flex; align-items: center; gap: 8px; color: var(--ink); }
 .brand:hover { text-decoration: none; }
+.brand-logo { display: block; flex: none; width: 24px; height: 24px; margin-right: -8px; }
+.brand-logo img { display: block; width: 100%; height: 100%; }
 .brand-mark { font: 700 21px/1 var(--f-disp); letter-spacing: .02em; }
 .brand-sub { font-size: 13px; color: var(--ink-2); }
 .pages { display: flex; gap: 2px; margin-left: auto; }
@@ -259,6 +261,12 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible, summary:focus-v
   .pages, .brand-sub { display: none; }
   .topbar-in { gap: 10px; }
   .lang-link { margin-left: auto; }
+}
+/* English page names need more room beside the navigation mark and controls. */
+@media (max-width: 800px) {
+  html[lang="en"] .pages { display: none; }
+  html[lang="en"] .topbar-in { gap: 10px; }
+  html[lang="en"] .lang-link { margin-left: auto; }
 }
 
 /* ---------- Shared components ---------- */
@@ -347,17 +355,17 @@ section[id] { scroll-margin-top: 72px; }
 .hero { padding-block: 48px 72px; }
 .hero-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr); gap: 48px; align-items: end; }
 .eyebrow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font: 600 12px/1 var(--f-mono); letter-spacing: .18em; color: var(--ink-2); }
-.hero h1 { margin: 14px 0 0; display: flex; align-items: baseline; gap: .25em; flex-wrap: nowrap; font: 700 clamp(92px, 14vw, 172px)/.8 var(--f-disp); }
+.hero h1 { margin: 14px 0 0; display: flex; align-items: baseline; gap: 0; flex-wrap: nowrap; font: 700 clamp(92px, 14vw, 172px)/.8 var(--f-disp); }
 .wordmark { font: inherit; letter-spacing: -.015em; color: var(--ink); }
 /* The SVG has 3.85% vertical padding per side: match its painted height to the font's capitals. */
 .hero-logo { display: block; flex: none; height: .756em; height: 1.083415cap; transform: translateY(3.84955%); }
 .hero-logo img { display: block; height: 100%; width: auto; }
-.hero-logo .logo-dark { display: none; }
-:root[data-theme="dark"] .hero-logo .logo-light { display: none; }
-:root[data-theme="dark"] .hero-logo .logo-dark { display: block; }
+.theme-logo .logo-dark { display: none; }
+:root[data-theme="dark"] .theme-logo .logo-light { display: none; }
+:root[data-theme="dark"] .theme-logo .logo-dark { display: block; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .hero-logo .logo-light { display: none; }
-  :root:not([data-theme="light"]) .hero-logo .logo-dark { display: block; }
+  :root:not([data-theme="light"]) .theme-logo .logo-light { display: none; }
+  :root:not([data-theme="light"]) .theme-logo .logo-dark { display: block; }
 }
 .wordmark .at { color: var(--markup); }
 .h1-cn { font: 900 clamp(30px, 4vw, 46px)/1 var(--f-body); letter-spacing: .06em; color: var(--ink); }

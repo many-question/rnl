@@ -106,27 +106,45 @@ function smallIco(file) {
   writeFileSync(file, Buffer.concat([directory, ...images]));
 }
 
-export function iconSvg(dark, bounds) {
+export function iconSvg(logo, bounds, { background = ICON_BACKGROUND } = {}) {
   const scale = 1024 * 0.72 / Math.max(bounds.width, bounds.height);
   const x = 512 - (bounds.x + bounds.width / 2) * scale;
   const y = 512 - (bounds.y + bounds.height / 2) * scale;
-  const body = dark.replace(/^<svg[^>]*>\n/, "").replace(/\n<\/svg>\n$/, "");
-  const stroke = Number(dark.match(/stroke-width="([\d.]+)"/)[1]);
-  const smallWidth = number(stroke * scale * 1.35 / 1024 * 100);
-  // Fit only orthogonal strokes to the target pixel grid. Keep triangles, circles and the
-  // rounded backdrop smooth; disabling antialiasing on the entire circuit loses tiny arrowheads.
+  const body = logo.replace(/^<svg[^>]*>\n/, "").replace(/\n<\/svg>\n$/, "");
+  const stroke = Number(logo.match(/stroke-width="([\d.]+)"/)[1]);
+  // Small circuits use hard edges. Fit orthogonal strokes to pixel centres and replace
+  // the hollow ground with a solid stepped triangle, so its opening cannot collapse.
   const transform = [x, y, scale].map(n => Number(number(n)));
   function pixelHint(size) {
     const [tx, ty, s] = transform;
     const snap = (value, origin) => ((Math.round((value * s + origin) * size / 1024 - .5) + .5) * 1024 / size - origin) / s;
-    return body.replace(/<path\b[^>]*\/>/g, tag => {
+    const ground = body.replace(/<g data-id="%g0"><path\b[^>]*\/><\/g>/g, tag => {
+      const d = tag.match(/\bd="([^"]+)"/)[1];
+      if (!/Z/i.test(d)) return tag; // Keep the ground's horizontal lead.
+      const values = d.match(/-?\d+(?:\.\d+)?/g).map(Number);
+      const xs = values.filter((_, i) => i % 2 === 0), ys = values.filter((_, i) => i % 2);
+      const left = Math.round((Math.min(...xs) * s + tx) * size / 1024);
+      const centre = Math.floor(((Math.min(...ys) + Math.max(...ys)) / 2 * s + ty) * size / 1024);
+      const width = Math.max(2, Math.round((Math.max(...xs) - Math.min(...xs)) * s * size / 1024));
+      const point = (px, py) => `${number((px * 1024 / size - tx) / s)},${number((py * 1024 / size - ty) / s)}`;
+      const rows = [];
+      for (let dy = 1 - width; dy < width; dy++) {
+        const right = left + width - Math.abs(dy), top = centre + dy;
+        rows.push(`M${point(left, top)} L${point(right, top)} L${point(right, top + 1)} L${point(left, top + 1)} Z`);
+      }
+      const colour = tag.match(/\bstroke="([^"]+)"/)[1];
+      return `<g data-id="%g0"><path d="${rows.join(" ")}" fill="${colour}" stroke="none"/></g>`;
+    });
+    return ground.replace(/<path\b[^>]*\/>/g, tag => {
       if (tag.includes('stroke="none"')) return tag;
+      tag = tag.replace(/\bstroke-width="[\d.]+"/,
+        `stroke-width="${number(Math.max(stroke * 1.35, 1024 / (s * size)))}"`);
       const d = tag.match(/\bd="([^"]+)"/)[1];
       if (/[^MLZ\d.,\s-]/i.test(d)) return tag;
       const values = d.match(/-?\d+(?:\.\d+)?/g).map(Number);
       const points = Array.from({ length: values.length / 2 }, (_, i) => values.slice(i * 2, i * 2 + 2));
       if (!points.every((p, i) => !i || p[0] === points[i - 1][0] || p[1] === points[i - 1][1])) return tag;
-      return tag.replace("<path ", '<path class="pixel-line" ').replace(/\bd="[^"]+"/, () =>
+      return tag.replace(/\bd="[^"]+"/, () =>
         `d="${d.replace(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g, (_, px, py) =>
           `${number(snap(Number(px), tx))},${number(snap(Number(py), ty))}`)}"`);
     });
@@ -135,12 +153,11 @@ export function iconSvg(dark, bounds) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">\n` +
     `<style>\n.icon-small { display: none; }\n` +
     `@media (max-width: 32px) {\n` +
-    `  path[stroke]:not([stroke="none"]) { stroke-width: max(.85px, ${smallWidth}vw); vector-effect: non-scaling-stroke; }\n` +
-    `  path.pixel-line[stroke] { stroke-width: max(1px, ${smallWidth}vw); shape-rendering: crispEdges; }\n` +
+    `  .icon-small path, .icon-small circle { shape-rendering: crispEdges; }\n` +
     `  .icon-normal { display: none; } .icon-32 { display: inline; }\n}\n` +
     `@media (max-width: 28px) { .icon-32 { display: none; } .icon-24 { display: inline; } }\n` +
     `@media (max-width: 20px) { .icon-24 { display: none; } .icon-16 { display: inline; } }\n</style>\n` +
-    `<rect width="1024" height="1024" rx="180" fill="${ICON_BACKGROUND}"/>\n` +
+    (background ? `<rect width="1024" height="1024" rx="180" fill="${background}"/>\n` : "") +
     group("icon-normal", body) + [16, 24, 32].map(size => group(`icon-small icon-${size}`, pixelHint(size))).join("") + "</svg>\n";
 }
 
@@ -161,12 +178,15 @@ async function generate() {
     write("brand/rnl-logo.svg", svg);
     write("brand/rnl-logo-dark.svg", dark);
     write("brand/rnl-icon.svg", icon);
+    write("brand/rnl-logo-small.svg", iconSvg(svg, bounds, { background: null }));
+    write("brand/rnl-logo-small-dark.svg", iconSvg(dark, bounds, { background: null }));
     for (const size of [16, 24, 32, 1024]) await png(page, icon, size, join(root, `brand/rnl-icon-${size}.png`));
 
     const assets = join(root, "site/src/assets");
     mkdirSync(join(assets, "brand"), { recursive: true });
-    copyFileSync(join(root, "brand/rnl-logo.svg"), join(assets, "brand/rnl-logo.svg"));
-    copyFileSync(join(root, "brand/rnl-logo-dark.svg"), join(assets, "brand/rnl-logo-dark.svg"));
+    for (const name of ["rnl-logo.svg", "rnl-logo-dark.svg", "rnl-logo-small.svg", "rnl-logo-small-dark.svg"]) {
+      copyFileSync(join(root, "brand", name), join(assets, "brand", name));
+    }
     writeFileSync(join(assets, "favicon.svg"), icon);
     copyFileSync(join(root, "brand/rnl-icon-32.png"), join(assets, "favicon-32.png"));
     await png(page, icon, 180, join(assets, "apple-touch-icon.png"));

@@ -9,11 +9,16 @@ for (const lang of ["zh", "en"]) {
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto(`/${lang}/`);
     const light = page.locator(".hero-logo .logo-light"), dark = page.locator(".hero-logo .logo-dark");
+    async function navTheme(theme) {
+      await expect(page.locator(`.brand-logo .logo-${theme}`)).toBeVisible();
+      await expect(page.locator(`.brand-logo .logo-${theme === "light" ? "dark" : "light"}`)).toBeHidden();
+    }
     await expect(light).toBeVisible();
     await expect(dark).toBeHidden();
+    await navTheme("light");
     await page.evaluate(() => document.fonts.ready);
     await expect(page.locator("#hero-title")).toHaveText("RNL");
-    for (const image of await page.locator(".hero-logo img").all()) {
+    for (const image of await page.locator(".theme-logo img").all()) {
       await expect(image).toHaveAttribute("alt", "");
       expect(await image.evaluate(el => el.complete && el.naturalWidth > 0)).toBe(true);
     }
@@ -26,27 +31,40 @@ for (const lang of ["zh", "en"]) {
     await page.emulateMedia({ colorScheme: "dark" });
     await expect(light).toBeHidden();
     await expect(dark).toBeVisible();
+    await navTheme("dark");
     await capture("dark-1440");
     // Manual light overrides a dark system, then manual dark overrides a light system.
     await page.locator("#theme-btn").click();
     await expect(light).toBeVisible();
+    await navTheme("light");
     await page.emulateMedia({ colorScheme: "light" });
     await page.locator("#theme-btn").click();
     await expect(dark).toBeVisible();
+    await navTheme("dark");
     await page.reload();
     await expect(dark).toBeVisible();
+    await navTheme("dark");
     await page.setViewportSize({ width: 390, height: 844 });
     await capture("dark-390");
     await page.locator("#theme-btn").click();
     await expect(light).toBeVisible();
+    await navTheme("light");
     await capture("light-390");
     const fits = await page.locator("#hero-title").evaluate(el => {
       const logo = el.querySelector(".hero-logo").getBoundingClientRect();
       const text = el.querySelector(".wordmark").getBoundingClientRect();
-      return logo.right < text.left && logo.top < text.bottom && logo.bottom > text.top &&
+      return Math.abs(text.left - logo.right) < 1 && logo.top < text.bottom && logo.bottom > text.top &&
         text.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth;
     });
     expect(fits).toBe(true);
+    for (const width of [641, 768, 1000]) {
+      await page.setViewportSize({ width, height: 1000 });
+      expect(await page.locator(".topbar-in").evaluate(el =>
+        document.documentElement.scrollWidth <= innerWidth && [...el.children]
+          .filter(child => getComputedStyle(child).display !== "none")
+          .every(child => child.getBoundingClientRect().right <= innerWidth)),
+      `${lang} navigation should fit at ${width}px`).toBe(true);
+    }
   });
 }
 
@@ -76,7 +94,7 @@ test("built favicon URLs resolve for both languages, standalone pages, viewer an
   }
   // Standalone HTML embeds the homepage images as well as the favicons.
   await page.goto("/en/rnl-intro-standalone.html");
-  for (const image of await page.locator(".hero-logo img").all()) {
+  for (const image of await page.locator(".theme-logo img").all()) {
     await expect(image).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
   }
 });

@@ -49,6 +49,11 @@ test("small SVG icons gain sharper ink only at 32px and below, including when em
         // Pixel fitting replaces fractional coverage with solid pixels; retain a weight increase.
         assert.ok(ink(actual) > ink(original) * 1.15, `${size}px should have stronger visible strokes`);
         assert.ok(fringes(actual) < fringes(await pixels(soft, size)) * .7, `${size}px should have fewer blended edge pixels`);
+        for (let i = 0; i < actual.length; i += 4) {
+          if (actual[i] <= 32) continue; // The rounded backdrop may retain partial coverage.
+          assert.ok(["224,224,226", "232,89,12"].includes(actual.slice(i, i + 3).join(",")),
+            `${size}px circuit paths and dots should use solid colours without blended edges`);
+        }
       }
       else assert.deepEqual(actual, original, `${size}px must retain the original strokes`);
     }
