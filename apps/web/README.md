@@ -22,7 +22,7 @@ Text is decoded as `rnl` decodes it, UTF-8 or else Latin-1, so a document is the
 
 The first sidebar tab, **Library**, groups the session's searchable files. Opening a file with Open File, a drop, the command line (desktop), or `?url=` (web) also adds it to **Files**, without duplicates. **Include File** adds selected netlists or `.rnl` packages; **Include Folder** recursively adds files with netlist/package extensions (`sp`, `spi`, `spice`, `cir`, `ckt`, `net`, `inc`, `lib`, `scs`, `rnl`), preserving their directories. Click a pooled file to open it. **Exclude** removes it from the search pool, without deleting the file or closing an already open document. Pool changes rebuild the current document while keeping edited text and the view; edits not yet applied remain unapplied.
 
-Built-in standard packages from series 0.3 and 0.2, and `analog-canvas-extensions`, are in the initially collapsed **Built-in** group, with **read only** badges. They can be opened but cannot be edited or excluded. The pool itself lasts for this viewer session. Files starts expanded; group collapse state lasts only for this session, and a newly added file expands Files. Matching root-file rows are highlighted across all groups; selecting an included Netlist tab does not change that highlight.
+Built-in standard packages from series 0.3 and 0.2 are in the initially collapsed **Built-in** group, with **read only** badges. They can be opened but cannot be edited or excluded. The pool itself lasts for this viewer session. Files starts expanded; group collapse state lasts only for this session, and a newly added file expands Files. Matching root-file rows are highlighted across all groups; selecting an included Netlist tab does not change that highlight.
 
 Clipboard text occupies one separate **temporary · not searched** row above the groups. It never enters include/package lookup. Click it to return to its last applied text; unapplied edits follow the usual file-switch confirmation. The next paste replaces this slot, and closing or reloading clears it.
 
@@ -107,3 +107,5 @@ The page keeps the browser baseline of decision 0008: Chromium 109, the last Chr
 [`web.yml`](../../.github/workflows/web.yml) builds the site with the samples on Linux, checks every script with `node --check`, and checks that the site is served with the right types.
 
 See the [roadmap](../../docs/roadmap.md) for planned work.
+
+A missing named USE-PACKAGE keeps the core error. When the public index has its exact name and version, the hint offers Include, adds that package to Library, and rebuilds the applied document while preserving edits. Otherwise it points to File › Include Public Package…. Public extensions such as `analog-canvas-extensions` are not built in.

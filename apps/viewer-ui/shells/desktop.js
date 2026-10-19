@@ -40,7 +40,7 @@ export default {
   },
   // the version Tauri has from tauri.conf.json, which the installers carry too
   version: () => tauri.app.getVersion(),
-  // the opener plugin, which the app's capability lets open the repository's pages on GitHub only
+  // the opener plugin, which the app's capability allows repository pages and the exact public package page
   browse: (url) => invoke("plugin:opener|open_url", { url }),
   // the Solve menu (decision 0010): solved natively on a thread of the app's, nothing written
   solve: async (source, settings, edits) => {

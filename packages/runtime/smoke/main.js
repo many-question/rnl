@@ -1,8 +1,9 @@
 // The page of smoke.mjs: the package as a frontend uses it, the core in its Worker. It builds a
-// netlist of 0.3 that draws a symbol of analog-canvas-extensions, which the core bundles, and writes
+// netlist of 0.3 that draws a symbol of analog-canvas-extensions, explicitly added to the request pool, and writes
 // an edit into a netlist without RNL records. #result gets what smoke.mjs checks, and its
 // data-state "done", or "failed" with the error.
 import { startCore } from "@rich-netlist/runtime";
+import canvasUrl from "@rich-netlist/runtime/packages/analog-canvas-extensions.rnl?url";
 
 const netlist = `* smoke
 * @RNL(type="header") { @VERSION("0.3"); @USE-PACKAGE(name="analog-canvas-extensions", version="0.1")}
@@ -20,7 +21,9 @@ R1 a 0 1k
 const result = document.getElementById("result");
 const core = startCore();
 try {
-  const drawn = await core.build({ entry: "/smoke.sp", files: { "/smoke.sp": netlist } });
+  const packagePath = "/library/analog-canvas-extensions.rnl";
+  const packageText = await (await fetch(canvasUrl)).text();
+  const drawn = await core.build({ entry: "/smoke.sp", files: { "/smoke.sp": netlist, [packagePath]: packageText }, pool: [packagePath] });
   const write = { dialect: "spice", netlist: edited, author: "smoke", ops: [{ level: "file", op: "set", object: "#R1", at: [2, 0] }] };
   const { text } = await core.write({ write, svg: false });
   result.textContent = JSON.stringify({

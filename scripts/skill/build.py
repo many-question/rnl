@@ -134,7 +134,7 @@ def role_text(role) -> str:
 
 
 def packages_md(rnl: Path) -> str:
-    r = run_rnl(rnl, "catalog")
+    r = run_rnl(rnl, "catalog", "--path", str(ROOT / "libraries" / "analog-canvas-extensions"))
     if r.returncode != 0:
         raise Failed(f"rnl catalog:\n{r.stderr or r.stdout}")
     cat = json.loads(r.stdout)
@@ -145,7 +145,7 @@ def packages_md(rnl: Path) -> str:
         return x["version"] == SERIES or x.get("package", x.get("name")) == "analog-canvas-extensions"
 
     pkgs = sorted((p for p in cat["packages"] if wanted(p)), key=lambda p: p["name"])
-    # the catalog is the one the command bundles: it must be the package files of this checkout
+    # The standard catalog plus the explicitly supplied public extension must match this checkout.
     errors = []
     for p in pkgs:
         if (p["name"], p["version"]) not in files:

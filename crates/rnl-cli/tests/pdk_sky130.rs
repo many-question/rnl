@@ -1,4 +1,4 @@
-//! The SkyWater SKY130 PDK symbol package `rnl-pdk-sky130` 0.1 (`libraries/pdk/sky130`):
+//! The SkyWater SKY130 PDK symbol package `pdk-sky130` 0.1 (`libraries/pdk/sky130`):
 //! terminal declarations (`@DEVICE`), multi-terminal symbols (`$SKY130_*`), and model-to-symbol
 //! rules (`@SELECT-INSTANCE`) for `sky130_fd_pr` in both SPICE and Spectre dialects, tested both
 //! without PDK model files and with stubbed `.subckt` / `subckt` definitions.
@@ -16,7 +16,7 @@ fn pdk_dir() -> PathBuf {
 }
 
 fn package_file() -> PathBuf {
-    pdk_dir().join("rnl-pdk-sky130.rnl")
+    pdk_dir().join("pdk-sky130.rnl")
 }
 
 fn examples_dir() -> PathBuf {
@@ -59,7 +59,7 @@ fn package_checked_on_its_own_has_zero_diagnostics_and_integer_pins() {
     let r = interpret_file(&package_file(), None, &FsProvider::new(&[]), &Options::default()).unwrap();
     assert!(diags(&r).is_empty(), "{:?}", diags(&r));
 
-    let options = rnl_view::CatalogOptions { packages: Some(vec!["rnl-pdk-sky130".into()]), ..Default::default() };
+    let options = rnl_view::CatalogOptions { packages: Some(vec!["pdk-sky130".into()]), ..Default::default() };
     let c = rnl_view::catalog(&FsProvider::new(&[pdk_dir()]), &options);
     assert_eq!(c.symbols.len(), CUSTOM_SYMBOLS.len());
     for s in &c.symbols {
@@ -148,7 +148,7 @@ ends sky130_fd_pr__cap_mim_m3_1
             .with(name, &with_pdk)
             .with("sky130_fd_pr_stub.spice", stub_spice)
             .with("sky130_fd_pr_stub.scs", stub_spectre)
-            .with("pkg/rnl-pdk-sky130.rnl", &pkg_text);
+            .with("pkg/pdk-sky130.rnl", &pkg_text);
         mem.package_dirs.push("pkg".into());
         let r_with = interpret_file(Path::new(name), None, &mem, &Options::default()).unwrap();
         assert!(diags(&r_with).is_empty(), "{name} (with PDK): {:?}", diags(&r_with));
@@ -162,7 +162,7 @@ ends sky130_fd_pr__cap_mim_m3_1
 fn device_families_and_symbols_match_in_spice_and_spectre() {
     let pkg_text = std::fs::read_to_string(package_file()).unwrap();
     let spice = r#"* All SKY130 device families in SPICE
-* @RNL(type="header") { @VERSION("0.3"); @USE-PACKAGE(name="rnl-pdk-sky130", version="0.1") }
+* @RNL(type="header") { @VERSION("0.3"); @USE-PACKAGE(name="pdk-sky130", version="0.1") }
 XM_N d g s 0 sky130_fd_pr__nfet_01v8 w=1 l=0.15
 XM_NVT d g s 0 sky130_fd_pr__nfet_05v0_nvt w=2 l=0.9
 XM_ND d g s 0 sky130_fd_pr__nfet_20v0 w=2 l=1
@@ -191,7 +191,7 @@ XL_IND a b ct 0 sky130_fd_pr__ind_03_90
 .end
 "#;
     let spectre = r#"// SKY130 device families in Spectre (no X prefix)
-// @RNL(type="header") { @VERSION("0.3"); @USE-PACKAGE(name="rnl-pdk-sky130", version="0.1") }
+// @RNL(type="header") { @VERSION("0.3"); @USE-PACKAGE(name="pdk-sky130", version="0.1") }
 M_N (d g s 0) sky130_fd_pr__nfet_01v8 w=1u l=0.15u
 M_P (d g s vdd) sky130_fd_pr__pfet_01v8_hvt w=2u l=0.15u
 Q_P (0 b e 0) sky130_fd_pr__pnp_05v5_W3p40L3p40
@@ -207,7 +207,7 @@ L_IND (a b ct 0) sky130_fd_pr__ind_03_90
 // }
 "#;
     let mut mem =
-        MemoryProvider::new().with("all.sp", spice).with("all.scs", spectre).with("pkg/rnl-pdk-sky130.rnl", &pkg_text);
+        MemoryProvider::new().with("all.sp", spice).with("all.scs", spectre).with("pkg/pdk-sky130.rnl", &pkg_text);
     mem.package_dirs.push("pkg".into());
     let r = interpret_file(Path::new("all.sp"), None, &mem, &Options::default()).unwrap();
     assert!(errors_and_warnings(&r).is_empty(), "{:?}", errors_and_warnings(&r));

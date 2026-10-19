@@ -79,11 +79,17 @@ fn the_controlled_sources_of_two_terminals_are_the_diamonds_of_analog_canvas() {
         record.push(format!("*   #R{} @SET-SYMBOL {std} => @PLACE({}, 0)", 2 * k, 20 * k));
         record.push(format!("*   #R{} @SET-SYMBOL {canvas} => @PLACE({}, 10)", 2 * k + 1, 20 * k));
     }
-    let r = read(&format!(
+    let text = format!(
         "* t\n* @RNL(type=\"header\") {{ @VERSION(\"0.3\"); \
          @USE-PACKAGE(name=\"analog-canvas-extensions\", version=\"0.1\")}}\n{instances}* @RNL {{\n{}\n* }}\n.end\n",
         record.join(";\n")
-    ));
+    );
+    let mut files = MemoryProvider::new().with("t.sp", &text).with(
+        "pkgs/canvas.rnl",
+        include_str!("../../../libraries/analog-canvas-extensions/analog-canvas-extensions.rnl"),
+    );
+    files.package_dirs.push("pkgs".into());
+    let r = interpret_file(Path::new("t.sp"), None, &files, &Options::default()).unwrap();
     assert!(errors(&r).is_empty(), "{:?}", errors(&r));
     let lv = top(&r);
     for (std, canvas) in pairs {

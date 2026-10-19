@@ -6,7 +6,7 @@ The core of [RNL](https://github.com/rich-netlist/rnl), the Rich Netlist, as Web
 - the editor interface's snapshot;
 - the netlist with an edit's operations written into it.
 
-It is the same core as the `rnl` command and the desktop viewer, and gives the Documents they give. It bundles the standard packages, the series 0.2 and 0.3, and `analog-canvas-extensions`, so a netlist that names them needs no package files of its own.
+It is the same core as the `rnl` command and the desktop viewer, and gives the Documents they give. It bundles only the standard packages, the series 0.2 and 0.3 (including `rnl-zh`). Other packages must be supplied explicitly. The npm package ships `packages/analog-canvas-extensions.rnl` as an optional data file; shipping it does not load it.
 
 ## Install
 
@@ -32,6 +32,30 @@ core.terminate();
 ```
 
 `@rich-netlist/runtime/core` loads the module in the calling thread instead, and `@rich-netlist/runtime/worker` is the Worker itself. The requests, the Document, the snapshot and the catalog are declared in the package's TypeScript files. The [binding's README](https://github.com/rich-netlist/rnl/tree/main/bindings/runtime-wasm#readme) describes the requests, `collect` for a frontend's own file access, and `decodeText`.
+
+## Optional Canvas package
+
+In a Vite frontend, import the shipped file as a URL, read it, then explicitly add it to both `files` and `pool`:
+
+```js
+import { startCore } from "@rich-netlist/runtime";
+import canvasUrl from "@rich-netlist/runtime/packages/analog-canvas-extensions.rnl?url";
+
+const core = startCore();
+const packagePath = "/library/analog-canvas-extensions.rnl";
+const packageText = await (await fetch(canvasUrl)).text();
+const document = await core.build({
+  entry: "/top.sp",
+  files: { "/top.sp": netlistText, [packagePath]: packageText },
+  pool: [packagePath],
+});
+```
+
+The netlist still writes `@USE-PACKAGE(name="analog-canvas-extensions", version="0.1")`.
+Supplying the file in `files` alone does not make it searchable. Keep the same `files` and `pool`
+for snapshot requests and subsequent rebuilds. In Node, read the data file with
+`readFile(new URL(import.meta.resolve("@rich-netlist/runtime/packages/analog-canvas-extensions.rnl")), "utf8")`
+from `node:fs/promises` instead of the Vite URL import.
 
 ## Catalog
 
@@ -78,4 +102,4 @@ The previews are numbered `0.1.0-preview.N`. They follow the toolkit's `main` br
 
 ## License
 
-The JavaScript modules and the code compiled into the module are under the MIT license (`LICENSE`). The module also holds the standard packages and `analog-canvas-extensions`, under CC0-1.0, and the metrics of the font Noto Sans SC, copyright 2014-2021 Adobe, under the SIL Open Font License 1.1 (`LICENSES/`).
+The JavaScript modules and the code compiled into the module are under the MIT license (`LICENSE`). The package also holds the built-in standard packages and the optional `analog-canvas-extensions` data file, under CC0-1.0, and the metrics of the font Noto Sans SC, copyright 2014-2021 Adobe, under the SIL Open Font License 1.1 (`LICENSES/`).

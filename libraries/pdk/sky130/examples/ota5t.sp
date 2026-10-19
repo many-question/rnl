@@ -11,7 +11,7 @@ XCL out 0 sky130_fd_pr__cap_mim_m3_1 w=10 l=10
 Vdd vdd 0 1.8
 * @RNL(type="header") {
 *   @VERSION("0.3");
-*   @USE-PACKAGE(name="rnl-pdk-sky130", version="0.1")
+*   @USE-PACKAGE(name="pdk-sky130", version="0.1")
 * }
 * @RNL {
 *   &vdd @ADD-TO $SUPPLY_NET_SET;

@@ -36,7 +36,7 @@ test("the problems are listed, the most serious first, and their lines are colou
   const [errors, warnings, hints] = [count("error"), count("warning"), count("hint")];
   expect(errors && warnings && hints).toBeTruthy();
   await expect(page.locator("#counts")).toHaveText(`${errors} errors${warnings} warnings${hints} hints`);
-  const items = page.locator("#diags li.diag");
+  const items = page.locator("#diags li.diag:not(.package-hint)");
   await expect(items).toHaveCount(diags.length);
   const shown = await items.evaluateAll((els) => els.map((e) => e.classList[1]));
   expect(shown).toEqual([...Array(errors).fill("error"), ...Array(warnings).fill("warning"), ...Array(hints).fill("hint")]);

@@ -135,8 +135,8 @@ async function showsDocument(page, doc) {
   await expect(page.locator("#file-tabs button")).toHaveText(doc.files.map((f) => f.name.split("/").pop()));
   const lines = doc.files[0].text.replace(/\r?\n$/, "").split(/\r?\n/).length;
   await expect(page.locator("#source .file:not([hidden]) .ln")).toHaveCount(lines);
-  // the problems, the most serious first
-  await expect(page.locator("#diags .diag")).toHaveCount(doc.diagnostics.length + (doc.failed ? 1 : 0));
+  // Core diagnostics retain their counts; viewer-only package remedies follow the relevant error.
+  await expect(page.locator("#diags .diag:not(.package-hint)")).toHaveCount(doc.diagnostics.length + (doc.failed ? 1 : 0));
   // the hierarchy: the top level, and every subcircuit in the index
   await page.locator("#tab-hierarchy").click();
   await expect(page.locator("#tree .tree-row").first()).toContainText(doc.levels[0].title);
@@ -579,13 +579,13 @@ test("the web library adds SKY130 without duplicating built-ins, which open read
   await expect(page.locator('[data-group="builtin"]').getByRole("button", { name: /Exclude/ })).toHaveCount(0);
   await page.locator("#include-library").click();
   const dialog = page.locator("dialog.dialog");
-  await expect(dialog.locator(".dialog-option")).toContainText(["rnl-pdk-sky130"]);
+  await expect(dialog.locator(".dialog-option")).toContainText(["pdk-sky130"]);
   await expect(dialog.locator(".dialog-option")).not.toContainText(["rnl-std-basic"]);
   await dialog.locator("input[type=search]").fill("sky130");
   await dialog.locator("input[type=search]").press("Enter");
-  await expect(page.getByRole("button", { name: "Exclude rnl-pdk-sky130 0.1", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Exclude pdk-sky130 0.1", exact: true })).toBeVisible();
   await page.locator("#file-input").setInputFiles({ name: "sky.sp", mimeType: "text/plain", buffer: Buffer.from(
-    '* sky\n* @RNL(type="header") { @VERSION("0.3"); @USE-PACKAGE(name="rnl-pdk-sky130", version="0.1") }\nXM1 d g 0 0 sky130_fd_pr__nfet_01v8\n.end\n') });
+    '* sky\n* @RNL(type="header") { @VERSION("0.3"); @USE-PACKAGE(name="pdk-sky130", version="0.1") }\nXM1 d g 0 0 sky130_fd_pr__nfet_01v8\n.end\n') });
   const doc = await shown(page);
   expect(doc.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
   await page.locator("#tab-files").click();
@@ -594,6 +594,33 @@ test("the web library adds SKY130 without duplicating built-ins, which open read
   await page.evaluate(() => window.viewer.command("toggle-edit"));
   expect(await page.evaluate(() => window.viewer.checked("toggle-edit"))).toBe(false);
   await expect(page.locator("#source")).toContainText("@PACKAGE");
+});
+
+test("a missing published Canvas package offers Include and rebuilds; other versions offer the File menu hint", async ({ page }, info) => {
+  await start(page);
+  const source = fs.readFileSync(path.join(root, "tests/viewer/inputs/missing-canvas-package.sp"));
+  const before = await opened(page, () => page.locator("#file-input").setInputFiles({ name: "canvas.sp", mimeType: "text/plain", buffer: source }));
+  expect(before.diagnostics.some(d => d.message.includes("package analog-canvas-extensions 0.1 cannot be found"))).toBe(true);
+  await expect(page.locator(".package-hint")).toContainText("This package is published.");
+  if (process.env.RNL_PACKAGE_SCREENSHOTS && info.project.name === "chromium") {
+    await page.screenshot({ path: path.join(process.env.RNL_PACKAGE_SCREENSHOTS, "web-missing-canvas-include.png") });
+  }
+  const after = await opened(page, () => page.locator(".package-hint").getByRole("button", { name: "Include", exact: true }).click());
+  expect(after.diagnostics.filter(d => d.severity === "error")).toEqual([]);
+  await expect(page.locator(".package-hint")).toHaveCount(0);
+  await page.locator("#tab-files").click();
+  await expect(page.getByRole("button", { name: "Exclude analog-canvas-extensions 0.1", exact: true })).toBeVisible();
+  const builtin = page.locator('[data-group="builtin"]');
+  await builtin.locator(".lib-toggle").click();
+  await expect(builtin.locator(".pool-row")).toHaveCount(25);
+  expect(await builtin.locator(".pool-open").allTextContents()).toEqual(expect.arrayContaining(["0.3/rnl-std.rnl", "0.2/rnl-std.rnl"]));
+  for (const name of await builtin.locator(".pool-open").allTextContents()) expect(name).toMatch(/^0\.[23]\/rnl-(std|zh)/);
+  if (process.env.RNL_PACKAGE_SCREENSHOTS && info.project.name === "chromium") {
+    await page.screenshot({ path: path.join(process.env.RNL_PACKAGE_SCREENSHOTS, "web-library-standard-builtins.png") });
+  }
+  await opened(page, () => page.locator("#file-input").setInputFiles({ name: "canvas-newer.sp", mimeType: "text/plain", buffer: Buffer.from(source.toString().replace('version="0.1"', 'version="99.0"')) }));
+  await expect(page.locator(".package-hint")).toContainText("Look for it in File › Include Public Package…");
+  await expect(page.locator(".package-hint button")).toHaveCount(0);
 });
 
 

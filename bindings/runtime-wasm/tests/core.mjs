@@ -335,3 +335,23 @@ test("decodeText reads bytes as rnl reads a file", () => {
   assert.equal(decodeText(bytes.buffer), `\n* ${char(0xb5, 0xb0, 0x80, 0x9f)}\n`);
   assert.equal(decodeText(new Uint8Array(70000).fill(0xe9)), char(0xe9).repeat(70000));
 });
+
+const canvasPath = "/library/analog-canvas-extensions.rnl";
+const canvasText = await readFile(new URL("packages/analog-canvas-extensions.rnl", dist), "utf8");
+const canvasNetlist = `* optional canvas
+* @RNL(type="header") { @VERSION("0.3"); @USE-PACKAGE(name="analog-canvas-extensions", version="0.1") }
+R1 a 0 1k
+* @RNL { #R1 @SET-SYMBOL $CANVAS_VCVS_DIAMOND; #R1 @PLACE(0, 0) }
+.end
+`;
+const canvasRequest = { entry: "/canvas.sp", files: { "/canvas.sp": canvasNetlist, [canvasPath]: canvasText } };
+test("the shipped Canvas package is not built-in or searched merely because it is in files", () => {
+  const doc = core.build(canvasRequest);
+  assert.ok(doc.diagnostics.some(d => d.severity === "error" && d.message.includes("package analog-canvas-extensions 0.1 cannot be found")));
+  assert.ok(core.catalog({ catalog: {} }).packages.every(p => p.name.startsWith("rnl-std") || p.name === "rnl-zh"));
+});
+test("the shipped Canvas package resolves when explicitly placed in the pool", () => {
+  const doc = core.build({ ...canvasRequest, pool: [canvasPath] });
+  assert.deepEqual(doc.diagnostics.filter(d => d.severity === "error"), []);
+  assert.ok(doc.levels[0].svg.length > 0);
+});
