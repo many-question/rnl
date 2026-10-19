@@ -12,7 +12,7 @@ fn package_dir() -> PathBuf {
 }
 
 #[test]
-fn package_and_gallery_check_and_render_without_errors_or_warnings() {
+fn package_and_gallery_check_without_errors_or_warnings_and_the_gallery_renders() {
     let provider = FsProvider::new(&[package_dir()]);
     for name in ["eda-style.rnl", "eda-style-gallery.scs"] {
         let r = interpret_file(&package_dir().join(name), None, &provider, &Options::default()).unwrap();
@@ -23,7 +23,8 @@ fn package_and_gallery_check_and_render_without_errors_or_warnings() {
             .map(|d| r.sink.render(d))
             .collect();
         assert!(problems.is_empty(), "{name}: {problems:?}");
-        assert!(!r.model.levels.is_empty(), "{name}");
+        // A package defines symbols without a drawing level; the example has a root and six subcircuits.
+        assert_eq!(r.model.levels.len(), if name.ends_with(".rnl") { 0 } else { 7 }, "{name}");
         for level in &r.model.levels {
             let svg = rnl_render::svg(level, &RenderOptions::default());
             assert!(svg.contains("<svg"), "{name}: {}", level.title);
