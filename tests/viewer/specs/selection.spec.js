@@ -49,11 +49,11 @@ test("clicking a symbol selects its instance and marks its statement and the pla
   await expect(page.locator("#selection")).toHaveText(`Vin instance in ${TOP}`);
 });
 
-test("clicking a wire, a pin or a ground selects the net", async ({ page, viewer }) => {
+test("clicking a wire or a pin selects the net", async ({ page, viewer }) => {
   // d has no wire, and its pin is on X3's symbol: only the pin tells the net from the instance there
   const d = await viewer.object("net", "d", TOP);
   expect(await page.evaluate((o) => window.viewer.doc.levels[0].hits.filter((h) => h.objects.includes(o)).map((h) => h.kind), d)).toEqual(["pin"]);
-  for (const [name, kind] of [["b", "wire"], ["d", "pin"], ["0", "box"]]) {
+  for (const [name, kind] of [["b", "wire"], ["d", "pin"]]) {
     const net = await viewer.object("net", name, TOP);
     await viewer.click(name, kind);
     await viewer.selected(`net ${name} in ${TOP}`);

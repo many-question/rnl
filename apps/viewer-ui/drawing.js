@@ -358,7 +358,8 @@ export function paintDrawingSelection() {
   for (const g of svg.querySelectorAll(".sel")) g.classList.remove("sel");
   overlay.replaceChildren();
   if (selected === null) return;
-  const isInstance = doc.objects[selected].kind === "instance";
+  const kind = doc.objects[selected].kind;
+  const isInstance = kind === "instance";
   for (const h of doc.levels[current].hits) {
     if (!h.objects.includes(selected)) continue;
     if (h.id) for (const g of groups.get(h.id) || []) g.classList.add("sel");
@@ -367,13 +368,13 @@ export function paintDrawingSelection() {
       const [[x0, y0], [x1, y1]] = h.points;
       const r = svgElement("rect", { x: x0 - 1.5, y: y0 - 1.5, width: x1 - x0 + 3, height: y1 - y0 + 3, class: "label" });
       overlay.append(r);
-    } else if (h.kind === "box" && isInstance) {
+    } else if (h.kind === "box" && h.objects[0] === selected) {
       const [[x0, y0], [x1, y1]] = h.points;
-      if (opens(selected) !== null && !badgeAt) badgeAt = [x1, y0];
+      if (isInstance && opens(selected) !== null && !badgeAt) badgeAt = [x1, y0];
       const r = svgElement("rect", { x: x0, y: y0, width: x1 - x0, height: y1 - y0 });
       r.setAttribute("vector-effect", "non-scaling-stroke");
       overlay.append(r);
-    } else if (h.kind === "pin" && !isInstance) {
+    } else if (h.kind === "pin" && kind === "net") {
       const c = svgElement("circle", { cx: h.points[0][0], cy: h.points[0][1], r: 3.2 });
       c.setAttribute("vector-effect", "non-scaling-stroke");
       overlay.append(c);

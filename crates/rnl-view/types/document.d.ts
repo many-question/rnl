@@ -30,7 +30,7 @@ export type Document = {
    */
   files: Array<SourceFile>,
   /**
-   * The instances and nets of every level.
+   * The instances, nets and drawn usages of every level.
    */
   objects: Array<Object>,
   /**
@@ -129,7 +129,9 @@ export type Hit = {
    */
   points: Array<[number, number]>,
   /**
-   * The objects it stands for: an instance (several for a bundle), or nets.
+   * The objects it stands for: an instance (several for a bundle), a usage followed by its
+   * associated net, or nets. The first object is what clicking the hit selects. A usage's
+   * label keeps its net first, so clicking a net label continues to select the net.
    */
   objects: Array<number>,
   /**
@@ -239,9 +241,12 @@ export type SourceFile = {
 
 export type Object = {
   /**
-   * "instance" or "net".
+   * "instance", "net" or "usage".
    */
   kind: string,
+  /**
+   * An instance or net's name, or a usage's editor identity (`%gnd1` when named).
+   */
   name: string,
   /**
    * The host level it belongs to, and that level's title.

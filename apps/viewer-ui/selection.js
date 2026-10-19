@@ -1,4 +1,4 @@
-// The selection: an instance or a net, followed between the drawing and the text.
+// The selection: an instance, a net or a virtual symbol, followed between drawing and text.
 
 import { current, doc, selected, setSelected } from "./state.js";
 import { paintDrawingSelection } from "./drawing.js";
@@ -34,7 +34,7 @@ export function select(o, from) {
   if (opens(o) !== null) {
     sel.append(b, ` instance of ${doc.levels[obj.opens].title} in ${obj.level_title} · Enter opens it`);
   } else {
-    sel.append(b, ` ${obj.kind === "instance" ? "instance" : "net"} in ${obj.level_title}`);
+    sel.append(b, ` ${obj.kind} in ${obj.level_title}`);
   }
 }
 
