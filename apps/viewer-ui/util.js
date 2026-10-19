@@ -20,12 +20,15 @@ export function svgElement(name, attrs) {
 }
 
 let preferences = null;
+let ephemeral = false;
 let persist = null;
 let pending = Promise.resolve();
 export let settingsPath = null;
 
 /** Load native settings before any view writes its initial state; migrate known browser keys once. */
 export async function startSettings(shell) {
+  ephemeral = !!shell.embed;
+  if (ephemeral) return;
   if (!shell.loadSettings) return;
   const keys = ["sidebar-width", "sidebar-shown", "side-pane", "problems-height", "problems-shown",
     "index-height", "show-failed", "hover-names", "grid-shown", "grid-style", "grid-spacing",
@@ -49,6 +52,7 @@ export const flushSettings = () => pending;
 
 /** A persisted value, or `fallback` when there is none to read. */
 export function load(key, fallback) {
+  if (ephemeral) return fallback;
   if (preferences) return Object.hasOwn(preferences, key) ? preferences[key] : fallback;
   try {
     const v = localStorage.getItem(key);
@@ -60,6 +64,7 @@ export function load(key, fallback) {
 
 /** Keep settings in the native configuration file, or browser storage on the web. */
 export function save(key, value) {
+  if (ephemeral) return;
   if (preferences) {
     const before = preferences[key];
     preferences[key] = value;

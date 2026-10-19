@@ -1,0 +1,355 @@
+// Real iframe, postMessage transport and WebAssembly core; Chromium and WebKit only.
+import fs from "node:fs";
+import http from "node:http";
+import path from "node:path";
+import { expect, test } from "@playwright/test";
+
+test.skip(!process.env.RNL_WEB_URL, "the site is not built: RNL_WEB=0");
+const base = process.env.RNL_WEB_URL;
+const hierarchy = "samples/cases/04-hierarchy.sp";
+const rc = "samples/cases/01-rc-lowpass.sp";
+const text = (name) => `* ${name}\nR1 in out 1k\n* @RNL { #R1 @PLACE(0, 0) }\n.end\n`;
+const review = process.env.RNL_EMBED_REVIEW_DIR;
+const servers = [];
+
+test.afterEach(async () => {
+  for (const server of servers.splice(0)) {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+async function start(page, params = {}, { hostOrigin, seed = {} } = {}) {
+  const url = new URL("/", base);
+  url.search = new URLSearchParams({ embed: "1", ...params });
+  const html = `
+    <!doctype html><html><head><style>body{margin:0}iframe{width:900px;height:600px;border:0}#outer{height:2400px}</style></head><body>
+    <button id="outside">Outer page</button><div id="mount"></div><div id="outer"></div>
+    <script>
+      window.messages = [];
+      window.addEventListener('message', (event) => {
+        if (event.data?.rnl === 1) window.messages.push({ ...event.data, origin: event.origin });
+      });
+      for (const [key, value] of Object.entries(${JSON.stringify(seed)})) localStorage.setItem(key, JSON.stringify(value));
+      window.storedBefore = JSON.stringify({...localStorage});
+      const frame = document.createElement('iframe'); frame.id = 'viewer'; frame.title = 'Embedded viewer';
+      frame.src = ${JSON.stringify(url.href)}; document.getElementById('mount').append(frame);
+    </script></body></html>`;
+  if (hostOrigin) {
+    // Serve the cross-origin parent over real loopback HTTP. A fulfilled main-document route
+    // has no IP address, which Chromium can classify as public and block from accessing loopback.
+    const server = http.createServer((_, response) => {
+      response.writeHead(200, { "Content-Type": "text/html" });
+      response.end(html);
+    });
+    servers.push(server);
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    hostOrigin = `http://127.0.0.1:${server.address().port}`;
+  } else await page.route("**/embed-test-host", (route) => route.fulfill({ contentType: "text/html", body: html }));
+  await page.addInitScript(() => {
+    if (new URLSearchParams(location.search).get("embed") !== "1") return;
+    window.storageCalls = [];
+    for (const method of ["getItem", "setItem", "removeItem", "clear"]) {
+      const original = Storage.prototype[method];
+      Storage.prototype[method] = function (...args) {
+        window.storageCalls.push([method, ...args]);
+        return original.apply(this, args);
+      };
+    }
+  });
+  await page.goto(`${hostOrigin || base}/embed-test-host`);
+  await waitMessage(page, "ready");
+  const frame = page.frames().find((item) => item.url().includes("embed=1"));
+  expect(frame).toBeTruthy();
+  return frame;
+}
+
+async function messages(page, type) {
+  return page.evaluate((type) => window.messages.filter((item) => item.type === type), type);
+}
+
+async function waitMessage(page, type, count = 1) {
+  await expect.poll(async () => (await messages(page, type)).length).toBe(count);
+  return (await messages(page, type)).at(-1);
+}
+
+async function send(page, message) {
+  await page.evaluate((message) => document.getElementById("viewer").contentWindow.postMessage(message, "*"), { rnl: 1, ...message });
+}
+
+const viewBox = (frame) => frame.locator("#canvas > svg").getAttribute("viewBox");
+const width = async (frame) => Number((await viewBox(frame)).split(" ")[2]);
+
+async function screenshot(page, name, browserName) {
+  if (!review || browserName !== "chromium") return;
+  fs.mkdirSync(review, { recursive: true });
+  const target = name.startsWith("embed-") ? page.locator("#viewer") : page;
+  await target.screenshot({ path: path.join(review, name) });
+}
+
+test("URL open fills the iframe, hides all chrome and provides working controls", async ({ page, browserName }) => {
+  const frame = await start(page, { url: hierarchy });
+  const loaded = await waitMessage(page, "loaded");
+  expect(loaded).toMatchObject({ rnl: 1, name: "04-hierarchy.sp", level: "04-hierarchy.sp", errors: 0 });
+  expect(loaded.levels).toContain("amp");
+  expect(typeof loaded.warnings).toBe("number");
+  expect((await messages(page, "ready"))[0].version).toMatch(/^\d+\.\d+\.\d+/);
+  for (const selector of ["#menubar", "#sidebar", ".statusbar", ".level-bar"]) await expect(frame.locator(selector)).toBeHidden();
+  await expect(frame.locator('input[type="file"]')).toHaveCount(0);
+  await expect(frame.locator("#canvas > svg")).toBeVisible();
+  await expect(frame.locator("#embed-path")).toBeHidden();
+  expect(await frame.locator("#canvas").boundingBox()).toMatchObject({ width: 900, height: 600 });
+  await expect(frame.locator(".embed-toolbar button")).toHaveCount(3);
+  const fitted = await width(frame);
+  await frame.locator("#embed-zoom-in").click();
+  expect(await width(frame)).toBeLessThan(fitted);
+  await frame.locator("#embed-zoom-out").click();
+  expect(await width(frame)).toBeCloseTo(fitted);
+  await frame.locator("#embed-zoom-in").click();
+  await frame.locator("#embed-fit").click();
+  expect(await width(frame)).toBeCloseTo(fitted);
+  const button = frame.locator("#embed-fit");
+  expect(await button.boundingBox()).toMatchObject({ width: 28, height: 28 });
+  await expect(button).toHaveAttribute("title", "Fit to window");
+  const link = new URL(await frame.locator("#embed-open").getAttribute("href"));
+  expect(link.searchParams.has("embed")).toBe(false);
+  expect(link.searchParams.get("url")).toBe(hierarchy);
+  await screenshot(page, "embed-light.png", browserName);
+});
+
+test("URL preferences are isolated from existing storage and the OS theme", async ({ page, browserName }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  const frame = await start(page, { url: hierarchy, level: "amp", background: "dark", grid: "lines", names: "0" }, {
+    seed: { background: "light", "grid-shown": false, "hover-names": true, "sidebar-shown": true },
+  });
+  expect((await waitMessage(page, "loaded")).level).toBe("amp");
+  await expect(frame.locator("body")).toHaveAttribute("data-background", "dark");
+  expect(await frame.evaluate(() => window.viewer.grid)).toMatchObject({ shown: true, style: "lines" });
+  expect(await frame.evaluate(() => window.viewer.checked("toggle-hover-names"))).toBe(false);
+  await expect(frame.locator("#embed-path")).toHaveText("04-hierarchy.sp›amp");
+  expect(await frame.locator("#embed-fit").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(35, 35, 39)");
+  await screenshot(page, "embed-dark-subcircuit.png", browserName);
+  await frame.locator("#embed-path button").click();
+  expect((await waitMessage(page, "level", 2)).name).toBe("04-hierarchy.sp");
+  await send(page, { type: "background", value: "light" });
+  await expect(frame.locator("body")).toHaveAttribute("data-background", "light");
+  expect(await frame.evaluate(() => window.storageCalls)).toEqual([]);
+  expect(await page.evaluate(() => JSON.stringify({ ...localStorage }) === window.storedBefore)).toBe(true);
+});
+
+test("omitted preferences use embed defaults, dots and names=1 are supported", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  const frame = await start(page, {}, { seed: { background: "dark", "grid-shown": true, "hover-names": false } });
+  await expect(frame.locator("body")).toHaveAttribute("data-background", "light");
+  expect(await frame.evaluate(() => window.viewer.grid.shown)).toBe(false);
+  expect(await frame.evaluate(() => window.viewer.checked("toggle-hover-names"))).toBe(true);
+  expect(await frame.locator("#embed-fit").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(251, 251, 250)");
+  expect(await frame.evaluate(() => window.storageCalls)).toEqual([]);
+  await frame.goto(`${base}/?embed=1&grid=dots&names=1&background=light`);
+  await waitMessage(page, "ready", 2);
+  expect(await frame.evaluate(() => window.viewer.grid)).toMatchObject({ shown: true, style: "dots" });
+  expect(await frame.evaluate(() => window.viewer.checked("toggle-hover-names"))).toBe(true);
+});
+
+test("text and URL opens replace the drawing without reloading; fit and level messages work", async ({ page }) => {
+  const frame = await start(page);
+  await frame.evaluate(() => { window.pageMarker = "still here"; });
+  await send(page, { type: "open", name: "inline.sp", text: text("inline") });
+  expect(await waitMessage(page, "loaded")).toMatchObject({ name: "inline.sp", levels: ["inline.sp"], errors: 0, warnings: 0 });
+  await expect(frame.locator("#embed-open")).toBeHidden();
+  const first = await frame.locator("#canvas > svg").innerHTML();
+  await send(page, { type: "open", url: hierarchy });
+  await waitMessage(page, "loaded", 2);
+  expect(await frame.locator("#canvas > svg").innerHTML()).not.toBe(first);
+  await expect(frame.locator("#embed-open")).toBeVisible();
+  await send(page, { type: "level", name: "amp" });
+  await expect(frame.locator("#embed-path")).toHaveText("04-hierarchy.sp›amp");
+  const fitted = await width(frame);
+  await frame.locator("#embed-zoom-in").click();
+  await send(page, { type: "fit" });
+  await expect.poll(() => width(frame)).toBeCloseTo(fitted);
+  expect(await frame.evaluate(() => window.pageMarker)).toBe("still here");
+  expect((await messages(page, "ready")).length).toBe(1);
+  const fields = Object.keys((await messages(page, "loaded"))[1]).sort();
+  expect(fields).toEqual(["errors", "level", "levels", "name", "origin", "rnl", "type", "warnings"]);
+});
+
+test("double-click descent and Backspace report level changes", async ({ page }) => {
+  const frame = await start(page, { url: hierarchy });
+  await waitMessage(page, "loaded");
+  const point = await frame.evaluate(() => {
+    const doc = window.viewer.doc;
+    const hit = doc.levels[0].hits.find((hit) => hit.kind === "box" && hit.objects.some((o) => doc.objects[o].name === "X1"));
+    const [a, b = a] = hit.points;
+    const [x, y, w] = document.querySelector("#canvas > svg").getAttribute("viewBox").split(" ").map(Number);
+    const canvas = document.getElementById("canvas");
+    const k = canvas.clientWidth / w;
+    return { x: ((a[0] + b[0]) / 2 - x) * k, y: ((a[1] + b[1]) / 2 - y) * k };
+  });
+  await frame.locator("#canvas").dblclick({ position: point });
+  expect((await waitMessage(page, "level", 2)).name).toBe("amp");
+  await page.keyboard.press("Backspace");
+  expect((await waitMessage(page, "level", 3)).name).toBe("04-hierarchy.sp");
+});
+
+test("origin restricts actual cross-origin senders, and missing rnl markers are ignored", async ({ page }) => {
+  const frame = await start(page, { url: hierarchy, origin: new URL(base).origin });
+  await waitMessage(page, "loaded");
+  const otherOrigin = base.replace("127.0.0.1", "localhost");
+  await page.route("**/embed-intruder", (route) => route.fulfill({ contentType: "text/html", body: `
+    <script>parent.frames[0].postMessage({rnl:1,type:'background',value:'dark'}, '*'); parent.postMessage('intruder-sent', '*');</script>` }));
+  await page.evaluate((origin) => {
+    window.intruderSent = false;
+    window.addEventListener("message", (e) => { if (e.data === "intruder-sent") window.intruderSent = true; });
+    const intruder = document.createElement("iframe");
+    intruder.src = `${origin}/embed-intruder`;
+    document.body.append(intruder);
+  }, otherOrigin);
+  await page.waitForFunction(() => window.intruderSent);
+  await page.evaluate(() => document.getElementById("viewer").contentWindow.postMessage({ type: "background", value: "dark" }, "*"));
+  await send(page, { type: "level", name: "amp" });
+  await waitMessage(page, "level", 2);
+  await expect(frame.locator("body")).toHaveAttribute("data-background", "light");
+  await send(page, { type: "background", value: "dark" });
+  await expect(frame.locator("body")).toHaveAttribute("data-background", "dark");
+});
+
+test("without origin, a parent on a different origin can open text", async ({ page }) => {
+  const other = new URL(base);
+  other.port = String(Number(other.port) + 1);
+  const frame = await start(page, {}, { hostOrigin: other.origin });
+  await send(page, { type: "open", name: "cross-origin.sp", text: text("cross origin") });
+  expect((await waitMessage(page, "loaded")).name).toBe("cross-origin.sp");
+  await expect(frame.locator("#canvas > svg")).toBeVisible();
+});
+
+test("bad netlists and failed URLs report errors on the canvas without dialogs, then recover", async ({ page }) => {
+  const frame = await start(page);
+  await send(page, { type: "open", name: "bad.sp", text: '* Bad\n* @RNL { @THIS-DOES-NOT-EXIST }\n.end\n' });
+  const failure = await waitMessage(page, "error");
+  expect(failure.message).toContain("Could not open the netlist:");
+  await expect(frame.locator("#empty")).toHaveText(failure.message);
+  await expect(frame.locator("dialog")).toHaveCount(0);
+  await send(page, { type: "open", url: "samples/missing.sp" });
+  expect((await waitMessage(page, "error", 2)).message).toContain("404");
+  await send(page, { type: "open", url: rc });
+  await waitMessage(page, "loaded");
+  await expect(frame.locator("#empty")).toBeHidden();
+});
+
+for (const fails of [false, true]) {
+  test(`the latest open wins over a late ${fails ? "failure" : "success"}`, async ({ page }) => {
+    const frame = await start(page);
+    await frame.evaluate(async () => {
+      const { shell } = await import("./shell.js");
+      const build = shell.build;
+      window.finishedBuilds = 0;
+      shell.build = async (...args) => { try { return await build(...args); } finally { window.finishedBuilds++; } };
+    });
+    let release;
+    let started;
+    const requested = new Promise((resolve) => { started = resolve; });
+    const hold = new Promise((resolve) => { release = resolve; });
+    await page.route("**/slow.sp", async (route) => {
+      started();
+      await hold;
+      await route.fulfill(fails ? { status: 404, body: "missing" } : { body: text("old") });
+    });
+    await send(page, { type: "open", url: "slow.sp" });
+    await requested;
+    await send(page, { type: "open", name: "latest.sp", text: text("latest") });
+    expect((await waitMessage(page, "loaded")).name).toBe("latest.sp");
+    release();
+    await frame.waitForFunction(() => window.finishedBuilds === 2);
+    expect(await frame.evaluate(() => window.viewer.doc.name)).toBe("latest.sp");
+    expect((await messages(page, "loaded")).length).toBe(1);
+    expect(await messages(page, "error")).toEqual([]);
+  });
+}
+
+test("iframe resizing preserves the drawing centre and outer arrow keys scroll the parent", async ({ page }) => {
+  const frame = await start(page, { url: rc });
+  await waitMessage(page, "loaded");
+  const centre = async () => frame.evaluate(() => {
+    const [x, y, w, h] = document.querySelector("#canvas > svg").getAttribute("viewBox").split(" ").map(Number);
+    return [x + w / 2, y + h / 2];
+  });
+  const before = await centre();
+  const oldWidth = await width(frame);
+  await page.locator("#viewer").evaluate((el) => { el.style.width = "650px"; el.style.height = "450px"; });
+  await expect.poll(() => width(frame)).not.toBe(oldWidth);
+  const after = await centre();
+  expect(after[0]).toBeCloseTo(before[0], 8);
+  expect(after[1]).toBeCloseTo(before[1], 8);
+  const box = await viewBox(frame);
+  await page.locator("#outside").focus();
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(0);
+  expect(await viewBox(frame)).toBe(box);
+  await frame.locator("#canvas").focus();
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(() => viewBox(frame)).not.toBe(box);
+});
+
+test("Chinese browser language labels controls", async ({ browser }) => {
+  const context = await browser.newContext({ locale: "zh-CN" });
+  const page = await context.newPage();
+  const frame = await start(page);
+  await expect(frame.locator("#embed-fit")).toHaveAttribute("aria-label", "适应窗口");
+  await expect(frame.locator("#embed-zoom-in")).toHaveAttribute("title", "放大");
+  await expect(frame.locator("#embed-zoom-out")).toHaveAttribute("title", "缩小");
+  await context.close();
+});
+
+test("ready waits for the core and embed stylesheet", async ({ page }) => {
+  let release;
+  let requested;
+  const hold = new Promise((resolve) => { release = resolve; });
+  const waiting = new Promise((resolve) => { requested = resolve; });
+  await page.route("**/embed.css", async (route) => {
+    requested();
+    await hold;
+    await route.continue();
+  });
+  const starting = start(page);
+  await waiting;
+  expect(await messages(page, "ready")).toEqual([]);
+  release();
+  const frame = await starting;
+  await send(page, { type: "open", name: "ready.sp", text: text("ready") });
+  await waitMessage(page, "loaded");
+  await expect(frame.locator("#canvas > svg")).toBeVisible();
+});
+
+test("the normal web viewer keeps its UI and stored preferences with embed=0", async ({ page }) => {
+  await page.goto(base);
+  await expect(page.locator("#menubar")).toBeVisible();
+  await page.evaluate(() => {
+    for (const [key, value] of Object.entries({ background: "dark", "grid-shown": true, "grid-style": "lines", "hover-names": true })) {
+      localStorage.setItem(key, JSON.stringify(value));
+    }
+  });
+  await page.goto(`${base}/?embed=0&url=${rc}&background=light&grid=off&names=0`);
+  await expect(page.locator("#canvas > svg")).toBeVisible();
+  for (const selector of ["#menubar", "#sidebar", ".statusbar"]) await expect(page.locator(selector)).toBeVisible();
+  await expect(page.locator(".embed-toolbar")).toHaveCount(0);
+  await expect(page.locator("body")).toHaveAttribute("data-background", "dark");
+  expect(await page.evaluate(() => window.viewer.grid)).toMatchObject({ shown: true, style: "lines" });
+  expect(await page.evaluate(() => window.viewer.checked("toggle-hover-names"))).toBe(true);
+});
+
+test("demo switches all four published examples in its existing iframe", async ({ page, browserName }) => {
+  await page.goto(`${base}/embed-demo.html`);
+  await expect(page.locator("#events")).toContainText("01-rc-lowpass.sp");
+  const frame = page.frames().find((item) => item.url().includes("embed=1"));
+  await frame.evaluate(() => { window.pageMarker = 42; });
+  await screenshot(page, "demo-before.png", browserName);
+  for (const name of ["Two-stage buffer", "Line styles", "Five-transistor OTA"]) {
+    await page.getByRole("button", { name, exact: true }).click();
+    const sample = name === "Two-stage buffer" ? "04-hierarchy.sp" : name === "Line styles" ? "17-line-styles.sp" : "ota5t.sp";
+    await expect(page.locator("#events")).toContainText(sample);
+    await expect(frame.locator("#canvas > svg")).toBeVisible();
+  }
+  expect(await frame.evaluate(() => window.pageMarker)).toBe(42);
+  await screenshot(page, "demo-after.png", browserName);
+});

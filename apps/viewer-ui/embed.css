@@ -1,0 +1,51 @@
+/* Loaded only by the web embed controller; preferences and OS colour scheme do not choose it. */
+body.embed {
+  --panel: #fbfbfa;
+  --fg: #1d1d1f;
+  --muted: #6b6b70;
+  --line: #d9d9d4;
+  --hover: #ececea;
+  --accent: #14345c;
+  color-scheme: light;
+  grid-template-rows: minmax(0, 1fr);
+}
+body.embed[data-background="dark"] {
+  --panel: #232327;
+  --fg: #e8e8ea;
+  --muted: #9a9aa2;
+  --line: #38383d;
+  --hover: #313137;
+  --accent: #8fb4e6;
+  color-scheme: dark;
+}
+.embed #menubar, .embed #sidebar, .embed #vsplit, .embed .statusbar, .embed .level-bar { display: none; }
+.embed #app { grid-template-columns: minmax(0, 1fr); }
+.embed .drawing { grid-column: 1; grid-template-rows: minmax(0, 1fr); }
+.embed-toolbar { position: absolute; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 4px; z-index: 5; }
+.embed-toolbar button, #embed-path {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--fg);
+}
+.embed-toolbar button { width: 28px; height: 28px; padding: 5px; cursor: pointer; }
+.embed-toolbar svg { width: 16px; height: 16px; display: block; }
+.embed-toolbar button:hover, #embed-path button:hover { background: var(--hover); }
+#embed-path {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 60px);
+  overflow: auto;
+  padding: 3px 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+#embed-path[hidden], #embed-open[hidden] { display: none; }
+#embed-path button { padding: 0 2px; cursor: pointer; }
+#embed-open { position: absolute; right: 8px; bottom: 8px; z-index: 5; color: var(--muted); font-size: 11px; }
+.embed .empty { max-width: calc(100% - 32px); overflow-wrap: anywhere; }

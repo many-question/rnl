@@ -94,6 +94,95 @@ The page keeps the browser baseline of decision 0008: Chromium 109, the last Chr
 - **Reload.** A file chosen with Open File or Include Folder cannot be read again once it has changed; open it again, or drop it, which Reload reads anew.
 - **About** is a dialog in the page, and the document names the browser tab instead of the window.
 
+## Embedding
+
+Embed the canvas with `viewer/?embed=1`. Pan, zoom, double-click a subcircuit to enter it, and use
+Backspace or the floating hierarchy path to return. Keys act only while the iframe has focus.
+The canvas fills the iframe and preserves its centre when resized. A floating toolbar fits,
+zooms in and zooms out; labels follow the browser's Chinese or English language. Errors appear
+on the canvas rather than in a dialog. Embedded preferences neither read nor write localStorage
+or native settings. The ordinary web viewer and desktop viewer keep their usual behaviour.
+
+| URL parameter | Values | Default | Meaning |
+| --- | --- | --- | --- |
+| `embed` | `1` | Normal viewer | Use the canvas-only web viewer. |
+| `url` | Netlist URL | None | Open a file, with includes relative to its served URL. |
+| `level` | Subcircuit name | Automatic, as when opening normally | Initial level. |
+| `background` | `light`, `dark` | `light` | Drawing background, as in View › Background; also colours the floating controls. |
+| `grid` | `dots`, `lines`, `off` | `off` | Canvas grid. |
+| `names` | `1`, `0` | `1` | Show names on hover. |
+| `origin` | An exact origin, e.g. `https://example.com` | Any origin | Accept messages only from this origin and reply to it. |
+
+Send object messages to the iframe's `contentWindow`, each with `rnl: 1`:
+
+| `type` | Other fields | Effect |
+| --- | --- | --- |
+| `open` | `text` and `name` (e.g. `amp.sp`), or `url` | Replace the netlist without reloading. The filename determines its dialect. |
+| `level` | `name` | Display that level. |
+| `fit` | None | Fit the drawing to the iframe. |
+| `background` | `value`: `light` or `dark` | Change the drawing and floating controls' background. |
+
+The iframe sends these messages to `window.parent`, also with `rnl: 1`:
+
+| `type` | Fields | When |
+| --- | --- | --- |
+| `ready` | `version` | The page and WebAssembly core are ready for messages, once per page load. |
+| `loaded` | `name`, `levels` (names), `level` (current name), `errors`, `warnings` (counts) | Each successful open. |
+| `level` | `name` | The current level changes, including mouse and keyboard navigation, and after an open. |
+| `error` | `message` | A file cannot be fetched or built, has errors, or a requested level does not exist. |
+
+Wait for `ready` before sending commands. The initial `url`, when supplied, opens after `ready`.
+When several `open` requests overlap, only the latest result is displayed or reported; late reads
+and errors from older requests are discarded. A URL-backed drawing offers **Open in RNL Viewer ↗**
+in a new tab with the same URL minus `embed`; opening text hides this link. `level` in the URL
+applies to the initial file. Later opens use the normal automatic choice unless sent a `level` message.
+
+This minimal example switches two netlists without fetching across origins:
+
+```html
+<button id="rc" disabled>RC</button>
+<button id="divider" disabled>Divider</button>
+<iframe id="rnl" title="RNL circuit" style="width:100%;height:360px;border:0"></iframe>
+<script>
+  const frame = document.getElementById("rnl");
+  const viewer = new URL("https://rich-netlist.github.io/rnl/viewer/?embed=1");
+  viewer.searchParams.set("origin", location.origin);
+  const examples = {
+    rc: '* RC\nR1 in out 1k\nC1 out 0 1n\n* @RNL { #R1 @PLACE(0, 0); #C1 @PLACE(6, 0) }\n.end\n',
+    divider: '* Divider\nR1 in out 1k\nR2 out 0 1k\n* @RNL { #R1 @PLACE(0, 0); #R2 @PLACE(6, 0) }\n.end\n'
+  };
+  for (const [name, text] of Object.entries(examples)) {
+    document.getElementById(name).onclick = () => frame.contentWindow.postMessage(
+      { rnl: 1, type: "open", name: `${name}.sp`, text }, viewer.origin);
+  }
+  window.addEventListener("message", (event) => {
+    if (event.source !== frame.contentWindow || event.origin !== viewer.origin || event.data?.rnl !== 1) return;
+    if (event.data.type === "ready") {
+      for (const name of Object.keys(examples)) document.getElementById(name).disabled = false;
+      document.getElementById("rc").click();
+    }
+  });
+  frame.src = viewer.href;
+</script>
+```
+
+**Security:** set `origin` to the embedding page's exact origin (scheme, host and port, no path),
+especially when embedding on another website. With it, only matching `event.origin` messages
+are accepted, and replies use that same `targetOrigin`. Without it, any origin is accepted and
+replies use `"*"`. Messages without `rnl: 1` are ignored. Replies contain only the fields above,
+never netlist text. The parent should also check `event.source`, `event.origin` and `rnl`.
+Use an HTTP(S) server for the parent, rather than a `file:` URL with an opaque origin.
+
+**CORS:** `open` with `url` uses the same fetch/include behaviour as `?url=` and can read only
+servers that permit the viewer's cross-origin requests. Relative URLs resolve against the
+viewer page, not its parent. For cross-origin examples, prefer `text` plus `name`: the parent
+fetches or holds the text and sends it directly. Text opens have no sibling include files.
+
+[`embed-demo.html`](embed-demo.html), published beside the viewer at
+[`/rnl/viewer/embed-demo.html`](https://rich-netlist.github.io/rnl/viewer/embed-demo.html),
+switches three conformance examples and the site's five-transistor OTA through this interface.
+Build with `--samples` to include those files.
+
 ## Structure
 
 | Path | Content |

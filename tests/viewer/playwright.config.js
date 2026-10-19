@@ -42,7 +42,7 @@ function freePort() {
 /** Whether the command line names spec files, and none of them is the web viewer's. */
 function pageSpecsOnly() {
   const specs = process.argv.filter((arg) => /\.spec\.js(:\d+)*$/.test(arg));
-  return specs.length > 0 && !specs.some((spec) => /web\.spec\.js/.test(spec));
+  return specs.length > 0 && !specs.some((spec) => /(?:web|embed)\.spec\.js/.test(spec));
 }
 
 // the workers load this file too, and inherit whether the runner builds the site, and its port
@@ -75,7 +75,7 @@ export default defineConfig({
     : undefined,
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"], channel, viewport }, testIgnore: LONG },
-    { name: "firefox", use: { ...devices["Desktop Firefox"], viewport }, testIgnore: LONG },
+    { name: "firefox", use: { ...devices["Desktop Firefox"], viewport }, testIgnore: [LONG, /embed\.spec\.js$/] },
     { name: "webkit", use: { ...devices["Desktop Safari"], viewport }, testIgnore: LONG },
     {
       name: "long",

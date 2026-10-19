@@ -24,6 +24,11 @@ import { $, load, startSettings } from "./util.js";
 async function start() {
   const shell = await loadShell();
   await startSettings(shell);
+  if (shell.embed) {
+    const { startEmbed } = await import("./embed.js");
+    await startEmbed();
+    return;
+  }
   setBackground(load("background", "light"));
   setSidebarWidth(load("sidebar-width", 420));
   setProblemsHeight(load("problems-height", 180));
