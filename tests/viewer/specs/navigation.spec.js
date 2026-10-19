@@ -91,6 +91,8 @@ test("New Window copies current path and selection; its subcircuit command requi
   expect(session.select.name).toBe("XB1");
   await viewer.menuTitle("Edit").click();
   await expect(viewer.menuItem("descend-new-window")).toBeEnabled();
+  expect(await viewer.menuItem("descend-new-window").evaluate((el) =>
+    el.querySelector(".label").getBoundingClientRect().right <= el.querySelector(".keys").getBoundingClientRect().left)).toBe(true);
   if (process.env.RNL_NAV_SCREENSHOTS && info.project.name === "chromium") {
     fs.mkdirSync(process.env.RNL_NAV_SCREENSHOTS, { recursive: true });
     await page.screenshot({ path: path.join(process.env.RNL_NAV_SCREENSHOTS, "edit-menu-shortcuts.png") });

@@ -872,6 +872,7 @@ body.menubar-shown { grid-template-rows: auto minmax(0, 1fr) auto; }
   top: calc(100% + 3px);
   left: 0;
   min-width: 240px;
+  width: max-content;
   padding: 4px 0;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -886,6 +887,7 @@ body.menubar-shown { grid-template-rows: auto minmax(0, 1fr) auto; }
   top: -5px;
   left: calc(100% - 2px);
   min-width: 180px;
+  width: max-content;
   padding: 4px 0;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -905,6 +907,7 @@ body.menubar-shown { grid-template-rows: auto minmax(0, 1fr) auto; }
   white-space: nowrap;
 }
 .menu-item.active { background: var(--hover); }
+.menu-item:disabled { color: var(--muted); }
 .menu-item .check { text-align: center; color: var(--accent); }
 .menu-item[aria-checked="true"] .check::before { content: "\2713"; }
 /* one of a group, of which one is checked */
