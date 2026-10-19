@@ -228,8 +228,10 @@ export async function toggleEdit() {
     editing = true;
     setCheck("toggle-edit", true);
     renderEditors();
-    focusEditor();
+    // Set the caret before focusing: Firefox otherwise schedules a caret reveal that overrides
+    // the restored first visible line, even when focus itself uses preventScroll.
     restorePosition();
+    focusEditor();
     return;
   }
   await stopEditing();
