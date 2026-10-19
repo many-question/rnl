@@ -19,6 +19,8 @@ on:
       - "spec/**"
       - "scripts/spec/**"
       - "scripts/skill/**"
+      - "brand/**"
+      - "scripts/brand*"
       - "skills/**"
       - ".github/actions/install-spec-tools/**"
       - "apps/web/**"
@@ -37,6 +39,8 @@ on:
       - "spec/**"
       - "scripts/spec/**"
       - "scripts/skill/**"
+      - "brand/**"
+      - "scripts/brand*"
       - "skills/**"
       - ".github/actions/install-spec-tools/**"
       - "apps/web/**"
@@ -166,6 +170,7 @@ jobs:
         run: |
           npm ci --prefix tests/viewer
           node tests/viewer/node_modules/@playwright/test/cli.js install --with-deps chromium webkit
+          node --test scripts/brand.test.mjs
           node tests/viewer/node_modules/@playwright/test/cli.js test --config site/playwright.config.mjs
 
       - if: github.event_name != 'pull_request'
