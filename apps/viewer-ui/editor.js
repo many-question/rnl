@@ -208,7 +208,7 @@ function note(text) {
   if (text) noteTimer = setTimeout(() => note(""), 6000);
 }
 
-/** Edit > Edit Text: switch the netlist pane to edit, or back; changes not applied are asked about. */
+/** Edit > Edit Text: enter editing, or apply pending text and return to reading. */
 export async function toggleEdit() {
   if (currentSource()?.readonly) return;
   if (modal()) return;

@@ -84,6 +84,10 @@ test("New Window copies current path and selection; its subcircuit command requi
   await viewer.click("XB1");
   const before = await state(page);
   await viewer.menuTitle("File").click();
+  if (process.env.RNL_NAV_SCREENSHOTS && info.project.name === "chromium") {
+    fs.mkdirSync(process.env.RNL_NAV_SCREENSHOTS, { recursive: true });
+    await page.screenshot({ path: path.join(process.env.RNL_NAV_SCREENSHOTS, "file-menu-new-window.png") });
+  }
   await viewer.menuItem("new-window").click();
   const [[session]] = await viewer.calls("newWindow");
   expect(session.level).toBe("bank");
@@ -126,6 +130,11 @@ test("Control shortcuts prevent browser defaults; letters stay in input and list
   await page.keyboard.press("Shift+e");
   expect(await viewer.calls("newWindow")).toEqual([]);
   expect(await page.evaluate(() => window.keyDefaults)).toEqual([["e", true], ["q", true]]);
+  // The new Shift+E binding leaves the existing case-insensitive page shortcuts intact.
+  await page.locator("#canvas").click({ position: { x: 5, y: 5 } });
+  const grid = await page.evaluate(() => window.viewer.grid.shown);
+  await page.keyboard.press("Shift+g");
+  expect(await page.evaluate(() => window.viewer.grid.shown)).toBe(!grid);
 });
 
 test("sidebar context menus are suppressed except in editable controls", async ({ page, viewer }) => {

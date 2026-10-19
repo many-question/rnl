@@ -180,8 +180,8 @@ export function shortcut(item) {
 /**
  * Whether a key event is the key `spec` names, such as "Ctrl+Shift+M", "F" or "Enter"; Ctrl stands
  * for Cmd too. A key with Ctrl compares Shift only for a letter, since typing "+" may need Shift.
- * A key without Ctrl that types or deletes does not count while Ctrl, Cmd or Alt is held; other
- * keys, such as Enter and F5, count whatever is held with them.
+ * E and Enter have separate Shift commands. Other page shortcuts keep their existing Shift
+ * behavior; typing or deleting keys do not count while Ctrl, Cmd or Alt is held.
  */
 function matches(e, spec) {
   const parts = spec.split(/\+(?=.)/);
@@ -190,7 +190,8 @@ function matches(e, spec) {
   const ctrl = e.ctrlKey || e.metaKey;
   if (parts.includes("Control")) return e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey === parts.includes("Shift");
   if (parts.includes("Ctrl")) return ctrl && (!/^[a-z]$/.test(key) || e.shiftKey === parts.includes("Shift"));
-  return (!ctrl && !e.altKey) && e.shiftKey === parts.includes("Shift");
+  if (key === "e" || key === "enter") return !ctrl && !e.altKey && e.shiftKey === parts.includes("Shift");
+  return !(ctrl || e.altKey) || !(key.length === 1 || key === "backspace");
 }
 
 /** The command a key runs, or null. In a text box only keys with Ctrl and function keys count. */
