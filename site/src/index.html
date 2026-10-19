@@ -78,28 +78,24 @@
 <a class="skip" href="#main"><zh>跳到正文</zh><en>Skip to content</en></a>
 
 <header class="topbar">
-  <div class="wrap topbar-in">
+  <div class="topbar-in">
     <a class="brand" href="#top"><span class="brand-mark">RNL</span><span class="brand-sub">Rich Netlist</span></a>
-    <nav class="toc" id="toc" aria-label="<zh>章节</zh><en>Sections</en>">
-      <a href="#what"><zh>是什么</zh><en>What</en></a>
-      <a href="#why"><zh>为什么</zh><en>Why</en></a>
-      <a href="#vision"><zh>愿景</zh><en>Vision</en></a>
-      <a href="#scenes"><zh>场景对比</zh><en>Scenarios</en></a>
-      <a href="#status"><zh>现状</zh><en>Status</en></a>
-      <a class="toc-page" href="language.html"><zh>语言导览</zh><en>Language tour</en><svg class="ico"><use href="#i-arrow"/></svg></a>
-      <a class="toc-page" href="spec/"><zh>语言标准</zh><en>Standard</en><svg class="ico"><use href="#i-arrow"/></svg></a>
-      <a class="toc-page" href="packages.html"><zh>标准包</zh><en>Packages</en><svg class="ico"><use href="#i-arrow"/></svg></a>
-      <a class="toc-page" href="tools.html"><zh>工具</zh><en>Tools</en><svg class="ico"><use href="#i-arrow"/></svg></a>
-      <a class="toc-page" href="agents.html"><zh>给 agent</zh><en>Agents</en><svg class="ico"><use href="#i-arrow"/></svg></a>
+    <nav class="pages" aria-label="<zh>页面</zh><en>Pages</en>">
+      <a class="is-on" aria-current="page" href="./"><zh>介绍</zh><en>Introduction</en></a>
+      <a href="language.html"><zh>语言导览</zh><en>Language tour</en></a>
+      <a href="spec/"><zh>标准</zh><en>Standard</en></a>
+      <a href="packages.html"><zh>标准包</zh><en>Packages</en></a>
+      <a href="tools.html"><zh>工具</zh><en>Tools</en></a>
+      <a href="agents.html"><zh>给 agent</zh><en>Agents</en></a>
     </nav>
-    <button class="icon-btn toc-btn" id="toc-btn" type="button" aria-label="<zh>打开目录</zh><en>Open the section list</en>" aria-expanded="false" aria-controls="toc"><svg class="ico"><use href="#i-menu"/></svg></button>
+    <button class="icon-btn toc-btn" id="toc-btn" type="button" aria-label="<zh>目录</zh><en>Contents</en>" aria-expanded="false" aria-controls="toc"><svg class="ico"><use href="#i-menu"/></svg></button>
     <a class="lang-link" href="<zh>../en/</zh><en>../zh/</en>" hreflang="<zh>en</zh><en>zh-CN</en>" lang="<zh>en</zh><en>zh-CN</en>" aria-label="<zh>English version</zh><en>中文版</en>" data-lang-link><zh>EN</zh><en>中文</en></a>
     <button class="icon-btn" id="theme-btn" type="button" aria-label="<zh>切换配色</zh><en>Switch color theme</en>"><svg class="ico"><use href="#i-moon"/></svg></button>
   </div>
   <div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
 </header>
 
-<main id="main">
+
 
 <!-- ===================== Hero ===================== -->
 <section class="hero" id="top" aria-labelledby="hero-title">
@@ -165,6 +161,21 @@
     </div>
   </div>
 </section>
+
+<div class="layout">
+<nav id="toc" aria-label="<zh>目录</zh><en>Contents</en>">
+  <p class="toc-title"><zh>目录</zh><en>Contents</en></p>
+  <ul>
+    <li><a href="#overview"><zh>三分钟速览</zh><en>The three-minute tour</en></a></li>
+    <li><a href="#what"><zh>是什么</zh><en>What</en></a></li>
+    <li><a href="#why"><zh>为什么</zh><en>Why</en></a></li>
+    <li><a href="#vision"><zh>愿景</zh><en>Vision</en></a></li>
+    <li><a href="#scenes"><zh>场景对比</zh><en>Scenarios</en></a></li>
+    <li><a href="#status"><zh>现状</zh><en>Status</en></a></li>
+    <li><a href="#next"><zh>想看细节，去这几页。</zh><en>For the details, go to these pages.</en></a></li>
+  </ul>
+</nav>
+<main id="main" class="page-content">
 
 <!-- ===================== Overview ===================== -->
 <section id="overview" class="sheet">
@@ -771,6 +782,7 @@ M5 tail vbias vss vss nch W=4u L=1u"></div><p class="bubble-note"><zh>网表写�
 </section>
 
 </main>
+</div>
 
 <footer class="foot">
   <div class="wrap foot-grid">

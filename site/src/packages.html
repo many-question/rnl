@@ -40,22 +40,23 @@
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></symbol>
   <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
 </svg>
 
 <a class="skip" href="#main"><zh>跳到正文</zh><en>Skip to content</en></a>
 
 <header class="topbar">
-  <div class="wrap topbar-in">
+  <div class="topbar-in">
     <a class="brand" href="./"><span class="brand-mark">RNL</span><span class="brand-sub">Rich Netlist</span></a>
-    <nav class="toc" id="toc" aria-label="<zh>页面</zh><en>Pages</en>">
-      <a href="#gallery"><zh>图库</zh><en>Gallery</en></a>
-      <a class="toc-page" href="language.html"><zh>语言导览</zh><en>Language tour</en><svg class="ico"><use href="#i-arrow"/></svg></a>
-      <a class="toc-page" href="spec/"><zh>语言标准</zh><en>Standard</en><svg class="ico"><use href="#i-arrow"/></svg></a>
-      <a class="toc-page" href="tools.html"><zh>工具</zh><en>Tools</en><svg class="ico"><use href="#i-arrow"/></svg></a>
-      <a class="toc-page" href="agents.html"><zh>给 agent</zh><en>Agents</en><svg class="ico"><use href="#i-arrow"/></svg></a>
-      <a class="toc-page" href="./"><svg class="ico"><use href="#i-back"/></svg><zh>介绍页</zh><en>Introduction</en></a>
+    <nav class="pages" aria-label="<zh>页面</zh><en>Pages</en>">
+      <a href="./"><zh>介绍</zh><en>Introduction</en></a>
+      <a href="language.html"><zh>语言导览</zh><en>Language tour</en></a>
+      <a href="spec/"><zh>标准</zh><en>Standard</en></a>
+      <a class="is-on" aria-current="page" href="packages.html"><zh>标准包</zh><en>Packages</en></a>
+      <a href="tools.html"><zh>工具</zh><en>Tools</en></a>
+      <a href="agents.html"><zh>给 agent</zh><en>Agents</en></a>
     </nav>
-    <button class="icon-btn toc-btn" id="toc-btn" type="button" aria-label="<zh>打开目录</zh><en>Open the section list</en>" aria-expanded="false" aria-controls="toc"><svg class="ico"><use href="#i-menu"/></svg></button>
+    <button class="icon-btn toc-btn" id="toc-btn" type="button" aria-label="<zh>目录</zh><en>Contents</en>" aria-expanded="false" aria-controls="toc"><svg class="ico"><use href="#i-menu"/></svg></button>
     <a class="lang-link" href="<zh>../en/packages.html</zh><en>../zh/packages.html</en>" hreflang="<zh>en</zh><en>zh-CN</en>" lang="<zh>en</zh><en>zh-CN</en>" aria-label="<zh>English version</zh><en>中文版</en>" data-lang-link><zh>EN</zh><en>中文</en></a>
     <button class="icon-btn" id="theme-btn" type="button" aria-label="<zh>切换配色</zh><en>Switch color theme</en>"><svg class="ico"><use href="#i-moon"/></svg></button>
   </div>
@@ -87,31 +88,30 @@
 </section>
 
 <section id="gallery" class="sheet gl-sheet" aria-label="<zh>图库</zh><en>Gallery</en>">
-  <div class="gl-bar" id="gl-bar">
-    <div class="wrap gl-bar-in">
-      <div class="seg gl-series" id="gl-series" role="tablist" aria-label="<zh>系列</zh><en>Series</en>"></div>
+  <div class="layout">
+    <nav id="toc" aria-label="<zh>包导航</zh><en>Package navigation</en>">
       <label class="gl-search">
         <svg class="ico"><use href="#i-search"/></svg>
         <input id="gl-q" type="search" autocomplete="off" spellcheck="false" placeholder="<zh>搜索名字：NMOS、$GROUND、R*、port…</zh><en>Search names: NMOS, $GROUND, R*, port…</en>" aria-label="<zh>按名字搜索</zh><en>Search by name</en>">
       </label>
-      <div class="gl-toggles" role="group" aria-label="<zh>符号图上显示</zh><en>Show on the symbols</en>">
-        <button type="button" class="gl-tog" data-show="pins" aria-pressed="true"><svg class="ico"><use href="#i-pin"/></svg><zh>引脚</zh><en>Pins</en></button>
-        <button type="button" class="gl-tog" data-show="box" aria-pressed="false"><svg class="ico"><use href="#i-box"/></svg><zh>选择框</zh><en>Box</en></button>
-        <button type="button" class="gl-tog" data-show="labels" aria-pressed="true"><svg class="ico"><use href="#i-tag"/></svg><zh>标签</zh><en>Labels</en></button>
+      <div id="gl-nav"></div>
+    </nav>
+    <div class="gl-content">
+      <header class="gl-heading">
+        <h2 id="gl-group-title"></h2>
+        <p id="gl-group-counts"></p>
+      </header>
+      <div class="gl-bar" id="gl-bar">
+        <div class="gl-toggles" role="group" aria-label="<zh>符号图上显示</zh><en>Show on the symbols</en>">
+          <button type="button" class="gl-tog" data-show="pins" aria-pressed="true"><svg class="ico"><use href="#i-pin"/></svg><zh>引脚</zh><en>Pins</en></button>
+          <button type="button" class="gl-tog" data-show="box" aria-pressed="false"><svg class="ico"><use href="#i-box"/></svg><zh>选择框</zh><en>Box</en></button>
+          <button type="button" class="gl-tog" data-show="labels" aria-pressed="true"><svg class="ico"><use href="#i-tag"/></svg><zh>标签</zh><en>Labels</en></button>
+        </div>
       </div>
-    </div>
-  </div>
-
-  <div class="wrap gl-layout">
-    <aside class="gl-side" aria-label="<zh>包</zh><en>Packages</en>">
-      <details class="gl-pkgs" id="gl-pkgs-box" open>
-        <summary><svg class="ico"><use href="#i-layers"/></svg><span><zh>包</zh><en>Packages</en></span><span class="gl-pkgs-now" id="gl-pkgs-now"></span></summary>
-        <div id="gl-pkgs"></div>
-      </details>
-    </aside>
-    <div class="gl-main" id="gl-main" aria-live="polite">
-      <p class="gl-status" id="gl-status"><zh>正在载入……</zh><en>Loading…</en></p>
-      <noscript><p class="gl-status"><zh>这一页要用 JavaScript 显示图库。包文件本身在 <a href="https://github.com/rich-netlist/rnl/tree/main/libraries">GitHub 的 libraries/</a> 里。</zh><en>This page needs JavaScript to show the gallery. The package files themselves are in <a href="https://github.com/rich-netlist/rnl/tree/main/libraries">libraries/ on GitHub</a>.</en></p></noscript>
+      <div class="gl-main" id="gl-main" aria-live="polite">
+        <p class="gl-status" id="gl-status"><zh>正在载入……</zh><en>Loading…</en></p>
+        <noscript><p class="gl-status"><zh>这一页要用 JavaScript 显示图库。包文件本身在 <a href="https://github.com/rich-netlist/rnl/tree/main/libraries">GitHub 的 libraries/</a> 里。</zh><en>This page needs JavaScript to show the gallery. The package files themselves are in <a href="https://github.com/rich-netlist/rnl/tree/main/libraries">libraries/ on GitHub</a>.</en></p></noscript>
+      </div>
     </div>
   </div>
 </section>

@@ -80,6 +80,7 @@ const groups = groupDirs(libraries).map(({ dir, files }) => {
   return {
     id: rel.replace(/^libraries\//, "").replace(/[^\w.-]+/g, "-"),
     dir: rel,
+    kind: m ? "standard" : rel.startsWith("libraries/pdk/") ? "pdk" : "extension",
     series: m ? m[1] : null,
     packages,
   };
@@ -357,6 +358,7 @@ function groupData(group) {
   return {
     id: group.id,
     dir: group.dir,
+    kind: group.kind,
     series: group.series,
     packages,
     counts,
@@ -375,6 +377,7 @@ for (const group of groups) {
   index.push({
     id: data.id,
     dir: data.dir,
+    kind: data.kind,
     series: data.series,
     packages: data.packages.map((p) => ({ name: p.name, version: p.version })),
     counts: data.counts,

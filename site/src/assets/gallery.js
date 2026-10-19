@@ -50,7 +50,7 @@
   };
   var ARROWS = { 0: '→', 90: '↑', 180: '←', 270: '↓' };
 
-  var state = { index: null, groups: {}, group: null, pkg: null, q: '', show: { pins: true, box: false, labels: true } };
+  var state = { index: null, groups: {}, group: null, pkg: null, q: '', expanded: {}, show: { pins: true, box: false, labels: true } };
   var main, status;
 
   /* ---------------- loading ---------------- */
@@ -288,47 +288,64 @@
     });
     main.innerHTML = (terms().length && !count ? '<p class="gl-status"><zh>没有找到。</zh><en>Nothing found.</en></p>' : '') + html;
     main.className = 'gl-main' + (state.show.pins ? ' show-pins' : '') + (state.show.box ? ' show-box' : '') + (state.show.labels ? ' show-labels' : '');
-    renderSide(group);
+    renderNav();
     $('#tb-series').textContent = groupTitle(group);
     $('#tb-packages').textContent = group.counts.packages;
     $('#tb-symbols').textContent = group.counts.symbols;
+    $('#gl-group-title').textContent = groupTitle(group);
+    $('#gl-group-counts').textContent = fill('<zh>{p} 个包 · {s} 个符号</zh><en>{p} packages · {s} symbols</en>', { p: group.counts.packages, s: group.counts.symbols });
     status.hidden = true;
   }
 
-  function renderSide(group) {
-    var side = $('#gl-pkgs');
-    var all = '<button type="button" class="gl-side-btn' + (state.pkg ? '' : ' is-on') + '" data-pkg="">' +
-      '<span><zh>全部</zh><en>All</en></span><small>' + group.packages.length + '</small></button>';
-    function item(p) {
-      var n = p.statements.filter(function (s) { return s.kind === 'symbol' && s.svg; }).length;
-      return '<button type="button" class="gl-side-btn' + (state.pkg === p.name ? ' is-on' : '') + '" data-pkg="' + esc(p.name) + '">' +
-        '<span>' + breakable(p.name) + '</span>' + (n ? '<small title="' + fill('<zh>{n} 个符号</zh><en>{n} symbols</en>', { n: n }) + '">' + n + '</small>' : '') + '</button>';
-    }
-    var on = group.packages.filter(function (p) { return p.implicit; });
-    var off = group.packages.filter(function (p) { return !p.implicit; });
-    side.innerHTML = all +
-      (on.length ? '<p class="gl-side-h"><zh>默认生效（rnl-std 带进来）</zh><en>By default (through rnl-std)</en></p>' + on.map(item).join('') : '') +
-      (off.length ? '<p class="gl-side-h"><zh>按需使用</zh><en>On demand</en></p>' + off.map(item).join('') : '');
-    $('#gl-pkgs-now').textContent = state.pkg || '';
-  }
-
-  function renderSeries() {
-    var bar = $('#gl-series');
-    bar.innerHTML = state.index.groups.map(function (g) {
-      return '<button type="button" role="tab" data-group="' + esc(g.id) + '" aria-selected="' + (g.id === state.group ? 'true' : 'false') + '">' + esc(groupTitle(g)) + '</button>';
-    }).join('');
+  function renderNav() {
+    if (!state.index) return;
+    var categories = [
+      { kind: 'standard', title: '<zh>标准系列</zh><en>Standard series</en>' },
+      { kind: 'extension', title: '<zh>扩展包</zh><en>Extensions</en>' },
+      { kind: 'pdk', title: '<zh>工艺库</zh><en>PDKs</en>' }
+    ];
+    var html = '';
+    categories.forEach(function (category) {
+      var rows = '';
+      state.index.groups.filter(function (g) { return g.kind === category.kind; }).forEach(function (g) {
+        var title = groupTitle(g);
+        var groupMatch = matches(title + ' ' + g.dir);
+        var packages = g.packages.filter(function (p) { return groupMatch || matches(p.name + ' ' + p.version); });
+        if (!groupMatch && !packages.length) return;
+        var open = !!state.expanded[g.id] || (terms().length > 0 && !groupMatch);
+        var selected = state.group === g.id;
+        rows += '<li><div class="gl-group-row"><button type="button" class="gl-fold" data-fold="' + esc(g.id) +
+          '" aria-label="' + esc(title) + '" aria-expanded="' + open + '" aria-controls="gl-children-' + esc(g.id) + '"><svg class="ico" aria-hidden="true"><use href="#i-next"/></svg></button>' +
+          '<button type="button" class="gl-nav-item gl-group' + (selected ? ' here' : '') + '" data-group="' + esc(g.id) +
+          '"' + (selected ? ' aria-current="true"' : '') + ' title="' + esc(title) + '"><span class="gl-nav-name">' + esc(title) + '</span>' +
+          (g.kind === 'standard' && g.series === '0.2' ? '<small class="gl-readonly"><zh>只读</zh><en>read-only</en></small>' : '') +
+          '<small class="gl-nav-count">' + g.counts.packages + '</small></button></div>' +
+          '<ul class="gl-children" id="gl-children-' + esc(g.id) + '"' + (open ? '' : ' hidden') + '>' +
+          '<li><button type="button" class="gl-nav-item' + (selected && !state.pkg ? ' here' : '') + '" data-group="' + esc(g.id) +
+          '" data-pkg=""' + (selected && !state.pkg ? ' aria-current="true"' : '') + '><zh>全部</zh><en>All</en></button></li>' +
+          packages.map(function (p) {
+            var on = selected && state.pkg === p.name;
+            return '<li><button type="button" class="gl-nav-item' + (on ? ' here' : '') + '" data-group="' + esc(g.id) +
+              '" data-pkg="' + esc(p.name) + '"' + (on ? ' aria-current="true"' : '') + ' title="' + esc(p.name + ' ' + p.version) +
+              '"><span class="gl-nav-name">' + esc(p.name) + '</span></button></li>';
+          }).join('') + '</ul></li>';
+      });
+      if (rows) html += '<p class="toc-title">' + category.title + '</p><ul>' + rows + '</ul>';
+    });
+    $('#gl-nav').innerHTML = html || '<p class="gl-none"><zh>没有找到。</zh><en>Nothing found.</en></p>';
   }
 
   /* Show a group, and in it the package `pkg` alone when given */
   function choose(id, pkg) {
     state.group = id;
     state.pkg = pkg || null;
-    renderSeries();
+    state.expanded[id] = true;
+    renderNav();
     if (state.groups[id]) { render(); return; }
     status.hidden = false;
     main.innerHTML = '';
     main.appendChild(status);
-    load(id + '.js', function () { if (state.group === id) render(); }, failed);
+    load(id + '.js', function () { if (state.group === id) render(); }, function () { if (state.group === id) failed(); });
   }
 
   function failed() {
@@ -391,24 +408,29 @@
 
   /* ---------------- state in the address ---------------- */
 
-  function saveUrl() {
+  function saveUrl(push) {
     var params = [];
     if (state.group && state.index && state.group !== state.index.groups[0].id) params.push('series=' + encodeURIComponent(state.group));
     if (state.q) params.push('q=' + encodeURIComponent(state.q));
     if (state.pkg) params.push('package=' + encodeURIComponent(state.pkg));
     var url = location.pathname + (params.length ? '?' + params.join('&') : '') + location.hash;
-    try { history.replaceState(null, '', url); } catch (e) { /* opened from the disk */ }
+    try { if (url !== location.pathname + location.search + location.hash) history[push ? 'pushState' : 'replaceState'](null, '', url); } catch (e) { /* opened from the disk */ }
     var lang = $('[data-lang-link]');
     if (lang) lang.setAttribute('href', lang.getAttribute('href').split(/[?#]/)[0] + (params.length ? '?' + params.join('&') : ''));
   }
 
   function readUrl() {
-    var q = {};
-    location.search.replace(/^\?/, '').split('&').forEach(function (kv) {
-      var i = kv.indexOf('=');
-      if (i > 0) q[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1).replace(/\+/g, ' '));
-    });
-    return q;
+    var params = new URLSearchParams(location.search);
+    return { series: params.get('series'), package: params.get('package'), q: params.get('q') || '' };
+  }
+
+  function restoreUrl() {
+    var url = readUrl();
+    state.q = url.q;
+    $('#gl-q').value = state.q;
+    var first = state.index.groups.filter(function (g) { return g.id === url.series; })[0] || state.index.groups[0];
+    if (first) choose(first.id, url.package);
+    saveUrl();
   }
 
   /* ---------------- start ---------------- */
@@ -428,31 +450,39 @@
         main.classList.toggle('show-' + k, state.show[k]);
       });
     });
-    /* On a narrow screen the list of packages starts closed, so that the symbols come first */
-    if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) $('#gl-pkgs-box').open = false;
     var input = $('#gl-q');
-    var url = readUrl();
-    if (url.q) { input.value = url.q; state.q = url.q; }
-    input.addEventListener('input', P.debounce(function () { state.q = input.value.trim(); render(); saveUrl(); }, 120));
-    $('#gl-series').addEventListener('click', function (e) {
-      var b = e.target.closest('button[data-group]');
-      if (b) { choose(b.getAttribute('data-group')); saveUrl(); }
-    });
-    $('#gl-pkgs').addEventListener('click', function (e) {
-      var b = e.target.closest('button[data-pkg]');
-      if (!b) return;
-      state.pkg = b.getAttribute('data-pkg') || null;
+    state.q = readUrl().q;
+    input.value = state.q;
+    input.addEventListener('input', P.debounce(function () {
+      state.q = input.value.trim();
+      renderNav();
       render();
       saveUrl();
-      if (window.matchMedia && window.matchMedia('(max-width: 900px)').matches) $('#gl-pkgs-box').open = false;
+    }, 120));
+    $('#gl-nav').addEventListener('click', function (e) {
+      var fold = e.target.closest('button[data-fold]');
+      if (fold) {
+        var id = fold.getAttribute('data-fold');
+        var open = fold.getAttribute('aria-expanded') !== 'true';
+        state.expanded[id] = open;
+        fold.setAttribute('aria-expanded', String(open));
+        document.getElementById(fold.getAttribute('aria-controls')).hidden = !open;
+        return;
+      }
+      var b = e.target.closest('button[data-group]');
+      if (!b) return;
+      P.closeToc();
+      choose(b.getAttribute('data-group'), b.getAttribute('data-pkg'));
+      saveUrl(true);
       var top = $('#gallery').getBoundingClientRect().top + window.scrollY - 60;
       if (window.scrollY > top) window.scrollTo(0, top);
     });
+    window.addEventListener('popstate', function () { if (state.index) restoreUrl(); });
     main.addEventListener('click', function (e) {
       var card = e.target.closest('[data-sym]');
       if (card) { openSymbol(card.getAttribute('data-pkg'), card.getAttribute('data-sym')); return; }
       var go = e.target.closest('[data-goto]');
-      if (go && state.pkg) { state.pkg = null; render(); saveUrl(); }
+      if (go && state.pkg) { state.pkg = null; render(); saveUrl(true); }
     });
     main.addEventListener('toggle', function (e) { if (e.target.classList && e.target.classList.contains('gl-src') && e.target.open) paintSource(e.target); }, true);
     var dlg = $('#gl-dlg');
@@ -462,11 +492,7 @@
       var t = e.target.closest('[data-sym]');
       if (t) openSymbol(t.getAttribute('data-pkg'), t.getAttribute('data-sym'));
     });
-    load('index.js', function () {
-      var groups = state.index.groups;
-      var first = groups.filter(function (g) { return g.id === url.series; })[0] || groups[0];
-      choose(first.id, url.package);
-    }, failed);
+    load('index.js', restoreUrl, failed);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

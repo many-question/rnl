@@ -54,7 +54,7 @@ With a release, the build keeps the `<!--release-->` blocks and fills in `{{view
 
 `packages.html` shows what [`gallery/build.mjs`](gallery/build.mjs) writes into `site/dist/gallery/` from the package files in [`libraries/`](../libraries/README.md). The page is built by `build.py` like the others; its data is not, and is the same for both languages.
 
-- **Groups.** Every directory under `libraries/` that holds `.rnl` files is a group, one tab of the page: `libraries/standard/0.2/` is the standard series 0.2, and any other directory, such as one of packages that are not standard, is a group of its own, marked as not in the standard series. The newest series comes first. A package is known by the name and version its header record declares; what it references and the order in which using it brings packages in come from its `USE-PACKAGE`s, and the packages `rnl-std` brings in are the ones every netlist has by default. Adding a directory or a file needs no change to the code.
+- **Groups.** Every directory under `libraries/` that holds `.rnl` files is a group in the left navigation. The build writes its `kind`: `libraries/standard/*` is `standard`, `libraries/pdk/*` is `pdk`, and other directories are `extension`. The navigation lists standard series (newest first, with 0.2 marked read-only), extensions, then PDKs. A group expands to its packages and an All entry. Search filters group and package names without changing how symbols are searched. The `series`, `package` and `q` query parameters keep shared and earlier links working; group and package selections also support browser Back and Forward. A package is known by the name and version its header record declares; what it references and the order in which using it brings packages in come from its `USE-PACKAGE`s, and the packages `rnl-std` brings in are the ones every netlist has by default. Adding a directory or a file needs no change to the page code.
 - **Statements.** [`gallery/package-file.mjs`](gallery/package-file.mjs) splits each record of a package file into its statements and sorts them by their first tokens: symbols, styles, definitions, sets, rules (symbol, style, text and set rules) and definitions attached to sets. It is not an interpreter; what a statement means and how a symbol looks come from the core.
 - **Symbols.** Every symbol a package defines with a `$` name is drawn by the core as WebAssembly, the one the web viewer runs: the build writes a netlist with a subcircuit for each symbol, in which one instance is drawn with the symbol at the origin, and asks the core for the drawing and the snapshot of every level, with the package files of `libraries/` in the request, so that they are drawn as they are there whatever the core bundles. The labels a symbol fills with `${…}` show their keys, such as `name` and `value`. The pins, their directions and the box come from the core; the labels of the pins and the texts of the labels, from the text. Each pin is marked on the picture with its terminal number and the arrow of the direction it points, where its wire leaves, such as `1↑`. The names of the terminals, which the picture does not show, are listed under it when the comment right before a symbol starts with them, as `d g s b; from Analog Canvas nmos`. All symbols are drawn at the same scale, and the page shows or hides the pins, the box and the labels on demand. A thumbnail, as in the table of symbol rules, is framed on the symbol alone and scaled to fit.
 - **What each package is for**: a sentence in both languages in `SUMMARY` in [`src/assets/gallery.js`](src/assets/gallery.js), for every version of a package, or for one version where they differ, as for `rnl-std-fill 0.3`; a package without one shows the comment its file starts with.
@@ -72,6 +72,26 @@ The data is scripts that the page loads with `<script>`, `index.js` and one file
 The page and both `llms` files name every file of the package, so that they cannot fall behind it: `scripts/skill/build.py --check` fails when one does not. The short guide to the language, which the package holds as `references/language.md`, is also the first section of the page of the standard 0.3 ([`scripts/spec`](../scripts/spec/README.md#the-short-guide)); the top bar of every page, of the standard's too, links "For agents".
 
 ## Building and viewing
+
+All five pages share the standard page's six primary links. The introduction, language tour,
+tools and agents pages put their first-level section links beside the content, below the full-width
+hero. Below 1000px, the top bar's Contents button opens that navigation; choosing an entry closes
+it. `test_build.py` compares both languages' primary links and current-page markers with
+`scripts/spec/page.html` and the publisher's labels, and checks the copied CSS values.
+
+After building the site and gallery, run the browser checks with Playwright's Chromium and WebKit
+(two workers, also run by Pages CI):
+
+```bash
+npm ci --prefix tests/viewer
+node tests/viewer/node_modules/@playwright/test/cli.js install chromium webkit
+node tests/viewer/node_modules/@playwright/test/cli.js test --config site/playwright.config.mjs
+```
+
+Set `RNL_SITE_SCREENSHOTS` to an output directory to capture the five Chinese light pages at
+1440px, the introduction and gallery in English dark at 1440px and with the menu open at 390px,
+and a gallery fixture with 15 groups and long names. The fixture is intercepted in the test browser;
+it does not change the generated gallery or the published libraries.
 
 The tools page offers Windows downloads and, for tags that include `apps/desktop/tauri.linux.conf.json` with both Linux bundle targets, Linux AppImage and deb downloads. `build.py` checks the configuration at the selected `viewer-v*` tag, so old Windows-only tags do not acquire broken Linux links. `<!--linux-release-->` and `<!--no-linux-release-->` are top-level conditional blocks alongside the existing release blocks. Run `python -m unittest discover -s site -p 'test_*.py'` to check old releases, Linux releases, and the bilingual and standalone pages; `pages.yml` runs these checks too.
 

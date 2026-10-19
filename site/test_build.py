@@ -1,8 +1,11 @@
 """Release download links, including earlier tags that only shipped Windows files."""
 import importlib.util
+import ast
 import json
+import re
 import subprocess
 import unittest
+from html.parser import HTMLParser
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -10,6 +13,91 @@ from unittest.mock import patch
 spec = importlib.util.spec_from_file_location("site_build", Path(__file__).with_name("build.py"))
 build = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(build)
+
+
+class Navigation(HTMLParser):
+    """Read the primary links, section links and first-level section headings."""
+
+    def __init__(self, html):
+        super().__init__()
+        self.pages = []
+        self.contents = []
+        self.sections = []
+        self.section_stack = []
+        self.nav = None
+        self.link = None
+        self.feed(html)
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "nav":
+            self.nav = "pages" if "pages" in attrs.get("class", "").split() else attrs.get("id")
+        if tag == "a" and self.nav in ("pages", "toc"):
+            self.link = {"href": attrs.get("href"), "text": "", "class": attrs.get("class", ""), "current": attrs.get("aria-current")}
+        if tag == "section":
+            self.section_stack.append(attrs.get("id"))
+        if tag == "h2" and len(self.section_stack) == 1:
+            self.sections.append(self.section_stack[-1])
+
+    def handle_data(self, data):
+        if self.link is not None:
+            self.link["text"] += data
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self.link is not None:
+            (self.pages if self.nav == "pages" else self.contents).append(self.link)
+            self.link = None
+        if tag == "nav":
+            self.nav = None
+        if tag == "section":
+            self.section_stack.pop()
+
+
+class SiteNavigation(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        root = Path(__file__).resolve().parents[1]
+        cls.template = (root / "scripts/spec/page.html").read_text(encoding="utf-8")
+        # Read the publisher's labels without importing its command-line dependencies.
+        tree = ast.parse((root / "scripts/spec/build.py").read_text(encoding="utf-8"))
+        cls.labels = next(ast.literal_eval(node.value) for node in tree.body
+                          if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "LANGS" for t in node.targets))
+        with patch.object(build, "has_linux_release", return_value=False):
+            cls.built = build.build(None)
+
+    def test_primary_navigation_matches_the_standard_in_both_languages(self):
+        pages = list(build.PAGES)
+        for lang in ("zh", "en"):
+            expected = self.template.replace("$site-root$", "./")
+            for field, label in (("intro", "intro"), ("tour", "tour"), ("spec", "spec"), ("packages", "packages"), ("tools", "tools"), ("agents", "agents")):
+                expected = expected.replace(f"${field}-label$", self.labels[lang][label])
+            expected = Navigation(expected).pages
+            for link in expected:
+                link["href"] = "spec/" if link["href"] == "#top" else link["href"].removeprefix("./") or "./"
+            for page in pages:
+                with self.subTest(lang=lang, page=page):
+                    actual = Navigation(self.built[f"{lang}/{page}"]).pages
+                    self.assertEqual([(a["href"], a["text"]) for a in actual], [(a["href"], a["text"]) for a in expected])
+                    for link in actual:
+                        current = link["href"] == ("./" if page == "index.html" else page)
+                        self.assertEqual("is-on" in link["class"].split(), current)
+                        self.assertEqual(link["current"], "page" if current else None)
+
+    def test_contents_cover_first_level_sections_and_keep_the_hero_full_width(self):
+        for lang in ("zh", "en"):
+            for page in ("index.html", "language.html", "tools.html", "agents.html"):
+                with self.subTest(lang=lang, page=page):
+                    html = self.built[f"{lang}/{page}"]
+                    parsed = Navigation(html)
+                    self.assertEqual([a["href"] for a in parsed.contents], [f"#{s}" for s in parsed.sections])
+                    self.assertLess(html.index('id="top"'), html.index('<div class="layout">'))
+                    self.assertNotIn("toc-page", html)
+
+    def test_shared_navigation_css_keeps_the_standard_values(self):
+        css = (Path(__file__).parent / "src/assets/intro.css").read_text(encoding="utf-8")
+        for selector in (".topbar", ".topbar-in", ".pages", ".pages a", ".pages a:hover", ".pages a.is-on", ".layout", "#toc", "#toc ul ul", "#toc a.here"):
+            rule = re.escape(selector) + r"\s*\{([^}]+)\}"
+            self.assertEqual(re.search(rule, css)[1], re.search(rule, self.template)[1], selector)
 
 
 class ReleaseDownloads(unittest.TestCase):
