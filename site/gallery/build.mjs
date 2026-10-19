@@ -128,6 +128,8 @@ const unit = (dir) =>
 
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const num = (x) => (Math.round(x * 100) / 100).toString();
+// All overlays use the core's scene-to-SVG transform (scene y points up).
+const svgPoint = ([x, y], scale) => [Number(num(x * scale)), Number(num(-y * scale))];
 
 /** Primitive boxes exclude outlines. Include their stroke envelope, including SVG's miter limit. */
 function paintedBounds(primitive, scale) {
@@ -225,7 +227,10 @@ function draw(pkg, symbols) {
     };
     for (const prim of level.primitives || []) if (!prim.owner.startsWith("#X1::")) grow(...paintedBounds(prim, scale));
     if (box) grow(...box);
-    // a thumbnail shows the symbol alone, without its labels, pins and their tags
+    // Include the registration point even when it lies outside the symbol's drawing.
+    grow(0, 0, 0, 0);
+    const origin = svgPoint([0, 0], scale);
+    // a thumbnail shows the symbol and its origin, without labels, pins and their tags
     const thumb = Number.isFinite(x0)
       ? viewBox([x0, y0, x1, y1], scale, MARGIN).map(num).join(" ")
       : null;
@@ -243,7 +248,7 @@ function draw(pkg, symbols) {
     x1 += MARGIN;
     y1 += MARGIN;
     const svg = card(level.svg, scale, [x0, y0, x1, y1], box, pins);
-    return { svg, thumb, width: num((x1 - x0) * SCALE_UNIT), height: num((y1 - y0) * SCALE_UNIT), box, pins, problems };
+    return { svg, thumb, origin, width: num((x1 - x0) * SCALE_UNIT), height: num((y1 - y0) * SCALE_UNIT), box, pins, problems };
   });
 }
 
@@ -260,7 +265,7 @@ const TAG_SIZE = 11; // the size of a pin's tag in the core's pixels, as the pag
 function pinTag(p, scale) {
   const text = [].concat(p.terminal).join(",");
   const [dx, dy] = unit(p.dir);
-  const [x, y] = [p.at[0] * scale, -p.at[1] * scale];
+  const [x, y] = svgPoint(p.at, scale);
   // Leave an em for the direction glyph, whose fallback font can be wider than a mono figure.
   const width = (text.length * 0.7 + (ARROWS[p.dir] ? 1 : 0)) * TAG_SIZE;
   const anchor = dx > 0.5 ? "start" : dx < -0.5 ? "end" : p.dir === null ? "start" : "middle";
@@ -284,8 +289,8 @@ function card(svg, scale, [x0, y0, x1, y1], box, pins) {
     .replace(/<rect class="backdrop"[^>]*\/>\n?/, "")
     .replace(/<g data-id="#X1::([^"]+)">/g, (_, key) => `<g class="g-lbl" data-key="${esc(key)}">`)
     .replace(/<g data-id="[^"]*">/g, "<g>");
-  const px = (x) => num(x * scale);
-  const py = (y) => num(-y * scale);
+  const px = (x) => svgPoint([x, 0], scale)[0];
+  const py = (y) => svgPoint([0, y], scale)[1];
   const over = [];
   if (box) {
     over.push(
@@ -293,10 +298,11 @@ function card(svg, scale, [x0, y0, x1, y1], box, pins) {
     );
   }
   for (const p of pins) {
+    const [x, y] = svgPoint(p.at, scale);
     const tag = pinTag(p, scale);
     const arrow = ARROWS[p.dir] ? `<tspan class="g-dir">${ARROWS[p.dir]}</tspan>` : "";
     over.push(
-      `<g class="g-pn"><circle cx="${num(p.at[0] * scale)}" cy="${num(-p.at[1] * scale)}" r="2.6"/>` +
+      `<g class="g-pn"><circle cx="${x}" cy="${y}" r="2.6"/>` +
         `<text x="${num(tag.x)}" y="${num(tag.y)}" text-anchor="${tag.anchor}">${esc(tag.text)}${arrow}</text></g>`,
     );
   }
