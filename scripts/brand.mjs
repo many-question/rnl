@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const viewerRequire = createRequire(join(root, "tests/viewer/package.json"));
 export const { chromium } = viewerRequire("@playwright/test");
+export const ICON_BACKGROUND = "#132033";
 const rnl = process.env.RNL_BIN || join(root, "target/debug", process.platform === "win32" ? "rnl.exe" : "rnl");
 const number = n => String(Number(n.toFixed(6)));
 
@@ -68,7 +69,7 @@ export function darkLogo(svg) {
 
 // Tauri emits the same ICNS representations in a random order. Keep their payloads untouched,
 // but sort the resource blocks by four-character type so repeated generation is byte-identical.
-function stableIcns(file) {
+function icnsBlocks(file) {
   const data = readFileSync(file), blocks = [];
   if (data.toString("ascii", 0, 4) !== "icns" || data.readUInt32BE(4) !== data.length) throw new Error("Invalid ICNS header");
   for (let offset = 8; offset < data.length;) {
@@ -77,17 +78,44 @@ function stableIcns(file) {
     blocks.push(data.subarray(offset, offset + size));
     offset += size;
   }
-  blocks.sort((a, b) => Buffer.compare(a.subarray(0, 4), b.subarray(0, 4)));
-  writeFileSync(file, Buffer.concat([data.subarray(0, 8), ...blocks]));
+  return new Map(blocks.map(block => [block.toString("ascii", 0, 4), block]));
 }
 
-function iconSvg(dark, bounds) {
+function writeIcns(file, blocks) {
+  const sorted = [...blocks.values()].sort((a, b) => Buffer.compare(a.subarray(0, 4), b.subarray(0, 4)));
+  const header = Buffer.alloc(8);
+  header.write("icns");
+  header.writeUInt32BE(8 + sorted.reduce((size, block) => size + block.length, 0), 4);
+  writeFileSync(file, Buffer.concat([header, ...sorted]));
+}
+
+// Keep Tauri's larger frames; replace only 16/24/32px frames with the native Chromium PNGs.
+function smallIco(file) {
+  const data = readFileSync(file), count = data.readUInt16LE(4);
+  const directory = Buffer.from(data.subarray(0, 6 + count * 16)), images = [];
+  let offset = directory.length;
+  for (let i = 0; i < count; i++) {
+    const entry = 6 + i * 16, size = data[entry] || 256;
+    const image = size <= 32 ? readFileSync(join(root, `brand/rnl-icon-${size}.png`)) :
+      data.subarray(data.readUInt32LE(entry + 12), data.readUInt32LE(entry + 12) + data.readUInt32LE(entry + 8));
+    directory.writeUInt32LE(image.length, entry + 8);
+    directory.writeUInt32LE(offset, entry + 12);
+    images.push(image);
+    offset += image.length;
+  }
+  writeFileSync(file, Buffer.concat([directory, ...images]));
+}
+
+export function iconSvg(dark, bounds) {
   const scale = 1024 * 0.72 / Math.max(bounds.width, bounds.height);
   const x = 512 - (bounds.x + bounds.width / 2) * scale;
   const y = 512 - (bounds.y + bounds.height / 2) * scale;
   const body = dark.replace(/^<svg[^>]*>\n/, "").replace(/\n<\/svg>\n$/, "");
+  const stroke = Number(dark.match(/stroke-width="([\d.]+)"/)[1]);
+  const smallWidth = number(stroke * scale * 1.35 / 1024 * 100);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">\n` +
-    `<rect width="1024" height="1024" rx="180" fill="#14345c"/>\n` +
+    `<style>@media (max-width: 32px) { path[stroke]:not([stroke="none"]) { stroke-width: max(.85px, ${smallWidth}vw); vector-effect: non-scaling-stroke; } }</style>\n` +
+    `<rect width="1024" height="1024" rx="180" fill="${ICON_BACKGROUND}"/>\n` +
     `<g transform="translate(${number(x)} ${number(y)}) scale(${number(scale)})">\n${body}\n</g>\n</svg>\n`;
 }
 
@@ -108,14 +136,14 @@ async function generate() {
     write("brand/rnl-logo.svg", svg);
     write("brand/rnl-logo-dark.svg", dark);
     write("brand/rnl-icon.svg", icon);
-    await png(page, icon, 1024, join(root, "brand/rnl-icon-1024.png"));
+    for (const size of [16, 24, 32, 1024]) await png(page, icon, size, join(root, `brand/rnl-icon-${size}.png`));
 
     const assets = join(root, "site/src/assets");
     mkdirSync(join(assets, "brand"), { recursive: true });
     copyFileSync(join(root, "brand/rnl-logo.svg"), join(assets, "brand/rnl-logo.svg"));
     copyFileSync(join(root, "brand/rnl-logo-dark.svg"), join(assets, "brand/rnl-logo-dark.svg"));
     writeFileSync(join(assets, "favicon.svg"), icon);
-    await png(page, icon, 32, join(assets, "favicon-32.png"));
+    copyFileSync(join(root, "brand/rnl-icon-32.png"), join(assets, "favicon-32.png"));
     await png(page, icon, 180, join(assets, "apple-touch-icon.png"));
     const viewerIcons = join(root, "apps/viewer-ui/icons");
     mkdirSync(viewerIcons, { recursive: true });
@@ -135,7 +163,22 @@ async function generate() {
       join(root, "brand/rnl-icon-1024.png"), "-o", temporary], { cwd: root, stdio: "inherit" });
     const config = JSON.parse(readFileSync(join(root, "apps/desktop/tauri.conf.json"), "utf8"));
     for (const icon of config.bundle.icon) copyFileSync(join(temporary, icon.replace(/^icons\//, "")), join(root, "apps/desktop", icon));
-    stableIcns(join(root, "apps/desktop/icons/icon.icns"));
+    copyFileSync(join(root, "brand/rnl-icon-32.png"), join(root, "apps/desktop/icons/32x32.png"));
+    smallIco(join(root, "apps/desktop/icons/icon.ico"));
+    const blocks = icnsBlocks(join(temporary, "icon.icns"));
+    // Let Tauri encode legacy ICNS RGB/mask pairs; retain just the requested physical sizes.
+    // Resource types follow tauri-cli/src/helpers/icns.json; masks accompany is32 and il32.
+    for (const [size, types] of [[16, ["is32", "s8mk"]], [32, ["il32", "l8mk", "ic11"]]]) {
+      const out = join(temporary, `small-${size}`);
+      execFileSync(process.execPath, [require.resolve("@tauri-apps/cli/tauri.js"), "icon",
+        join(root, `brand/rnl-icon-${size}.png`), "-o", out], { cwd: root, stdio: "pipe" });
+      const small = icnsBlocks(join(out, "icon.icns"));
+      for (const type of types) {
+        if (!small.has(type)) throw new Error(`Tauri did not generate ICNS resource ${type}`);
+        blocks.set(type, small.get(type));
+      }
+    }
+    writeIcns(join(root, "apps/desktop/icons/icon.icns"), blocks);
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import vm from "node:vm";
-import { chromium, darkColour, darkLogo, renderLogo, root } from "./brand.mjs";
+import { chromium, darkColour, darkLogo, ICON_BACKGROUND, root, renderLogo } from "./brand.mjs";
 
 test("the current renderer reproduces the committed logo byte for byte", async () => {
   const browser = await chromium.launch();
@@ -14,6 +14,37 @@ test("the current renderer reproduces the committed logo byte for byte", async (
       "run node scripts/brand.mjs and review the logo");
     assert.equal(darkLogo(svg), readFileSync(join(root, "brand/rnl-logo-dark.svg"), "utf8"),
       "run node scripts/brand.mjs and review the logo");
+  } finally {
+    await browser.close();
+  }
+});
+
+test("small SVG icons gain ink only at 32px and below, including when embedded as images", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 400, height: 400 }, deviceScaleFactor: 1 });
+    const icon = readFileSync(join(root, "brand/rnl-icon.svg"), "utf8");
+    const normal = icon.replace(/<style>.*?<\/style>\n/s, "");
+    assert.match(icon, new RegExp(`fill="${ICON_BACKGROUND}"`));
+    async function pixels(svg, size) {
+      const src = "data:image/svg+xml;base64," + Buffer.from(svg).toString("base64");
+      await page.setContent(`<style>body{margin:0}img{display:block}</style><img width="${size}" height="${size}" src="${src}">`);
+      await page.locator("img").evaluate(el => el.decode());
+      const screenshot = await page.locator("img").screenshot({ omitBackground: true });
+      return page.evaluate(async src => {
+        const image = new Image(); image.src = src; await image.decode();
+        const canvas = document.createElement("canvas"); canvas.width = canvas.height = image.width;
+        const context = canvas.getContext("2d"); context.drawImage(image, 0, 0);
+        return [...context.getImageData(0, 0, image.width, image.height).data];
+      }, "data:image/png;base64," + screenshot.toString("base64"));
+    }
+    const ink = data => data.reduce((sum, _, i) => i % 4 ? sum : sum +
+      Math.max(0, Math.min(data[i] - 19, data[i + 1] - 32, data[i + 2] - 51)), 0);
+    for (const size of [16, 24, 32, 48, 256]) {
+      const actual = await pixels(icon, size), original = await pixels(normal, size);
+      if (size <= 32) assert.ok(ink(actual) > ink(original) * 1.2, `${size}px should have stronger visible strokes`);
+      else assert.deepEqual(actual, original, `${size}px must retain the original strokes`);
+    }
   } finally {
     await browser.close();
   }

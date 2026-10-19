@@ -8,12 +8,16 @@ It defines its own symbols and styles and contains no text. Keep its circuit and
 | `rnl-logo.sp` | Editable source; render with the RNL CLI |
 | `rnl-logo.svg` | Transparent original colours for light backgrounds |
 | `rnl-logo-dark.svg` | Transparent colours for dark backgrounds, using the viewer's `darkColour` rule |
-| `rnl-icon.svg` | 1024-unit icon, dark logo on `#14345c`, corner radius 180 |
+| `rnl-icon.svg` | Responsive 1024-unit icon, dark logo on `#132033`, corner radius 180 |
 | `rnl-icon-1024.png` | Chromium rasterization used as Tauri's input |
+| `rnl-icon-16.png`, `rnl-icon-24.png`, `rnl-icon-32.png` | Small icons with stronger strokes, also packed into the desktop icon containers |
 
 The transparent logos have 6% of the painted width as padding on every side, including strokes.
 The icon centres the painted bounds and makes their longer side 72% of the canvas.
-No small-size variant changes the circuit or thickens its strokes.
+At 32px and below, icon strokes are 35% heavier, with a minimum screen width of .85px.
+The resulting widths are approximately .85px at 16px, .87px at 24px and 1.17px at 32px.
+SVG media queries apply the same treatment to browser favicons at their actual display size.
+Larger icons and the transparent homepage logos retain their original line weights; the source circuit stays unchanged.
 
 ## Regeneration
 
@@ -36,8 +40,9 @@ The script uses `target/debug/rnl` (`rnl.exe` on Windows); `RNL_BIN` can select 
 It invokes the installed Tauri CLI's `icon` command, equivalent to `npx tauri icon`, in a temporary
 folder and copies only the five icons listed in `apps/desktop/tauri.conf.json`. Unused Appx,
 Android and iOS outputs are discarded; the bundle configuration stays unchanged.
-Tauri's ICNS resource blocks arrive in a random order, so the script sorts them by type without
-changing any image payload. This makes that file reproducible as well.
+The 32px desktop PNG and ICO's 16/24/32px frames use the small Chromium PNGs. Tauri also encodes
+the small ICNS RGB/mask resources, including the 16pt@2x (32 physical pixels) representation;
+larger resources retain their normal strokes. ICNS blocks are sorted by type for reproducibility.
 
 The same command also updates:
 
