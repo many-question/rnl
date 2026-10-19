@@ -41,7 +41,7 @@ export async function startCommands() {
  */
 export function command(id, options = {}) {
   if (!isEnabled(id)) return;
-  if (shell?.embed && !["fit", "zoom-in", "zoom-out", "descend", "ascend"].includes(id)) return;
+  if (shell?.embed && !["fit", "zoom-in", "zoom-out", "descend", "descend-new-window", "ascend"].includes(id)) return;
   switch (id) {
     case "new-window": return duplicateWindow();
     case "open": pickAndOpen("file"); break;
