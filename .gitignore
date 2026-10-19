@@ -9,6 +9,8 @@ target/
 node_modules/
 dist/
 coverage/
+site/test-results/
+site/__pycache__/
 
 # Web fonts written by scripts/fonts.py web
 apps/viewer-ui/fonts/

@@ -5,29 +5,31 @@
 
 .gl-sheet { padding-block: 0 72px; }
 
-/* ---------- The bar: series, search, what the symbols show ---------- */
-
-.gl-bar {
-  position: sticky; top: calc(env(safe-area-inset-top, 0px) + 58px); z-index: 40;
-  background: var(--paper);
-  background: color-mix(in srgb, var(--paper) 92%, transparent);
-  -webkit-backdrop-filter: saturate(1.2) blur(10px);
-  backdrop-filter: saturate(1.2) blur(10px);
-  border-bottom: 1px solid var(--line);
-}
-.gl-bar-in { display: flex; align-items: center; gap: 10px 14px; padding-block: 10px; flex-wrap: wrap; }
-.gl-series { flex-wrap: wrap; }
+/* The package tree uses the standard page's #toc, nested list and .here rules. */
 .gl-search {
-  flex: 1 1 240px; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; min-width: 0;
-  border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel); color: var(--ink-3);
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px; margin-bottom: 28px;
+  min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink-3);
 }
-.gl-search:focus-within { border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-2); }
-.gl-search .ico { width: 17px; height: 17px; }
-.gl-search input {
-  flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink);
-  font: 15px var(--f-body);
-}
+.gl-search:focus-within { outline: 2px solid var(--signal); outline-offset: 2px; }
+.gl-search .ico { width: 16px; height: 16px; }
+.gl-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; }
 .gl-search input::placeholder { color: var(--ink-3); }
+#gl-nav .toc-title:not(:first-child) { margin-top: 28px; }
+.gl-group-row { display: flex; align-items: center; min-width: 0; }
+.gl-fold { flex: none; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; background: transparent; color: var(--ink-3); cursor: pointer; }
+.gl-fold .ico { width: 16px; height: 16px; transition: transform .2s; }
+.gl-fold[aria-expanded="true"] .ico { transform: rotate(90deg); }
+#toc .gl-nav-item { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; padding: 2px 8px; border: 0; border-radius: 5px; text-align: left; font: inherit; background: transparent; color: var(--ink-2); cursor: pointer; }
+#toc .gl-group { font-weight: 600; color: var(--ink); }
+#toc .gl-nav-item:hover { background: var(--panel); }
+#toc .gl-nav-item.here { color: var(--markup); background: var(--markup-2); }
+.gl-nav-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gl-nav-count, .gl-readonly { flex: none; padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; font-size: 11px; font-weight: 400; color: var(--ink-3); }
+#toc .gl-children { margin-left: 36px; }
+.gl-content { min-width: 0; padding: 28px 20px 40px; }
+.gl-heading h2 { font: 700 20px/1.35 var(--f-body); overflow-wrap: anywhere; }
+.gl-heading p { margin: 8px 0 0; font-size: 13.5px; color: var(--ink-3); }
+.gl-bar { position: sticky; top: 59px; z-index: 30; padding-block: 12px; border-bottom: 1px solid var(--line); background: var(--paper); }
 .gl-toggles { display: flex; gap: 6px; }
 .gl-tog {
   display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px; cursor: pointer;
@@ -36,34 +38,7 @@
 .gl-tog .ico { width: 16px; height: 16px; }
 .gl-tog:hover { color: var(--ink); }
 .gl-tog[aria-pressed="true"] { color: var(--ink); border-color: var(--ink-3); background: var(--panel-2); }
-
-/* ---------- Layout: the packages beside the gallery ---------- */
-
-.gl-layout { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 36px; padding-top: 28px; }
-.gl-side {
-  position: sticky; top: 128px; align-self: start; max-height: calc(100vh - 144px); overflow: auto;
-  overscroll-behavior: contain; scrollbar-width: thin;
-}
-.gl-pkgs > summary {
-  list-style: none; display: flex; align-items: center; gap: 8px; padding: 2px 10px 8px; cursor: default;
-  font: 600 12px var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
-}
-.gl-pkgs > summary::-webkit-details-marker { display: none; }
-.gl-pkgs > summary .ico { width: 16px; height: 16px; }
-.gl-pkgs-now { margin-left: auto; text-transform: none; letter-spacing: 0; color: var(--markup); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gl-side-h { margin: 14px 10px 4px; font: 600 11px/1.5 var(--f-body); letter-spacing: .04em; color: var(--ink-3); }
-.gl-side-btn {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 8px; width: 100%; padding: 5px 10px;
-  border: 0; border-radius: 6px; background: transparent; text-align: left; cursor: pointer;
-  font: 13px/1.5 var(--f-mono); color: var(--ink-2);
-}
-.gl-side-btn span { overflow-wrap: anywhere; }
-.gl-side-btn small { flex: none; min-width: 22px; padding: 0 5px; border-radius: 999px; background: var(--panel-2); text-align: center; font: 600 11px/1.6 var(--f-mono); color: var(--ink-3); }
-.gl-side-btn.is-on small { background: var(--panel); }
-.gl-side-btn:hover { background: var(--panel); color: var(--ink); }
-.gl-side-btn.is-on { background: var(--markup-2); color: var(--markup); box-shadow: inset 2px 0 0 var(--markup); }
-
-.gl-main { min-width: 0; }
+.gl-main { min-width: 0; padding-top: 28px; }
 .gl-status { padding: 28px 0; color: var(--ink-3); }
 .gl-status code { font-size: .9em; }
 
@@ -107,7 +82,7 @@
 .gl-card {
   display: flex; flex-direction: column; min-width: 0; padding: 0; overflow: hidden; cursor: pointer; text-align: left;
   border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: inherit; font: inherit;
-  padding-bottom: 10px; transition: border-color .15s, box-shadow .15s;
+  padding-bottom: 10px;
 }
 .gl-card:hover { border-color: var(--ink-3); box-shadow: var(--shadow); }
 .gl-fig {
@@ -235,22 +210,10 @@
 /* ---------- Narrow screens ---------- */
 
 @media (max-width: 900px) {
-  .gl-layout { grid-template-columns: minmax(0, 1fr); gap: 0; padding-top: 14px; }
-  .gl-side { position: static; max-height: none; overflow: visible; margin-bottom: 8px; }
-  .gl-pkgs { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
-  .gl-pkgs > summary { padding: 10px 12px; cursor: pointer; }
-  .gl-pkgs > summary::after { content: "▾"; margin-left: 8px; letter-spacing: 0; }
-  .gl-pkgs[open] > summary::after { content: "▴"; }
-  .gl-pkgs-now { margin-left: auto; }
-  #gl-pkgs { padding: 0 6px 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); column-gap: 8px; }
-  #gl-pkgs .gl-side-h { grid-column: 1 / -1; }
   .gl-dlg-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
   .gl-bar { position: static; }
-  .gl-bar-in { gap: 8px; }
-  .gl-series { width: 100%; }
-  .gl-search { flex-basis: 100%; }
   .gl-toggles { width: 100%; }
   .gl-tog { flex: 1; justify-content: center; }
   .gl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }

@@ -162,6 +162,12 @@ jobs:
           node --test site/gallery/package-file.test.mjs
           node site/gallery/build.mjs
 
+      - name: Check site navigation in Chromium and WebKit
+        run: |
+          npm ci --prefix tests/viewer
+          node tests/viewer/node_modules/@playwright/test/cli.js install --with-deps chromium webkit
+          node tests/viewer/node_modules/@playwright/test/cli.js test --config site/playwright.config.mjs
+
       - if: github.event_name != 'pull_request'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 

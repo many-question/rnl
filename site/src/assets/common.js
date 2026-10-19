@@ -72,18 +72,22 @@
   }
 
   function initNav() {
-    var links = $$('.toc a[href^="#"]');
+    var links = $$('#toc a[href^="#"]');
     var map = {};
     links.forEach(function (a) { map[a.getAttribute('href').slice(1)] = a; });
     if ('IntersectionObserver' in window) {
       var io = new IntersectionObserver(function (es) {
         es.forEach(function (e) {
           if (!e.isIntersecting) return;
-          links.forEach(function (a) { a.classList.remove('is-on'); });
+          links.forEach(function (a) { a.classList.remove('here'); });
           var a = map[e.target.id];
-          if (a) a.classList.add('is-on');
+          if (a) {
+            a.classList.add('here');
+            var r = a.getBoundingClientRect(), box = $('#toc').getBoundingClientRect();
+            if (r.top < box.top + 40 || r.bottom > box.bottom - 40) $('#toc').scrollTop += r.top - box.top - $('#toc').clientHeight / 3;
+          }
         });
-      }, { rootMargin: '-40% 0px -55% 0px' });
+      }, { rootMargin: '-10% 0px -80% 0px' });
       Object.keys(map).forEach(function (id) {
         var s = document.getElementById(id);
         if (s) io.observe(s);
@@ -111,44 +115,31 @@
     $$('[data-lang-link]').forEach(function (a) {
       var base = a.getAttribute('href');
       a.addEventListener('click', function () {
-        var on = $('.toc a.is-on');
-        a.setAttribute('href', base + (on ? on.getAttribute('href') : ''));
+        var on = $('#toc a.here');
+        a.setAttribute('href', base.split(/[?#]/)[0] + location.search + (on ? on.getAttribute('href') : location.hash));
       });
     });
-    /* A top bar whose links do not fit beside the brand draws them closer together, then writes the links
-       that have a short form (a span with the class s) in it, and when they still do not fit, folds them into
-       the menu, as on narrow screens */
-    var topbar = $('.topbar'), row = $('.topbar-in');
-    function fit() {
-      if (!topbar || !row) return;
-      var over = function () { return row.scrollWidth > row.clientWidth + 1; };
-      topbar.classList.remove('is-tight', 'is-short', 'is-compact');
-      if (!over()) return;
-      topbar.classList.add('is-tight');
-      if (!over()) return;
-      if ($('.toc a .s', topbar)) {
-        topbar.classList.add('is-short');
-        if (!over()) return;
-        topbar.classList.remove('is-short');
-      }
-      topbar.classList.replace('is-tight', 'is-compact');
-    }
-    window.addEventListener('resize', debounce(fit, 100));
-    fit();
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
     var tb = $('#toc-btn'), toc = $('#toc');
     if (tb && toc) {
       tb.addEventListener('click', function () {
         var open = toc.classList.toggle('is-open');
         tb.setAttribute('aria-expanded', open ? 'true' : 'false');
       });
-      $$('a', toc).forEach(function (a) {
-        a.addEventListener('click', function () {
-          toc.classList.remove('is-open');
-          tb.setAttribute('aria-expanded', 'false');
-        });
+      toc.addEventListener('click', function (e) {
+        if (e.target.closest('a')) closeToc();
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && toc.classList.contains('is-open')) closeToc();
       });
     }
+  }
+
+  function closeToc() {
+    var toc = $('#toc'), tb = $('#toc-btn');
+    if (!toc || !tb) return;
+    if (toc.classList.contains('is-open') && toc.contains(document.activeElement)) tb.focus({ preventScroll: true });
+    toc.classList.remove('is-open');
+    tb.setAttribute('aria-expanded', 'false');
   }
 
   /* ================= Shared: tabs ================= */
@@ -196,7 +187,7 @@
 
   global.RNLPage = {
     $: $, $$: $$, icon: icon, store: store, debounce: debounce, onVisible: onVisible, setPressed: setPressed,
-    fill: fill, paint: paint, initTabs: initTabs, initSeg: initSeg
+    fill: fill, paint: paint, initTabs: initTabs, initSeg: initSeg, closeToc: closeToc
   };
 
   function boot() {

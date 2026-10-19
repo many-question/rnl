@@ -45,34 +45,24 @@
 <a class="skip" href="#main"><zh>跳到正文</zh><en>Skip to content</en></a>
 
 <header class="topbar">
-  <div class="wrap topbar-in">
+  <div class="topbar-in">
     <a class="brand" href="./"><span class="brand-mark">RNL</span><span class="brand-sub">Rich Netlist</span></a>
-    <nav class="toc" id="toc" aria-label="<zh>小节</zh><en>Sections</en>">
-      <a href="#glance"><zh>一览</zh><en>Glance</en></a>
-      <a href="#sentences" title="<zh>句子</zh><en>Sentences</en>" aria-label="<zh>句子</zh><en>Sentences</en>"><span class="t"><zh>句子</zh><en>Sentences</en></span><span class="s">T1</span></a>
-      <a href="#definitions" title="<zh>定义</zh><en>Definitions</en>" aria-label="<zh>定义</zh><en>Definitions</en>"><span class="t"><zh>定义</zh><en>Definitions</en></span><span class="s">T2</span></a>
-      <a href="#defaults" title="<zh>标准包</zh><en>Defaults</en>" aria-label="<zh>标准包</zh><en>Defaults</en>"><span class="t"><zh>标准包</zh><en>Defaults</en></span><span class="s">T3</span></a>
-      <a href="#sets" title="<zh>集合</zh><en>Sets</en>" aria-label="<zh>集合</zh><en>Sets</en>"><span class="t"><zh>集合</zh><en>Sets</en></span><span class="s">T4</span></a>
-      <a href="#wires" title="<zh>导线</zh><en>Wires</en>" aria-label="<zh>导线</zh><en>Wires</en>"><span class="t"><zh>导线</zh><en>Wires</en></span><span class="s">T5</span></a>
-      <a href="#text" title="<zh>文字</zh><en>Text</en>" aria-label="<zh>文字</zh><en>Text</en>"><span class="t"><zh>文字</zh><en>Text</en></span><span class="s">T6</span></a>
-      <a href="#orientation" title="<zh>朝向</zh><en>Orientation</en>" aria-label="<zh>朝向</zh><en>Orientation</en>"><span class="t"><zh>朝向</zh><en>Orientation</en></span><span class="s">T7</span></a>
-      <a href="#priority" title="<zh>优先级</zh><en>Priority</en>" aria-label="<zh>优先级</zh><en>Priority</en>"><span class="t"><zh>优先级</zh><en>Priority</en></span><span class="s">T8</span></a>
-      <a href="#header" title="<zh>文件头</zh><en>Header</en>" aria-label="<zh>文件头</zh><en>Header</en>"><span class="t"><zh>文件头</zh><en>Header</en></span><span class="s">T9</span></a>
-      <a href="#examples"><zh>例子</zh><en>Examples</en></a>
-      <a class="toc-page" href="spec/"><zh>语言标准</zh><en>Standard</en><svg class="ico"><use href="#i-arrow"/></svg></a>
-      <a class="toc-page" href="packages.html"><zh>标准包</zh><en>Packages</en><svg class="ico"><use href="#i-arrow"/></svg></a>
-      <a class="toc-page" href="tools.html"><zh>工具</zh><en>Tools</en><svg class="ico"><use href="#i-arrow"/></svg></a>
-      <a class="toc-page" href="agents.html"><zh>给 agent</zh><en>Agents</en><svg class="ico"><use href="#i-arrow"/></svg></a>
-      <a class="toc-page" href="./"><svg class="ico"><use href="#i-back"/></svg><zh>介绍页</zh><en>Introduction</en></a>
+    <nav class="pages" aria-label="<zh>页面</zh><en>Pages</en>">
+      <a href="./"><zh>介绍</zh><en>Introduction</en></a>
+      <a class="is-on" aria-current="page" href="language.html"><zh>语言导览</zh><en>Language tour</en></a>
+      <a href="spec/"><zh>标准</zh><en>Standard</en></a>
+      <a href="packages.html"><zh>标准包</zh><en>Packages</en></a>
+      <a href="tools.html"><zh>工具</zh><en>Tools</en></a>
+      <a href="agents.html"><zh>给 agent</zh><en>Agents</en></a>
     </nav>
-    <button class="icon-btn toc-btn" id="toc-btn" type="button" aria-label="<zh>打开目录</zh><en>Open the section list</en>" aria-expanded="false" aria-controls="toc"><svg class="ico"><use href="#i-menu"/></svg></button>
+    <button class="icon-btn toc-btn" id="toc-btn" type="button" aria-label="<zh>目录</zh><en>Contents</en>" aria-expanded="false" aria-controls="toc"><svg class="ico"><use href="#i-menu"/></svg></button>
     <a class="lang-link" href="<zh>../en/language.html</zh><en>../zh/language.html</en>" hreflang="<zh>en</zh><en>zh-CN</en>" lang="<zh>en</zh><en>zh-CN</en>" aria-label="<zh>English version</zh><en>中文版</en>" data-lang-link><zh>EN</zh><en>中文</en></a>
     <button class="icon-btn" id="theme-btn" type="button" aria-label="<zh>切换配色</zh><en>Switch color theme</en>"><svg class="ico"><use href="#i-moon"/></svg></button>
   </div>
   <div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
 </header>
 
-<main id="main">
+
 
 <!-- ===================== Intro ===================== -->
 <section class="hero tour-hero" id="top" aria-labelledby="tour-title">
@@ -97,6 +87,25 @@
     </ol>
   </div>
 </section>
+
+<div class="layout">
+<nav id="toc" aria-label="<zh>目录</zh><en>Contents</en>">
+  <p class="toc-title"><zh>目录</zh><en>Contents</en></p>
+  <ul>
+    <li><a href="#glance"><zh>一览</zh><en>Glance</en></a></li>
+    <li><a href="#sentences"><zh>语句读作事实：记号、例句、中文。</zh><en>Statements read as facts: notation, sentences, Chinese.</en></a></li>
+    <li><a href="#definitions"><zh>AS 说“是什么”，ATTACH 说“添上什么”。</zh><en>AS says what things are; ATTACH says what is added to them.</en></a></li>
+    <li><a href="#defaults"><zh>什么都不写，也能画出来。</zh><en>Write nothing, and it still draws.</en></a></li>
+    <li><a href="#sets"><zh>集合打散一层；选择是规则。</zh><en>Sets spread one level; selections are rules.</en></a></li>
+    <li><a href="#wires"><zh>只有共用一个点，才算接上。</zh><en>Only a shared point joins wires.</en></a></li>
+    <li><a href="#text"><zh>附着在对象上是标签，附着在点上是标注。</zh><en>Text on an object is a label; on a point, an annotation.</en></a></li>
+    <li><a href="#orientation"><zh>x 向右，y 向上；八个朝向码。</zh><en>x right, y up; eight orientation codes.</en></a></li>
+    <li><a href="#priority"><zh>冲突不是错误：先比优先级，再比先后。</zh><en>Conflicts are not errors: priority first, then order.</en></a></li>
+    <li><a href="#header"><zh>头段记录：版本、代称包、器件的端子名。</zh><en>The header record: version, alias packages, device terminals.</en></a></li>
+    <li><a href="#examples"><zh>例子</zh><en>Examples</en></a></li>
+  </ul>
+</nav>
+<main id="main" class="page-content">
 
 <!-- ===================== T0 At a glance ===================== -->
 <section id="glance" class="sheet">
@@ -733,6 +742,7 @@
 </section>
 
 </main>
+</div>
 
 <footer class="foot">
   <div class="wrap foot-grid">

@@ -197,25 +197,19 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible, summary:focus-v
 /* ---------- Top bar ---------- */
 
 .topbar {
-  position: sticky;
-  top: env(safe-area-inset-top, 0px);
-  z-index: 50;
-  background: var(--paper);
-  background: color-mix(in srgb, var(--paper) 88%, transparent);
-  -webkit-backdrop-filter: saturate(1.2) blur(10px);
-  backdrop-filter: saturate(1.2) blur(10px);
-  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 50; border-bottom: 1px solid var(--line);
+  background: var(--paper); background: color-mix(in srgb, var(--paper) 88%, transparent);
+  -webkit-backdrop-filter: saturate(1.2) blur(10px); backdrop-filter: saturate(1.2) blur(10px);
 }
-.topbar-in { display: flex; align-items: center; gap: 18px; height: 56px; }
-.brand { display: flex; align-items: baseline; gap: 8px; color: var(--ink); text-decoration: none; }
+.topbar-in { display: flex; align-items: center; gap: 18px; height: 56px; padding-inline: 20px; }
+.brand { display: flex; align-items: baseline; gap: 8px; color: var(--ink); }
+.brand:hover { text-decoration: none; }
 .brand-mark { font: 700 21px/1 var(--f-disp); letter-spacing: .02em; }
 .brand-sub { font-size: 13px; color: var(--ink-2); }
-.toc { display: flex; gap: 2px; margin-left: auto; }
-.toc a {
-  padding: 6px 7px; border-radius: 6px; font-size: 14px; color: var(--ink-2); text-decoration: none; white-space: nowrap;
-}
-.toc a:hover { color: var(--ink); background: var(--panel); }
-.toc a.is-on { color: var(--ink); box-shadow: inset 0 -2px 0 var(--markup); border-radius: 0; }
+.pages { display: flex; gap: 2px; margin-left: auto; }
+.pages a { padding: 6px 10px; border-radius: 6px; font-size: 14px; color: var(--ink-2); white-space: nowrap; }
+.pages a:hover { color: var(--ink); background: var(--panel); text-decoration: none; }
+.pages a.is-on { color: var(--ink); box-shadow: inset 0 -2px 0 var(--markup); border-radius: 0; }
 .icon-btn {
   display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); cursor: pointer;
@@ -223,43 +217,49 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible, summary:focus-v
 .icon-btn:hover { color: var(--ink); border-color: var(--line-2); }
 .lang-link {
   display: inline-grid; place-items: center; min-width: 36px; height: 36px; padding: 0 9px; border-radius: 8px;
-  border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); text-decoration: none;
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink-2);
   font: 600 12.5px/1 var(--f-body); letter-spacing: .04em; white-space: nowrap;
 }
-.lang-link:hover { color: var(--ink); border-color: var(--line-2); }
+.lang-link:hover { color: var(--ink); border-color: var(--line-2); text-decoration: none; }
 .toc-btn { display: none; }
-.progress { height: 2px; background: transparent; }
-.progress span { display: block; height: 100%; width: 0; background: var(--markup); transition: width .1s linear; }
+.progress { height: 2px; }
+.progress span { display: block; height: 100%; width: 0; background: var(--markup); }
 
-.brand { flex: none; }
+/* Contents beside the text */
+.layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); max-width: 1320px; margin-inline: auto; }
+#toc {
+  position: sticky; top: 59px; align-self: start; max-height: calc(100vh - 59px); overflow-y: auto;
+  padding: 28px 18px 40px 20px; border-right: 1px solid var(--line); font-size: 13.5px; line-height: 1.5;
+}
+#toc .toc-title { font: 600 12px/1 var(--f-disp); letter-spacing: .12em; text-transform: uppercase; color: var(--markup); margin: 0 0 12px; }
+#toc ul { list-style: none; margin: 0; padding: 0; }
+#toc ul ul { padding-left: 14px; margin: 2px 0 8px; border-left: 1px solid var(--line); }
+#toc li { margin: 1px 0; }
+#toc a { display: block; padding: 2px 8px; border-radius: 5px; color: var(--ink-2); }
+#toc > ul > li > a { color: var(--ink); font-weight: 600; margin-top: 6px; }
+#toc a:hover { background: var(--panel); text-decoration: none; }
+#toc a.here { color: var(--markup); background: var(--markup-2); }
+.brand, .pages a, .lang-link, #toc a { text-decoration: none; }
+.page-content { min-width: 0; }
 
-/* Narrow screens, and a top bar whose links do not fit beside the brand even drawn closer (common.js
-   marks it is-tight, then is-compact), fold the links into a menu */
-@media (max-width: 1200px) {
-  .toc {
-    display: none; position: absolute; top: 57px; right: 16px; left: 16px; flex-direction: column;
-    padding: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+@media (max-width: 1000px) {
+  html { scroll-padding-top: 66px; }
+  .layout { display: block; }
+  .toc-btn { display: inline-grid; }
+  .brand-sub { display: none; }  /* the six links of the pages and the buttons do not fit beside it at 768px */
+  #toc {
+    display: none; position: fixed; z-index: 40; top: 66px; left: 12px; right: 12px; bottom: 12px; max-height: none;
+    border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow);
   }
-  .toc.is-open { display: flex; }
-  .toc a { padding: 10px 12px; font-size: 15px; }
-  .toc a.is-on { box-shadow: inset 3px 0 0 var(--markup); }
-  .toc-btn { display: inline-grid; margin-left: auto; }
+  #toc.is-open { display: block; }
+  /* Fixed panels must stretch between their insets so long lists scroll within the viewport. */
+  .layout > #toc { align-self: auto; }
 }
-.topbar.is-tight .topbar-in { gap: 12px; }
-.topbar.is-tight .toc a { padding-inline: 3px; }
-/* a link with a short form, such as T1 for the first section of the tour: the short form stands in for it
-   while the links do not fit (common.js marks the top bar is-short) */
-.toc a .s { display: none; }
-.topbar.is-short .toc a .s { display: inline; }
-.topbar.is-short .toc a .t { display: none; }
-.topbar.is-compact .toc {
-  display: none; position: absolute; top: 57px; right: 16px; left: 16px; flex-direction: column;
-  padding: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+@media (max-width: 640px) {
+  .pages, .brand-sub { display: none; }
+  .topbar-in { gap: 10px; }
+  .lang-link { margin-left: auto; }
 }
-.topbar.is-compact .toc.is-open { display: flex; }
-.topbar.is-compact .toc a { padding: 10px 12px; font-size: 15px; }
-.topbar.is-compact .toc a.is-on { box-shadow: inset 3px 0 0 var(--markup); }
-.topbar.is-compact .toc-btn { display: inline-grid; margin-left: auto; }
 
 /* ---------- Shared components ---------- */
 
@@ -1181,13 +1181,7 @@ html[lang="en"] .fam { grid-template-columns: 108px 1fr; }
 
 /* ---------- Language 0.2: additions to the introduction page ---------- */
 
-.toc a.toc-page {
-  display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; color: var(--markup);
-  border: 1px solid var(--markup-line); background: var(--markup-2); border-radius: 6px;
-}
-.toc a.toc-page .ico { width: 15px; height: 15px; }
-.toc a.toc-page:hover { color: var(--markup); border-color: var(--markup); }
-@media (max-width: 1200px) { .toc a.toc-page { margin: 6px 0 0; justify-content: flex-start; } }
+
 
 .ph .seg { padding: 2px; }
 .ph .seg button { height: 26px; padding: 0 9px; font-size: 12.5px; }
