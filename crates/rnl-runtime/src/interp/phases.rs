@@ -1155,6 +1155,11 @@ impl Interp<'_> {
     }
 
     pub(crate) fn text_anchor(&mut self, s: SceneId, t: ObjId) -> Option<Pt> {
+        self.text_anchor_source(s, t).map(|(at, _)| at)
+    }
+
+    /// The anchor and whether at least one axis comes from the symbol's local position.
+    fn text_anchor_source(&mut self, s: SceneId, t: ObjId) -> Option<(Pt, bool)> {
         let att = self.text_attach(t);
         let items = self.text_items(t);
         let base = match self.o(att) {
@@ -1170,6 +1175,7 @@ impl Interp<'_> {
         // written later, whatever the priority; failing both, the position the symbol gives a label it
         // defines, turned with the owner; failing that, the axis is free.
         let mut xy = self.scenes[s].pos.get(&t).copied().unwrap_or([None, None]);
+        let mut from_symbol = false;
         if let Some(b) = base {
             for (k, axis, item) in [(0usize, 'x', items.dx), (1, 'y', items.dy)] {
                 let Some(d) = item else { continue };
@@ -1193,17 +1199,18 @@ impl Interp<'_> {
             }
             if let Some(sp) = self.text_sym_pos(t) {
                 if matches!(self.o(att), ObjData::Inst { .. } | ObjData::Usage(_) | ObjData::Bundle { .. }) {
+                    from_symbol = xy.iter().any(Option::is_none);
                     let d = self.orientation(s, att).apply(sp);
                     xy = [xy[0].or(Some(b.0 + d.0)), xy[1].or(Some(b.1 + d.1))];
                 }
             }
         }
         if let [Some(x), Some(y)] = xy {
-            return Some((x, y));
+            return Some(((x, y), from_symbol));
         }
         // a free axis: where this implementation puts the text, on the axes the scene leaves free
         let free = self.text_default_place(s, att, base)?;
-        Some((xy[0].unwrap_or(free.0), xy[1].unwrap_or(free.1)))
+        Some(((xy[0].unwrap_or(free.0), xy[1].unwrap_or(free.1)), from_symbol))
     }
 
     /// Where this implementation puts a text whose position the scene and the symbol leave free:
@@ -1246,14 +1253,14 @@ impl Interp<'_> {
     /// or as a flyline, a net none of whose wires has all its points placed, and a graphic. The axes
     /// that a PLACE fixes keep their values. This place is the viewer's only: constraints and the
     /// solver's view still see such a text without a position.
-    pub(crate) fn text_drawn_at(&mut self, s: SceneId, t: ObjId) -> Option<Pt> {
-        if let Some(at) = self.text_anchor(s, t) {
+    pub(crate) fn text_drawn_at(&mut self, s: SceneId, t: ObjId) -> Option<(Pt, bool)> {
+        if let Some(at) = self.text_anchor_source(s, t) {
             return Some(at);
         }
         let att = self.text_attach(t);
         let xy = self.scenes[s].pos.get(&t).copied().unwrap_or([None, None]);
         let free = self.drawn_default_place(s, att)?;
-        Some((xy[0].unwrap_or(free.0), xy[1].unwrap_or(free.1)))
+        Some(((xy[0].unwrap_or(free.0), xy[1].unwrap_or(free.1)), false))
     }
 
     /// The default place of a text whose attached object is drawn although `text_default_place`

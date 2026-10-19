@@ -775,17 +775,12 @@ impl Interp<'_> {
                 continue;
             }
             // a text whose attached object is drawn is drawn too (13.3; the draft 0.3, section 9)
-            let Some(anchor) = self.text_drawn_at(s, t) else { continue };
+            let Some((anchor, from_symbol)) = self.text_drawn_at(s, t) else { continue };
             let it = self.text_items(t);
             let Some(text) = it.text.clone() else { continue };
             let att = self.text_attach(t);
             let drawable_att = matches!(self.o(att), ObjData::Inst { .. } | ObjData::Usage(_) | ObjData::Bundle { .. });
-            let explicit = self.xy(s, t).is_some();
-            let orient = if self.text_sym_pos(t).is_some() && drawable_att && !explicit {
-                self.orientation(s, att)
-            } else {
-                Orient::R0
-            };
+            let orient = if from_symbol { self.orientation(s, att) } else { Orient::R0 };
             let expanded = self.expand_text(s, &text, att);
             let mut layer = self.layer_of(s, t);
             if drawable_att && layer == Layer::Middle {

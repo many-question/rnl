@@ -81,3 +81,5 @@ Version 0.3 lets the solver write back every decision it makes, so that a viewer
 **New.** `rnl-std-basic` and `rnl-std-semiconductors` add symbols, such as switches, current-controlled sources, transmission lines and JFETs. The series also adds packages that `rnl-std` does not bring in: `rnl-std-functional`, `rnl-std-rf`, `rnl-std-logic` and `rnl-std-signal-flow`, the collection `rnl-std-full` of these with `rnl-std`, and the optional `rnl-std-no-labels` (16.3). A name that a file defines itself and that the series 0.3 adds, such as `$SWITCH`, hides the standard one with a hint (6.8), so the file keeps its own.
 
 **Revision 2.** An editorial revision; the language does not change. The examples of 1.3 and 5.9 write the model card of their transistors, `.model nch nmos level=1`, so that the standard package can tell their polarity and give them a symbol.
+
+**Later editorial clarification.** Section 13.3 makes explicit that a text whose two position axes are supplied by the scene does not inherit its attached object's orientation; its alignment is interpreted in the scene's directions. The language does not change.
