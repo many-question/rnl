@@ -83,6 +83,16 @@ function filesSource(files, entry) {
   };
 }
 
+/** Keep transferred text locally, and retain a URL source for includes not in that snapshot. */
+function sessionSource(files, entry) {
+  const local = filesSource(files, entry.path);
+  const remote = entry.url ? urlSource(new URL(entry.url)) : null;
+  return {
+    ...(files.has(entry.path) ? local : remote || local), ...entry,
+    read: async (path, again) => await local.read(path) ?? (remote ? remote.read(path, again) : null),
+  };
+}
+
 /**
  * The path in the workspace of a file the Document names `path`: relative to the directory `dir` of
  * the netlist (`""` for the root) unless it is rooted, with `.` and `..` resolved as the core does,
@@ -116,8 +126,9 @@ function within(path, dir) {
  */
 function urlSource(url) {
   let served = url; // where the entry was served from when it was last read
-  let dir = []; // the entry's directory in the workspace, by its names
+  let dir = serverPath(url).split("/").slice(0, -1); // also supports transferred sources read before open
   return {
+    get url() { return served.href; },
     name: url.href,
     path: serverPath(url),
     async open(again) {
@@ -522,10 +533,10 @@ export default {
       if (session.entry?.text !== undefined) files[session.entry.path || `/${session.entry.name}`] = session.entry.text;
       // The document contains applied text, never the pending editor buffer.
       if (doc) for (const f of doc.files) files[f.path.startsWith("/") || f.path.startsWith("<bundled>") ? f.path : joined(doc.path.slice(0, doc.path.lastIndexOf("/")), f.path)] = f.text;
-      const pool = await Promise.all(session.pool.map(async (item) => ({ path: item.path, name: item.name,
+      const pool = await Promise.all(session.pool.map(async (item) => ({ path: item.path, name: item.name, url: item.source.url,
         text: files[`/<pool>${item.path}`] ?? files[item.path] ?? decodeText(await (await item.read()).arrayBuffer()) })));
       const source = session.entry;
-      return { ...session, files, pool, entry: source ? { name: source.name, path: source.path || `/${source.name}`,
+      return { ...session, files, pool, entry: source ? { name: source.name, path: source.path || `/${source.name}`, url: source.url,
         temporary: source.temporary, readonly: source.readonly, fromPool: source.fromPool } : null };
     });
   },
@@ -535,9 +546,10 @@ export default {
     const files = new Map(Object.entries(session.files || {}).map(([path, text]) => [path, () => new File([text], path)]));
     session.pool = session.pool.map((item) => {
       const read = () => new File([item.text], item.name);
-      return { path: item.path, name: item.name, read, source: { ...filesSource(new Map([[item.path, read]]), item.path), fromPool: true } };
+      return { path: item.path, name: item.name, read, source: sessionSource(new Map([[item.path, read]]),
+        { path: item.path, name: item.name, url: item.url, fromPool: !item.url }) };
     });
-    if (session.entry) session.entry = { ...filesSource(files, session.entry.path), ...session.entry, snapshot: session.files };
+    if (session.entry) session.entry = { ...sessionSource(files, session.entry), snapshot: session.files };
     return session;
   },
   embed,

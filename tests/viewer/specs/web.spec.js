@@ -87,6 +87,28 @@ test("Shift double click opens a subcircuit in a real new tab and pop-up blockin
   await expect(page.locator("dialog.dialog")).toContainText("The browser blocked the new viewer tab");
 });
 
+test("Shift Library opens a previous URL with its includes, and the child retains URL pool sources", async ({ page }) => {
+  await start(page, "?url=samples/cases/04-hierarchy.sp");
+  const expected = await shown(page);
+  await opened(page, () => page.locator("#file-input").setInputFiles({ name: "other.sp", mimeType: "text/plain", buffer: Buffer.from("R1 a 0 1k\n.end\n") }));
+  await page.locator("#tab-files").click();
+  const before = await page.evaluate(() => ({ path: window.viewer.path, text: window.viewer.doc.files[0].text }));
+  const popup = page.waitForEvent("popup");
+  await page.locator("#pool-list .pool-open").filter({ hasText: "04-hierarchy.sp" }).click({ modifiers: ["Shift"] });
+  const child = await popup;
+  try {
+    await expect(child.locator("#level-name")).toHaveText("04-hierarchy.sp");
+    expect((await shown(child)).files).toEqual(expected.files);
+    expect(await page.evaluate(() => ({ path: window.viewer.path, text: window.viewer.doc.files[0].text }))).toEqual(before);
+    await expect(page.locator("#pane-files")).toBeVisible();
+    // Switch away and reopen the inherited URL pool row: its relative include still resolves.
+    await child.locator("#tab-files").click();
+    await opened(child, () => child.locator("#pool-list .pool-open").filter({ hasText: /^other.sp$/ }).click());
+    await opened(child, () => child.locator("#pool-list .pool-open").filter({ hasText: "04-hierarchy.sp" }).click());
+    expect(await child.evaluate(() => window.viewer.doc.files)).toEqual(expected.files);
+  } finally { await child.close(); }
+});
+
 // Playwright builds and serves the site when the run can include these tests (playwright.config.js)
 test.skip(!process.env.RNL_WEB_URL, "the site is not built: RNL_WEB=0");
 
