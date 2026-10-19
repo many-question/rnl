@@ -50,7 +50,7 @@
   };
   var ARROWS = { 0: '→', 90: '↑', 180: '←', 270: '↓' };
 
-  var state = { index: null, groups: {}, group: null, pkg: null, q: '', expanded: {}, show: { pins: true, box: false, labels: true } };
+  var state = { index: null, groups: {}, group: null, pkg: null, q: '', expanded: {}, show: { pins: true, box: false, labels: true, origin: false } };
   var main, status;
 
   /* ---------------- loading ---------------- */
@@ -121,6 +121,15 @@
 
   /* ---------------- rendering a package ---------------- */
 
+  /* Append last so the decorative registration mark sits above every drawing and overlay. */
+  function symbolSvg(s) {
+    if (!s.origin) return s.svg;
+    return s.svg.replace('</svg>', '<g class="g-origin" aria-hidden="true" transform="translate(' + s.origin.join(' ') + ')">' +
+      '<g class="g-origin-mark"><line x1="-5" y1="0" x2="5" y2="0" vector-effect="non-scaling-stroke"/>' +
+      '<line x1="0" y1="-5" x2="0" y2="5" vector-effect="non-scaling-stroke"/>' +
+      '<circle r="1.5"/></g></g></svg>');
+  }
+
   /* A card: the picture, whose pins carry their terminal numbers and directions, the name, and the
      names of the terminals when the package gives them, which the picture does not show */
   function symbolCard(pkg, s) {
@@ -135,7 +144,7 @@
       return fill('<zh>；端子 {t}{m}朝{d}</zh><en>; terminal {t}{m} pointing {d}</en>', { t: terminalText(p), m: p.label || p.name ? ' ' + (p.label || p.name) + ' ' : ' ', d: DIRS[p.dir] || '?' });
     }).join('');
     return '<button type="button" class="gl-card" data-sym="' + esc(s.name) + '" data-pkg="' + esc(pkg.name) + '" aria-label="' + esc(label) + '">' +
-      '<span class="gl-fig" aria-hidden="true">' + s.svg + '</span>' +
+      '<span class="gl-fig" aria-hidden="true">' + symbolSvg(s) + '</span>' +
       '<span class="gl-card-name"><span>' + breakable(s.name) + '</span>' + warn + '<small class="gl-fit" hidden></small></span>' +
       (row ? '<span class="gl-pins">' + row + '</span>' : '') +
       '</button>';
@@ -143,7 +152,8 @@
 
   /* A small picture of a symbol, framed on the symbol alone, that opens its details */
   function thumb(symName, entry) {
-    var svg = entry.sym.thumb ? entry.sym.svg.replace(/viewBox="[^"]*"/, 'viewBox="' + entry.sym.thumb + '"') : entry.sym.svg;
+    var svg = symbolSvg(entry.sym);
+    if (entry.sym.thumb) svg = svg.replace(/viewBox="[^"]*"/, 'viewBox="' + entry.sym.thumb + '"');
     return '<button type="button" class="gl-thumb" data-sym="' + esc(symName) + '" data-pkg="' + esc(entry.pkg.name) + '" aria-label="' + esc(symName) + '">' + svg + '</button>';
   }
 
@@ -302,7 +312,39 @@
       if (cardSizes) cardSizes.observe(figure);
     });
   }
-  if (!cardSizes) global.addEventListener('resize', function () { if (main) fitCards(); });
+  /* Invert the displayed SVG scale to keep the cross and dot at 10px and 3px. Reserve
+     six screen pixels at the origin; a fixed scene margin can disappear on tiny previews. */
+  function fitOrigin(svg) {
+    var origin = $('.g-origin', svg);
+    if (!origin) return;
+    var base = svg._originViewBox || (svg._originViewBox = svg.getAttribute('viewBox').split(/\s+/).map(Number));
+    svg.setAttribute('viewBox', base.join(' '));
+    if (!state.show.origin) return;
+    var rect = svg.getBoundingClientRect();
+    if (rect.width <= 12 || rect.height <= 12) return;
+    var point = origin.transform.baseVal.getItem(0).matrix;
+    var padding = 6 / Math.min((rect.width - 12) / base[2], (rect.height - 12) / base[3]);
+    var left = Math.min(base[0], point.e - padding), top = Math.min(base[1], point.f - padding);
+    var right = Math.max(base[0] + base[2], point.e + padding), bottom = Math.max(base[1] + base[3], point.f + padding);
+    svg.setAttribute('viewBox', [left, top, right - left, bottom - top].join(' '));
+    var matrix = svg.getScreenCTM();
+    if (matrix) $('.g-origin-mark', origin).setAttribute('transform', 'scale(' + (1 / Math.hypot(matrix.a, matrix.b)) + ')');
+  }
+
+  var originSizes = global.ResizeObserver ? new ResizeObserver(function (entries) {
+    entries.forEach(function (entry) { fitOrigin(entry.target); });
+  }) : null;
+
+  function fitOrigins() {
+    if (originSizes) originSizes.disconnect();
+    $$('.gl-fig > svg, .gl-thumb > svg, #gl-dlg[open] .gl-dlg-fig > svg').forEach(function (svg) {
+      fitOrigin(svg);
+      if (originSizes) originSizes.observe(svg);
+    });
+  }
+  if (!cardSizes || !originSizes) global.addEventListener('resize', function () {
+    if (main) { fitCards(); fitOrigins(); }
+  });
 
   function render() {
     var group = state.groups[state.group];
@@ -317,8 +359,9 @@
       count += r.count;
     });
     main.innerHTML = (terms().length && !count ? '<p class="gl-status"><zh>没有找到。</zh><en>Nothing found.</en></p>' : '') + html;
-    main.className = 'gl-main' + (state.show.pins ? ' show-pins' : '') + (state.show.box ? ' show-box' : '') + (state.show.labels ? ' show-labels' : '');
+    main.className = 'gl-main' + (state.show.pins ? ' show-pins' : '') + (state.show.box ? ' show-box' : '') + (state.show.labels ? ' show-labels' : '') + (state.show.origin ? ' show-origin' : '');
     fitCards();
+    fitOrigins();
     renderNav();
     $('#tb-series').textContent = groupTitle(group);
     $('#tb-packages').textContent = group.counts.packages;
@@ -407,7 +450,7 @@
     group.packages.forEach(function (p) {
       p.statements.forEach(function (r) { if (r.kind === 'rule' && r.action === 'symbol' && r.target === symName) rules.push({ pkg: p, r: r }); });
     });
-    var big = s.svg.replace(/ width="([\d.]+)" height="([\d.]+)"/, function (m, w, hh) { return ' width="' + (w * 2) + '" height="' + (hh * 2) + '"'; });
+    var big = symbolSvg(s).replace(/ width="([\d.]+)" height="([\d.]+)"/, function (m, w, hh) { return ' width="' + (w * 2) + '" height="' + (hh * 2) + '"'; });
     var h = '<div class="gl-dlg-grid"><div class="gl-dlg-fig ' + main.className.replace('gl-main', '') + '">' + big + '</div><div class="gl-dlg-info">';
     h += '<p class="gl-dlg-pkg"><zh>包</zh><en>Package</en> ' + name(pkg.name + ' ' + pkg.version) + ' · ' + lineLink(pkg, s.line, s.endLine) + '</p>';
     if (docText(s)) h += '<p class="gl-doc">' + esc(docText(s)) + '</p>';
@@ -435,6 +478,7 @@
     $('#gl-dlg-body').innerHTML = h;
     var dlg = $('#gl-dlg');
     if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+    fitOrigins();
   }
 
   /* ---------------- state in the address ---------------- */
@@ -470,7 +514,7 @@
     main = $('#gl-main');
     status = $('#gl-status');
     var stored = P.store('rnl-gallery-show');
-    if (stored) { try { var s = JSON.parse(stored); ['pins', 'box', 'labels'].forEach(function (k) { if (typeof s[k] === 'boolean') state.show[k] = s[k]; }); } catch (e) { /* ignore */ } }
+    if (stored) { try { var s = JSON.parse(stored); ['pins', 'box', 'labels', 'origin'].forEach(function (k) { if (typeof s[k] === 'boolean') state.show[k] = s[k]; }); } catch (e) { /* ignore */ } }
     $$('.gl-tog').forEach(function (b) {
       var k = b.getAttribute('data-show');
       b.setAttribute('aria-pressed', state.show[k] ? 'true' : 'false');
@@ -479,6 +523,9 @@
         b.setAttribute('aria-pressed', state.show[k] ? 'true' : 'false');
         P.store('rnl-gallery-show', JSON.stringify(state.show));
         main.classList.toggle('show-' + k, state.show[k]);
+        var detail = $('.gl-dlg-fig');
+        if (detail) detail.classList.toggle('show-' + k, state.show[k]);
+        if (k === 'origin') fitOrigins();
       });
     });
     var input = $('#gl-q');

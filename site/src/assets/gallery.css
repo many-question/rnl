@@ -118,6 +118,10 @@
 .g-pn circle { fill: var(--panel); stroke: var(--signal); stroke-width: 1.6; }
 .g-pn text { font: 600 11px var(--f-mono); fill: var(--signal); }
 .g-pn .g-dir { font-family: var(--f-body); font-weight: 700; }
+.g-origin { display: none; pointer-events: none; }
+.gl-main.show-origin .g-origin, .gl-dlg-fig.show-origin .g-origin { display: inline; }
+.g-origin line { stroke: var(--err); stroke-width: 1.5; }
+.g-origin circle { fill: var(--err); stroke: none; }
 
 /* ---------- Tables and lists ---------- */
 
