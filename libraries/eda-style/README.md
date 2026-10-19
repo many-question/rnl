@@ -15,8 +15,8 @@ Add this header to a Spectre netlist (use `*` instead of `//` in SPICE):
 
 Make the package available to the viewer or command:
 
-- **Web viewer:** open **Files → Include Public Package…**, search for `eda-style` and include version `0.1`, then open your netlist or the gallery below.
-- **Desktop viewer:** add `eda-style.rnl` through **Library**, or add its directory to **PATH** in the viewer's settings.
+- **Web viewer:** open **Library → Include Public Package…**, search for `eda-style` and include version `0.1`, then open your netlist or the gallery below.
+- **Desktop viewer:** add `eda-style.rnl` with **Library → Include File…**, or add its directory with **Library → Add PATH Directory…**.
 - **Command line:** pass the package directory with `--path`:
 
 ```sh
