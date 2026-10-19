@@ -101,6 +101,20 @@ body {
 }
 
 body.busy, body.busy *, body.checking, body.checking * { cursor: progress !important; }
+body.starting > #app, body.starting > .menubar, body.starting > .statusbar { visibility: hidden; }
+.startup {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--bg);
+}
+.startup strong { font-size: 28px; font-weight: 600; }
+.startup small { min-height: 1.4em; color: var(--muted); font-size: 13px; }
 body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select: none; }
 body.resizing-y, body.resizing-y * { cursor: row-resize !important; user-select: none; }
 

@@ -1,5 +1,10 @@
 # viewer-ui
 
+During startup the shared page shows **RNL Viewer**, with the version below it, until its shell,
+settings and initial document are ready. `startup.js` reads the version independently of the main
+module graph, from Tauri on desktop or the web build's `about.json`. Startup errors reveal the
+normal page with the error message; unavailable version metadata does not block opening it.
+
 The page of the RNL viewers: the drawing, the netlist text, the problems and the subcircuit hierarchy, with a selected instance or net followed between the drawing and the text. The desktop viewer ([`apps/desktop`](../desktop/README.md)) and the web viewer ([`apps/web`](../web/README.md)) show it ([decision 0008](../../docs/decisions/0008-shared-core-per-platform-frontends.md)). The page shows a Document that its shell builds; it never reads files itself.
 
 It is plain HTML, CSS and ES modules, with no dependencies and no build step. It keeps to the browser baseline of decision 0008, Chromium 109 and Safari 16, so newer features such as JSON import attributes, CSS nesting or `Array.prototype.toSorted` are not used. `package.json` only makes Node read the scripts as modules, so that they can be checked:

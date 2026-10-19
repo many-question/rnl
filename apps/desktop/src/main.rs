@@ -263,6 +263,9 @@ fn initial_file() -> Option<String> {
 fn main() {
     let session = session::read(std::env::args_os().skip(1)).expect("the viewer session could not be read");
     let mut context = tauri::generate_context!();
+    // Keep the small-logo strokes in the title bar and taskbar, including at higher system DPI.
+    #[cfg(windows)]
+    context.set_default_window_icon(Some(tauri::include_image!("icons/32x32.png")));
     if let Some(position) = session.as_ref().and_then(|s| s.get("position")) {
         if let Some(window) = context.config_mut().app.windows.first_mut() {
             window.x = position["x"].as_f64();

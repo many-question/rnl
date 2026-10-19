@@ -11,7 +11,11 @@
 <!-- the drawing's fonts, if scripts/fonts.py web wrote them (decision 0009) -->
 <link rel="stylesheet" href="fonts/fonts.css">
 </head>
-<body>
+<body class="starting">
+<div id="startup" class="startup" role="status" aria-label="Loading RNL Viewer">
+  <strong>RNL Viewer</strong>
+  <small id="startup-version"></small>
+</div>
 <nav id="menubar" class="menubar" role="menubar" aria-label="Menu bar" hidden></nav>
 <div id="app" class="app">
   <aside id="sidebar" class="sidebar" aria-label="Side panel">
@@ -131,6 +135,7 @@
 </footer>
 <div id="hover-tip" class="hover-tip" role="tooltip" hidden></div>
 <div id="pick-list" class="pick-list" role="listbox" tabindex="-1" aria-label="Objects at this point" hidden></div>
+<script type="module" src="startup.js"></script>
 <script type="module" src="main.js"></script>
 </body>
 </html>

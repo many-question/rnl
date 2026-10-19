@@ -17,6 +17,7 @@ import {
   setIndexHeight, setPane, setProblems, setProblemsHeight, setShowFailed, setSidebar, setSidebarWidth,
 } from "./panels.js";
 import { loadShell } from "./shell.js";
+import { finishStartup } from "./startup.js";
 import { current, doc, path, selected } from "./state.js";
 import { renderUnplaced } from "./unplaced.js";
 import { $, load, startSettings } from "./util.js";
@@ -70,7 +71,7 @@ async function start() {
 // a shell may reject with a plain message, as Tauri's invoke does
 start().catch((e) => {
   $("empty").textContent = e instanceof Error ? e.message : String(e);
-});
+}).finally(finishStartup);
 
 // A handle for tests and the console, which cannot see into the modules.
 window.viewer = {
