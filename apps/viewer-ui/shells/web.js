@@ -265,14 +265,25 @@ function poolItems(files, folder = false) {
   });
 }
 
+let libraryIndex = null;
+function publicPackages() {
+  if (!libraryIndex) libraryIndex = fetch("libraries/index.json").then(async (response) => {
+    if (!response.ok) throw new Error(`The package library could not be read (${response.status}).`);
+    return response.json();
+  }).catch((error) => { libraryIndex = null; throw error; });
+  return libraryIndex;
+}
+
 async function includeLibrary() {
-  const response = await fetch("libraries/index.json");
-  if (!response.ok) throw new Error(`The package library could not be read (${response.status}).`);
-  const catalog = await response.json();
+  const catalog = await publicPackages();
   const packages = catalog.filter((p) => !p.builtin);
   const selected = await choose({ title: "Include Public Package", text: "Choose a package to add to the file pool.",
     items: packages.map((p) => ({ label: `${p.name} ${p.version} — ${p.description}`, value: p })), filter: true });
   if (!selected) return [];
+  return includePackage(selected);
+}
+
+async function includePackage(selected) {
   const url = new URL(selected.path, new URL("libraries/", location.href));
   const base = new URL("libraries/", location.href);
   if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname)) throw new Error("Invalid package library path.");
@@ -472,6 +483,8 @@ export default {
     return response.json();
   },
   includeLibrary,
+  publicPackages,
+  includePackage,
   poolItem(source) {
     const path = source.path;
     return { path, name: source.name, source, read: async () => {

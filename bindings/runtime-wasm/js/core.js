@@ -51,7 +51,7 @@
 
 /**
  * What to list: the catalog of the packages the core has, those of `package_dirs` among `files`
- * and the bundled ones, the standard series and analog-canvas-extensions (catalog.d.ts).
+ * and the bundled ones, the standard series (catalog.d.ts).
  *
  * @typedef {object} CatalogRequest
  * @property {{ packages?: string[], all_versions?: boolean }} catalog `packages`: only the packages

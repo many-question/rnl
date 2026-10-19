@@ -14,7 +14,7 @@ export function publishLibrary(libraries, out) {
         const text = readFileSync(join(dir, entry.name), "utf8").replace(/\r\n/g, "\n");
         const { header, description } = readPackage(text);
         if (!header.name || !header.version) throw new Error(`${path} has no package name or version`);
-        const builtin = /^standard\/[^/]+\/[^/]+$/.test(path) || /^analog-canvas-extensions\/[^/]+$/.test(path);
+        const builtin = /^standard\/[^/]+\/[^/]+$/.test(path);
         index.push({ name: header.name, version: header.version, path, description: description.split(/\n\s*\n/)[0], builtin });
         const dest = join(out, path);
         mkdirSync(dirname(dest), { recursive: true });

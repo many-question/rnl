@@ -186,7 +186,7 @@ export interface Written {
 
 /**
  * What to list: the catalog of the packages the core has, those of `package_dirs` among `files`
- * and the bundled ones under them, the standard series and analog-canvas-extensions, each read as
+ * and the bundled ones under them, the standard series, each read as
  * `rnl check` reads a package file, checked on its own (2.7).
  */
 export interface CatalogRequest {

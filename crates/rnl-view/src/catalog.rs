@@ -1,5 +1,5 @@
 //! The catalog of the packages the core has: the symbols, ordinary definitions and sets of the
-//! bundled packages, the standard series and `analog-canvas-extensions`, and of the frontend's own
+//! bundled packages, the standard series, and of the frontend's own
 //! packages, for a frontend that maps its parts onto them, as Analog Canvas does. Each package file
 //! is read through the runtime as `rnl check PACKAGE.rnl` reads it, checked on its own (2.7), so a
 //! symbol's pins and box are those the drawings have.
@@ -372,9 +372,8 @@ mod tests {
     #[test]
     fn every_symbol_of_0_3_has_its_pin_sides_on_its_outermost_pins() {
         let c = default();
-        let symbols_03: Vec<&CatalogSymbol> =
-            c.symbols.iter().filter(|s| s.version == "0.3" || s.package == "analog-canvas-extensions").collect();
-        assert_eq!(symbols_03.len(), 126);
+        let symbols_03: Vec<&CatalogSymbol> = c.symbols.iter().filter(|s| s.version == "0.3").collect();
+        assert_eq!(symbols_03.len(), 93);
         for s in symbols_03 {
             let [x1, y1, x2, y2] = s.bbox;
             for p in &s.pins {
@@ -453,10 +452,6 @@ mod tests {
         };
         assert_eq!(symbol(&c, "$AND_4INPUT").package, "rnl-std-logic");
         assert_eq!(inputs("$AND_4INPUT"), [[-3.0, 2.0], [-3.0, 1.0], [-3.0, -1.0], [-3.0, -2.0]]);
-        // Analog Canvas's, off the integer points
-        let canvas = symbol(&c, "$CANVAS_AND_4INPUT");
-        assert_eq!((canvas.package.as_str(), canvas.version.as_str()), ("analog-canvas-extensions", "0.1"));
-        assert_eq!(inputs("$CANVAS_AND_4INPUT"), [[-3.0, 1.2], [-3.0, 0.4], [-3.0, -0.4], [-3.0, -1.2]]);
     }
 
     #[test]
@@ -469,10 +464,10 @@ mod tests {
         names.dedup();
         assert_eq!(names.len(), listed.len(), "{listed:?}");
         assert!(listed.contains(&("rnl-zh", "0.3")) && listed.contains(&("rnl-std-virtual", "0.2")), "{listed:?}");
-        assert!(listed.contains(&("analog-canvas-extensions", "0.1")), "{listed:?}");
+        assert!(listed.iter().all(|(name, _)| name.starts_with("rnl-std") || *name == "rnl-zh"), "{listed:?}");
         // the 15 packages of the series 0.3 and rnl-zh; the four that only the series 0.2 has,
-        // rnl-std-symbols, rnl-std-virtual, rnl-std-semantics and rnl-std-layout; Analog Canvas's
-        assert_eq!(listed.len(), 16 + 4 + 1);
+        // rnl-std-symbols, rnl-std-virtual, rnl-std-semantics and rnl-std-layout
+        assert_eq!(listed.len(), 16 + 4);
         // by name, then by version
         let mut sorted = listed.clone();
         sorted.sort();
@@ -488,8 +483,6 @@ mod tests {
             implicit: true,
         };
         assert_eq!(*std, want);
-        let canvas = c.packages.iter().find(|p| p.name == "analog-canvas-extensions").unwrap();
-        assert_eq!((canvas.series, canvas.implicit, canvas.language.as_str()), (false, false, "0.3"));
 
         // every version: both series
         let all = every_version();
@@ -514,13 +507,13 @@ mod tests {
 
     #[test]
     fn packages_keeps_only_the_names_it_gives() {
-        let names = ["analog-canvas-extensions", "rnl-std"].map(String::from).to_vec();
+        let names = ["rnl-std-basic", "rnl-std"].map(String::from).to_vec();
         let options = CatalogOptions { packages: Some(names), ..CatalogOptions::default() };
         let c = crate::catalog(&MemoryProvider::new(), &options);
-        assert_eq!(packages(&c), [("analog-canvas-extensions", "0.1"), ("rnl-std", "0.3")]);
-        assert!(c.symbols.iter().all(|s| s.package == "analog-canvas-extensions"));
-        assert_eq!(c.symbols.len(), 33);
-        assert!(c.definitions.is_empty() && c.sets.is_empty());
+        assert_eq!(packages(&c), [("rnl-std", "0.3"), ("rnl-std-basic", "0.3")]);
+        assert!(c.symbols.iter().all(|s| s.package == "rnl-std-basic"));
+        assert!(!c.symbols.is_empty());
+        assert!(c.sets.is_empty());
         let none = CatalogOptions { packages: Some(vec!["no-such-package".into()]), ..CatalogOptions::default() };
         assert_eq!(crate::catalog(&MemoryProvider::new(), &none), Catalog::default());
     }

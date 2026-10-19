@@ -22,7 +22,7 @@ A frontend that links the result as a package, such as Analog Canvas with pnpm's
 node bindings/runtime-wasm/build.mjs --out packages/runtime/dist --packages DIR --name @rich-netlist/runtime --version 0.1.0-preview.1
 ```
 
-`--packages DIR` brings the `.rnl` files of DIR with the build: `packages.js` holds them under `/rnl-bundled/packages`, and the Worker gives them to every request, after the request's own files and package directories. A newer `rnl-std` among them is the standard package at the root (16.3). `--name` and `--version` go into the `package.json`, whose `exports` name `client.js` as the package and `core.js` as `./core`. A named package is not private, and holds the README of [`packages/runtime`](../../packages/runtime/README.md) and the licenses of what it holds: MIT for the code, CC0-1.0 for the standard packages and `analog-canvas-extensions` that the module compiles in, and OFL-1.1 for the metrics of Noto Sans SC.
+`--packages DIR` brings the `.rnl` files of DIR with the build: `packages.js` holds them under `/rnl-bundled/packages`, and the Worker gives them to every request, after the request's own files and package directories. A newer `rnl-std` among them is the standard package at the root (16.3). `--name` and `--version` go into the `package.json`, whose `exports` name `client.js` as the package and `core.js` as `./core`. A named package is not private, and holds the README of [`packages/runtime`](../../packages/runtime/README.md) and the licenses of what it holds: MIT for the code, CC0-1.0 for the standard packages and the separately shipped `analog-canvas-extensions` file, and OFL-1.1 for the metrics of Noto Sans SC.
 
 A frontend built with Vite needs three settings for it, as Analog Canvas found:
 
@@ -104,11 +104,11 @@ The netlist is the entry, under `/rnl-edit/netlist.sp`, or `.scs` for Spectre; a
 
 ### Catalog
 
-A request with a `catalog` field lists the symbols, ordinary definitions and sets of the packages the core has ([`rnl_view::catalog`](../../crates/rnl-view/README.md#catalog)): the bundled ones, the standard series and `analog-canvas-extensions`, and the frontend's own, those of `package_dirs` among `files`, as a build finds packages by name:
+A request with a `catalog` field lists the symbols, ordinary definitions and sets of the packages the core has ([`rnl_view::catalog`](../../crates/rnl-view/README.md#catalog)): the bundled ones, the standard series, and the frontend's own, those of `package_dirs` among `files`, as a build finds packages by name:
 
 ```json
 {
-  "catalog": { "packages": ["rnl-std-basic", "analog-canvas-extensions"], "all_versions": false },
+  "catalog": { "packages": ["rnl-std-basic", "rnl-std-logic"], "all_versions": false },
   "files": { "/w/packages/acme.rnl": "..." },
   "package_dirs": ["/w/packages"]
 }
@@ -203,3 +203,18 @@ See the [roadmap](../../docs/roadmap.md) for planned work.
 ### Temporary file pools
 
 A build or snapshot request may include `pool: string[]`, the paths of explicitly included files in `files`. Pool packages are found by PACKAGE name/version before `package_dirs` and the bundled packages, even if their filenames differ. Bare include names fall back to matching pool filenames only after the including file’s relative path was tried. Merely supplying a file in `files` does not add it to the pool. `collect` still requests a missing relative file and rebuilds if it becomes available, so a pool fallback never displaces a relative include that the frontend can read.
+
+## Upgrading after 0.1.0-preview.13
+
+Only the standard series 0.2 and 0.3, including `rnl-zh`, remain built into the default core.
+`analog-canvas-extensions` 0.1 is still shipped at `packages/analog-canvas-extensions.rnl`, but is
+not implicitly searched. Analog Canvas and other frontends that export its USE-PACKAGE record
+must read that file, put its text into the request's `files`, and add its path to `pool` for every
+build/snapshot/rebuild. The package name, version and exported netlist records stay unchanged.
+See the [runtime's optional-package example](../../packages/runtime/README.md#optional-canvas-package).
+An application that deliberately builds with `--packages DIR` can still opt into its own packages.
+No npm version is published by this change.
+
+In viewers, include the package in Library; the web viewer offers the public package directly below
+the missing-package error when the exact version is published. In the CLI, use
+`rnl check file.sp --path libraries/analog-canvas-extensions`.

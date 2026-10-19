@@ -44,8 +44,8 @@ pub use snapshot::{
 include!(concat!(env!("OUT_DIR"), "/bundled.rs"));
 
 /// The directory of the bundled packages, as the runtime names it. Each version of the standard
-/// series has a directory of its own in it, as in `libraries/standard`, such as `<bundled>/0.2`,
-/// and so has Analog Canvas's package, `<bundled>/analog-canvas-extensions`.
+/// series has a directory of its own in it, as in `libraries/standard`, such as `<bundled>/0.2`.
+/// Extension and PDK packages are supplied by the frontend or its search paths.
 pub const BUNDLED_DIR: &str = "<bundled>";
 
 /// The bundled packages, each directory a package directory of its own (16.2).
@@ -179,8 +179,7 @@ pub fn snapshot(entry: &str, files: &dyn Provider, options: &BuildOptions, parts
 }
 
 /// The catalog of the packages the core has: those of the package directories of `files`, the
-/// frontend's file access, and the bundled packages under them, the standard series and
-/// `analog-canvas-extensions`. It lists their symbols, with their pins, boxes and labels, their
+/// frontend's file access, and the bundled standard series under them. It lists their symbols, with their pins, boxes and labels, their
 /// ordinary definitions and their sets, each package file read as `rnl check` reads it, checked on
 /// its own with `options.runtime` (2.7); of each name the newest version, or every version with
 /// `options.all_versions`, and only the names `options.packages` gives, when it gives them. A file
@@ -651,10 +650,10 @@ R1 p q 1k
         {
             assert!(names.contains(&format!("0.3/{name}.rnl").as_str()), "{name}");
         }
-        assert_eq!(names.last(), Some(&"analog-canvas-extensions/analog-canvas-extensions.rnl"));
-        assert_eq!(names.len(), 9 + 16 + 1);
+        assert!(names.iter().all(|name| name.starts_with("0.2/") || name.starts_with("0.3/")));
+        assert_eq!(names.len(), 9 + 16);
         let p = bundled();
-        let dirs = ["0.2", "0.3", "analog-canvas-extensions"].map(|d| format!("{BUNDLED_DIR}/{d}"));
+        let dirs = ["0.2", "0.3"].map(|d| format!("{BUNDLED_DIR}/{d}"));
         assert_eq!(p.package_dirs, dirs);
         assert_eq!(p.package_files().len(), names.len());
     }
@@ -701,15 +700,13 @@ R1 p q 1k
         assert!(r.diagnostics().iter().all(|d| d.severity != Severity::Error), "{:?}", r.diagnostics());
         assert_eq!(r.model.levels[0].items.iter().filter(|i| !i.host.is_empty()).count(), 2);
         for (path, _) in BUNDLED {
-            // no diagnostic, but the hints of analog-canvas-extensions: the pins of its gates with
-            // four inputs, which Analog Canvas puts off the integer points (9.2.4)
-            let extensions = path.starts_with("analog-canvas-extensions/");
+            // Every bundled standard package reads without diagnostics.
             let options = Options::default();
             let package = interpret(&format!("{BUNDLED_DIR}/{path}"), None, &MemoryProvider::new(), &options);
             let package = package.unwrap();
             let loud: Vec<_> = package.diagnostics().into_iter().filter(|d| d.severity != Severity::Hint).collect();
             assert!(loud.is_empty(), "{path}: {loud:?}");
-            assert!(extensions || package.diagnostics().is_empty(), "{path}: {:?}", package.diagnostics());
+            assert!(package.diagnostics().is_empty(), "{path}: {:?}", package.diagnostics());
         }
     }
 

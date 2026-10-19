@@ -3,10 +3,49 @@
 
 import { fileViews, revealLine } from "./text.js";
 import { $, span } from "./util.js";
+import { shell } from "./shell.js";
+import { includePublicPackage } from "./pool.js";
 
 const SEVERITY_ORDER = { error: 0, warning: 1, hint: 2 };
+let renderVersion = 0;
+
+function packageHint(d, version) {
+  // Path-based includes and alias failures need different remedies. Keep the core diagnostic intact.
+  const missing = /^package (\S+)(?: (\S+))? cannot be found: this USE-PACKAGE fails/.exec(d.message);
+  if (!missing || d.severity !== "error") return null;
+  const li = document.createElement("li");
+  li.className = "diag hint package-hint";
+  const message = span("msg", "Look for it in File › Include Public Package…");
+  li.append(span("sev", "hint"), message);
+  if (shell.platform === "desktop") {
+    message.textContent = "Add the package file to Library or a PATH directory; public packages are listed on the website's ";
+    const link = document.createElement("a");
+    link.href = "https://rich-netlist.github.io/rnl/en/packages.html";
+    link.textContent = "Packages page";
+    link.addEventListener("click", (e) => { e.preventDefault(); shell.browse?.(link.href); });
+    message.append(link, ".");
+  } else if (shell.publicPackages) {
+    shell.publicPackages().then((packages) => {
+      if (version !== renderVersion || !li.isConnected) return;
+      const pkg = packages.find(p => !p.builtin && p.name === missing[1] && p.version === missing[2]);
+      if (!pkg) return;
+      message.textContent = "This package is published. ";
+      const include = document.createElement("button");
+      include.type = "button";
+      include.textContent = "Include";
+      include.addEventListener("click", async () => {
+        include.disabled = true;
+        try { await includePublicPackage(pkg); }
+        finally { include.disabled = false; }
+      });
+      message.append(include);
+    }).catch(() => { /* The manual File menu hint remains available offline. */ });
+  }
+  return li;
+}
 
 export function renderDiagnostics(list) {
+  const version = ++renderVersion;
   const sorted = list
     .map((d, i) => ({ d, i }))
     .sort((a, b) => SEVERITY_ORDER[a.d.severity] - SEVERITY_ORDER[b.d.severity] || a.i - b.i)
@@ -30,6 +69,8 @@ export function renderDiagnostics(list) {
       li.addEventListener("click", () => revealLine(d.file_index, d.line, true));
     }
     ul.append(li);
+    const hint = packageHint(d, version);
+    if (hint) ul.append(hint);
   }
   if (sorted.length === 0) {
     const li = document.createElement("li");

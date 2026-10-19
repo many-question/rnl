@@ -88,6 +88,16 @@ export async function includeFiles(kind) {
   if (changed) { setSidebar(true); setPane("files"); }
 }
 
+/** Include the exact published package offered beneath a missing-package diagnostic. */
+export async function includePublicPackage(pkg) {
+  if (!shell.includePackage) return;
+  return update(async () => {
+    const added = await shell.includePackage(pkg);
+    if (!added.length) return false;
+    addItems(added);
+  });
+}
+
 function paths() {
   const value = load("search-paths", []);
   return Array.isArray(value) ? value.filter((p) => typeof p === "string") : [];

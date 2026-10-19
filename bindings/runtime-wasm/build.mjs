@@ -51,13 +51,16 @@ for (const name of readdirSync(join(here, "js"))) copyFileSync(join(here, "js", 
 for (const name of ["document.d.ts", "snapshot.d.ts", "catalog.d.ts"]) {
   copyFileSync(join(here, "..", "..", "crates", "rnl-view", "types", name), join(out, name));
 }
+// Ship the optional public package as data; it is never added to packages.js or the default pool.
+mkdirSync(join(out, "packages"), { recursive: true });
+copyFileSync(join(here, "..", "..", "libraries", "analog-canvas-extensions", "analog-canvas-extensions.rnl"), join(out, "packages", "analog-canvas-extensions.rnl"));
 const lines = (...l) => l.join("\n") + "\n";
 if (Object.keys(manifest).length) {
   const pkg = JSON.parse(readFileSync(join(here, "js", "package.json"), "utf8"));
   delete pkg.private;
   writeFileSync(join(out, "package.json"), lines(JSON.stringify({ ...pkg, ...manifest }, null, 2)));
   // the code's license, MIT, and those of what the module compiles in: the standard packages and
-  // analog-canvas-extensions (CC0-1.0) and the metrics of Noto Sans SC (OFL-1.1)
+  // the optional analog-canvas-extensions file (CC0-1.0) and the metrics of Noto Sans SC (OFL-1.1)
   const root = join(here, "..", "..");
   copyFileSync(join(root, "packages", "runtime", "README.md"), join(out, "README.md"));
   copyFileSync(join(root, "LICENSE"), join(out, "LICENSE"));

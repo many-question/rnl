@@ -1,5 +1,4 @@
-//! The package analog-canvas-extensions 0.1 (libraries/analog-canvas-extensions), bundled with the
-//! core beside the standard series: the symbols of Analog Canvas that the series 0.3 does not
+//! The public package analog-canvas-extensions 0.1 (libraries/analog-canvas-extensions): the symbols of Analog Canvas that the series 0.3 does not
 //! draw, which a file uses by naming the package in its header record (16.2).
 
 use std::path::{Path, PathBuf};
@@ -24,6 +23,13 @@ fn package_file() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/analog-canvas-extensions/analog-canvas-extensions.rnl")
 }
 
+fn extension_files() -> MemoryProvider {
+    let text = std::fs::read_to_string(package_file()).unwrap();
+    let mut files = MemoryProvider::new().with("pkgs/analog-canvas-extensions.rnl", &text);
+    files.package_dirs.push("pkgs".into());
+    files
+}
+
 fn errors(r: &Interpretation) -> Vec<String> {
     r.diagnostics().iter().filter(|d| d.severity == Severity::Error).map(|d| r.sink.render(d)).collect()
 }
@@ -40,7 +46,7 @@ fn read_gates() -> Interpretation {
          .subckt g4 a b c d y\n.ends g4\n{instances}* @RNL {{\n{}\n* }}\n.end\n",
         record.join(";\n")
     );
-    let files = MemoryProvider::new().with("t.sp", &text);
+    let files = extension_files().with("t.sp", &text);
     interpret_file(Path::new("t.sp"), None, &files, &Options::default()).unwrap()
 }
 
@@ -49,8 +55,8 @@ fn top(r: &Interpretation) -> &LevelView {
 }
 
 #[test]
-fn a_file_that_names_the_package_finds_it_bundled() {
-    // no package directory is given: the package is the core's own
+fn a_file_that_names_the_package_finds_it_on_the_search_path() {
+    // The public extension must be provided explicitly.
     let r = read_gates();
     assert!(errors(&r).is_empty(), "{:?}", errors(&r));
     let lv = top(&r);
@@ -105,7 +111,11 @@ fn the_diamond_sources_have_their_terminals_box_and_labels() {
     // the right of the diamond, as the catalog gives a frontend the symbols
     let options =
         rnl_view::CatalogOptions { packages: Some(vec!["analog-canvas-extensions".into()]), ..Default::default() };
-    let c = serde_json::to_value(rnl_view::catalog(&FsProvider::new(&[]), &options)).unwrap();
+    let c = serde_json::to_value(rnl_view::catalog(
+        &FsProvider::new(&[package_file().parent().unwrap().to_path_buf()]),
+        &options,
+    ))
+    .unwrap();
     let label = |key: &str, y: f64| serde_json::json!({"key": key, "text": format!("${{{key}}}"), "at": [1.65, y], "halign": "start", "valign": "baseline"});
     for name in ["$CANVAS_VCVS_DIAMOND", "$CANVAS_CCVS_DIAMOND"] {
         let s = c["symbols"].as_array().unwrap().iter().find(|s| s["symbol"] == name).unwrap();
@@ -194,8 +204,7 @@ fn the_circle_sources_draw_what_the_standard_series_drew_before_its_diamonds() {
          @USE-PACKAGE(name=\"before-the-diamonds\", version=\"0.1\")}}\n{instances}* @RNL {{\n{}\n* }}\n.end\n",
         record.join(";\n")
     );
-    let mut files = MemoryProvider::new().with("t.sp", &text).with("pkgs/before-the-diamonds.rnl", BEFORE_THE_DIAMONDS);
-    files.package_dirs.push("pkgs".into());
+    let files = extension_files().with("t.sp", &text).with("pkgs/before-the-diamonds.rnl", BEFORE_THE_DIAMONDS);
     let r = interpret_file(Path::new("t.sp"), None, &files, &Options::default()).unwrap();
     assert!(errors(&r).is_empty(), "{:?}", errors(&r));
     let lv = top(&r);
@@ -219,7 +228,11 @@ fn the_circle_sources_draw_what_the_standard_series_drew_before_its_diamonds() {
 fn the_circle_sources_are_in_the_catalog_with_their_terminals_box_and_labels() {
     let options =
         rnl_view::CatalogOptions { packages: Some(vec!["analog-canvas-extensions".into()]), ..Default::default() };
-    let c = serde_json::to_value(rnl_view::catalog(&FsProvider::new(&[]), &options)).unwrap();
+    let c = serde_json::to_value(rnl_view::catalog(
+        &FsProvider::new(&[package_file().parent().unwrap().to_path_buf()]),
+        &options,
+    ))
+    .unwrap();
     let label = |key: &str, y: f64| serde_json::json!({"key": key, "text": format!("${{{key}}}"), "at": [1.5, y], "halign": "start", "valign": "baseline"});
     for (name, bbox) in [
         ("$CANVAS_VCVS_CIRCLE", [-2.4, -2.0, 1.5, 2.0]),

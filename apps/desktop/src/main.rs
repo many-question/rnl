@@ -381,7 +381,9 @@ mod tests {
             .filter(|p| p.as_str().or(p["identifier"].as_str()).is_some_and(|id| id.starts_with("opener:")))
             .collect();
         let scope = "https://github.com/rich-netlist/rnl/*";
-        let allowed = serde_json::json!({ "identifier": "opener:allow-open-url", "allow": [{ "url": scope }] });
+        let allowed = serde_json::json!({ "identifier": "opener:allow-open-url", "allow": [
+            { "url": scope }, { "url": "https://rich-netlist.github.io/rnl/en/packages.html" }
+        ] });
         assert_eq!(opener, [&allowed]);
 
         // the addresses the page asks for and opens

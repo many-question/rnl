@@ -721,6 +721,26 @@ async function filePoolSmoke(page) {
   await until("settings after reload", () => page.evaluate(`window.viewer && window.viewer.doc && document.querySelectorAll('.lib-path').length === 1 && !document.body.classList.contains('busy')`));
   same(await page.evaluate(`document.querySelectorAll('#pool-list .pool-row').length`), 1, "only the initially opened file joins the new session");
   console.log("The native file pool resolves packages/includes, opens and excludes files; PATH persists and built-ins are read-only");
+  // Exercise the new diagnostic in the real native shell, including its actual built-in catalog.
+  const optional = fs.readFileSync(path.join(root, "tests/viewer/inputs/missing-canvas-package.sp"), "utf8");
+  await page.evaluate(`(async () => {
+    await (await import('./open.js')).openSource({ name: 'canvas.sp', text: ${JSON.stringify(optional)} }, false);
+    const head = document.getElementById('problems-head');
+    if (head.getAttribute('aria-expanded') === 'false') head.click();
+  })()`);
+  await until("the native missing-package hint", () => page.evaluate(`
+    document.querySelector('.package-hint a')?.href === 'https://rich-netlist.github.io/rnl/en/packages.html'
+      && window.viewer.doc.diagnostics.some(d => d.message.includes('package analog-canvas-extensions 0.1 cannot be found'))`));
+  same(await page.evaluate(`document.querySelectorAll('[data-group="builtin"] .pool-open').length`), 25,
+    "the native built-in library contains both standard series");
+  check(await page.evaluate(`Array.from(document.querySelectorAll('[data-group="builtin"] .pool-open')).every(b => /^0\\.[23]\\/rnl-(std|zh)/.test(b.textContent))`),
+    "a nonstandard package remains built in");
+  if (process.env.SMOKE_OUTPUT_DIR) {
+    fs.mkdirSync(process.env.SMOKE_OUTPUT_DIR, { recursive: true });
+    const image = await page.send("Page.captureScreenshot", { format: "png" });
+    fs.writeFileSync(path.join(process.env.SMOKE_OUTPUT_DIR, "desktop-native-missing-canvas-hint.png"), Buffer.from(image.data, "base64"));
+  }
+  console.log("The native core bundles only standard packages and offers the public-package website on missing USE-PACKAGE");
 }
 
 /**

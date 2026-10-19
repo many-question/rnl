@@ -8,6 +8,8 @@
  * @typedef {object} Shell
  * @property {"desktop" | "web"} platform The platform, which picks the commands of commands.json it offers.
  * @property {() => Promise<Record<string, string>>} [bundledFiles] Built-in package texts by path.
+ * @property {() => Promise<Array<{name: string, version: string, path: string, description: string, builtin: boolean}>>} [publicPackages] Published package metadata for lookup hints.
+ * @property {(pkg: {name: string, version: string, path: string}) => Promise<object[]>} [includePackage] Include an exact published package.
  * @property {(kind: string) => Promise<object[]>} [include] Include files, a folder or a library package.
  * @property {(items: object[]) => void} [setPool] Replace the session's search pool.
  * @property {() => Promise<string | null>} [pickPath] Pick a desktop search directory.

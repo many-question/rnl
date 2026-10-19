@@ -9,7 +9,7 @@ XC2 vsamp 0 sky130_fd_pr__cap_mim_m3_2 w=4 l=4
 Vdd vdd 0 1.8
 * @RNL(type="header") {
 *   @VERSION("0.3");
-*   @USE-PACKAGE(name="rnl-pdk-sky130", version="0.1")
+*   @USE-PACKAGE(name="pdk-sky130", version="0.1")
 * }
 * @RNL {
 *   &vdd @ADD-TO $SUPPLY_NET_SET;

@@ -1,8 +1,10 @@
-# rnl-pdk-sky130
+# pdk-sky130
 
-The RNL 0.3 symbol package `rnl-pdk-sky130` 0.1, [`rnl-pdk-sky130.rnl`](rnl-pdk-sky130.rnl), for the **SkyWater Open Source PDK** (`sky130_fd_pr`, v0.2.0 / `open_pdks` `sky130A` & `sky130B`).
+Version 0.1 was previously named `rnl-pdk-sky130`.
 
-In foundry PDKs, transistors, precision resistors, capacitors, varactors, diodes, and inductors are instantiated as subcircuit calls (such as `XM1 d g s b sky130_fd_pr__nfet_01v8 w=4 l=0.15` in SPICE or `M1 (d g s b) sky130_fd_pr__nfet_01v8 w=4u l=0.15u` in Spectre). Without a PDK package, RNL's standard rule packages (`rnl-std-spice` and `rnl-std-spectre`) cannot tell the device polarity or terminal names of `X` subcircuit instances and draw them as generic rectangular boxes. `rnl-pdk-sky130` maps `sky130_fd_pr` devices to standard RNL 0.3 schematic symbols (and custom multi-terminal symbols where SKY130 devices carry extra substrate, bulk, or shield pins) and declares their terminal names with `@DEVICE` (standard 6.12, 9.2, 10.1, 16.2).
+The RNL 0.3 symbol package `pdk-sky130` 0.1, [`pdk-sky130.rnl`](pdk-sky130.rnl), for the **SkyWater Open Source PDK** (`sky130_fd_pr`, v0.2.0 / `open_pdks` `sky130A` & `sky130B`).
+
+In foundry PDKs, transistors, precision resistors, capacitors, varactors, diodes, and inductors are instantiated as subcircuit calls (such as `XM1 d g s b sky130_fd_pr__nfet_01v8 w=4 l=0.15` in SPICE or `M1 (d g s b) sky130_fd_pr__nfet_01v8 w=4u l=0.15u` in Spectre). Without a PDK package, RNL's standard rule packages (`rnl-std-spice` and `rnl-std-spectre`) cannot tell the device polarity or terminal names of `X` subcircuit instances and draw them as generic rectangular boxes. `pdk-sky130` maps `sky130_fd_pr` devices to standard RNL 0.3 schematic symbols (and custom multi-terminal symbols where SKY130 devices carry extra substrate, bulk, or shield pins) and declares their terminal names with `@DEVICE` (standard 6.12, 9.2, 10.1, 16.2).
 
 - **Target PDK**: [SkyWater SKY130 `sky130_fd_pr`](https://github.com/google/skywater-pdk-libs-sky130_fd_pr) (v0.2.0, upstream license `Apache-2.0`).
 - **No foundry model data**: This package contains only RNL `@DEVICE` terminal declarations, `@DEFINE-SYMBOL` drawings, and `@SELECT-INSTANCE` rules. No SPICE/Spectre model parameters, equations, or PDK subcircuit netlists are copied into this repository.
@@ -12,12 +14,12 @@ In foundry PDKs, transistors, precision resistors, capacitors, varactors, diodes
 
 ## 1. Quick Start
 
-Reference `rnl-pdk-sky130` in the `@RNL(type="header")` record of a SPICE or Spectre netlist:
+Reference `pdk-sky130` in the `@RNL(type="header")` record of a SPICE or Spectre netlist:
 
 ```spice
 * @RNL(type="header") {
 *   @VERSION("0.3");
-*   @USE-PACKAGE(name="rnl-pdk-sky130", version="0.1")
+*   @USE-PACKAGE(name="pdk-sky130", version="0.1")
 * }
 ```
 
@@ -30,16 +32,16 @@ rnl render --package-dir libraries/pdk/sky130 libraries/pdk/sky130/examples/ota5
 
 ### Without PDK Models vs. With PDK Models
 
-`rnl-pdk-sky130` works identically whether or not the netlist includes the SKY130 model library files on disk:
+`pdk-sky130` works identically whether or not the netlist includes the SKY130 model library files on disk:
 
-1. **Without PDK model files included**: When a netlist is checked or rendered standalone (or before a full PDK installation is present), the `@DEVICE(name="*", model="sky130_fd_pr__...", terminals=[...])` declarations in `rnl-pdk-sky130.rnl`'s header record supply the exact terminal names (`d`, `g`, `s`, `b`, `c`, `e`, `r0`, `r1`, `c0`, `c1`, etc.) for every SKY130 device (standard 6.12).
-2. **With PDK `.subckt` / `subckt` definitions included**: When the netlist includes the SKY130 model files via `.include` / `.lib` (SPICE) or `include` (Spectre), RNL reads the port names from each `.subckt` / `subckt` header (standard 6.12). Because the `@DEVICE` declarations in `rnl-pdk-sky130.rnl` match the authoritative `sky130_fd_pr` `.subckt` port orders, all terminal references (`#XM1:d`, `#XR1:r0`, `#XQ1:e`, `#XC1:c0`) resolve to the exact same pins in both modes.
+1. **Without PDK model files included**: When a netlist is checked or rendered standalone (or before a full PDK installation is present), the `@DEVICE(name="*", model="sky130_fd_pr__...", terminals=[...])` declarations in `pdk-sky130.rnl`'s header record supply the exact terminal names (`d`, `g`, `s`, `b`, `c`, `e`, `r0`, `r1`, `c0`, `c1`, etc.) for every SKY130 device (standard 6.12).
+2. **With PDK `.subckt` / `subckt` definitions included**: When the netlist includes the SKY130 model files via `.include` / `.lib` (SPICE) or `include` (Spectre), RNL reads the port names from each `.subckt` / `subckt` header (standard 6.12). Because the `@DEVICE` declarations in `pdk-sky130.rnl` match the authoritative `sky130_fd_pr` `.subckt` port orders, all terminal references (`#XM1:d`, `#XR1:r0`, `#XQ1:e`, `#XC1:c0`) resolve to the exact same pins in both modes.
 
 > **Note on `.include` / `.lib`**: RNL's SPICE and Spectre host adapters read every active `.include` / `.lib` / `include` directive and report an error if the referenced file does not exist on disk. For standalone schematic files when the full PDK is not installed locally, keep the `.include` / `.lib` directive commented out or point it to a lightweight stub file containing `.subckt ... .ends` headers.
 
 ### SPICE and Spectre Dialect Support
 
-Every `@DEVICE` declaration in `rnl-pdk-sky130.rnl` uses `name="*"` and every symbol rule selects by `model="..."` (`# @SELECT-INSTANCE(model="sky130_fd_pr__...") => @SET-SYMBOL ...`). As a result, the package works across both dialects without modification:
+Every `@DEVICE` declaration in `pdk-sky130.rnl` uses `name="*"` and every symbol rule selects by `model="..."` (`# @SELECT-INSTANCE(model="sky130_fd_pr__...") => @SET-SYMBOL ...`). As a result, the package works across both dialects without modification:
 
 - **SPICE**: Subcircuit calls (`XM1 d g s b sky130_fd_pr__nfet_01v8 w=4 l=0.15`, `XR1 r0 r1 b sky130_fd_pr__res_high_po_0p35 l=10`) as well as primitive elements (`D1`, `Q1`, `M1`, `R1`, `C1`).
 - **Spectre**: Instances without an `X` prefix (`M1 (d g s b) sky130_fd_pr__nfet_01v8 w=4u l=0.15u`, `CL (c0 c1) sky130_fd_pr__cap_mim_m3_1 w=10u l=10u`).
@@ -48,7 +50,7 @@ Every `@DEVICE` declaration in `rnl-pdk-sky130.rnl` uses `name="*"` and every sy
 
 In RNL 0.3 (standard 13.6), referencing a host parameter such as `${w}` or `${l}` in a label requires that parameter to be written on the instance line (otherwise the text fails with a diagnostic because RNL does not evaluate omitted parameters from `.subckt` defaults). Therefore:
 
-- By default, `rnl-pdk-sky130` shows `${name}` (`key="name"`) and `${model}` (`key="model"` on transistors/BJTs, `key="value"` on resistors/capacitors/inductors) so that any instance—even one relying on default PDK parameters—checks cleanly with zero errors.
+- By default, `pdk-sky130` shows `${name}` (`key="name"`) and `${model}` (`key="model"` on transistors/BJTs, `key="value"` on resistors/capacitors/inductors) so that any instance—even one relying on default PDK parameters—checks cleanly with zero errors.
 - To display `W/L` or passive dimensions in the schematic, override `key="model"` or `key="value"` in your netlist's `@RNL` block using a selection rule or per-instance `@TEXT`:
 
 ```rnl
@@ -86,7 +88,7 @@ Because `key="model"` and `key="value"` match the keys defined in the symbols, o
 | **Diodes (2-terminal)** | `sky130_fd_pr__diode_pw2nd_05v5*`, `sky130_fd_pr__diode_pw2nd_11v0`, `sky130_fd_pr__diode_pd2nw_05v5*`, `sky130_fd_pr__diode_pd2nw_11v0`, `sky130_fd_pr__diode_*`, `sky130_fd_pr__esd_rf_diode_*`, `sky130_fd_pr__model__parasitic__*diode_*` | `a k` (`1 2`) | `$DIODE` |
 | **RF Spiral Inductors (4-terminal)** | `sky130_fd_pr__ind_03_90`, `sky130_fd_pr__ind_05_125`, `sky130_fd_pr__ind_05_220`, `sky130_fd_pr__ind_*` | `a b ct sub` (`1 2 3 4`) | `$SKY130_INDUCTOR_4TERM` |
 
-### Custom Symbols Defined by `rnl-pdk-sky130`
+### Custom Symbols Defined by `pdk-sky130`
 
 All pins are placed on integer grid points (standard 9.2.4), and on any side with pins the symbol's `box` edge lies on the outermost pin of that side (existing solver records solved against earlier boxes will be flagged as not matching the current input):
 
@@ -114,7 +116,7 @@ The [`examples/`](examples/) directory contains four complete SKY130 schematics:
 | [`examples/bandgap.sp`](examples/bandgap.sp) | SPICE | CMOS bandgap reference core with `sky130_fd_pr__pnp_05v5_W3p40L3p40` (`XQ1`, `XQ2`), 3-terminal `sky130_fd_pr__res_high_po_0p35` (`XR1`–`XR3`), and `sky130_fd_pr__pfet_01v8_lvt` mirror (`XM1`, `XM2`) |
 | [`examples/mim_switch.sp`](examples/mim_switch.sp) | SPICE | Switched-capacitor sampling network with `sky130_fd_pr__cap_mim_m3_1`/`m3_2` (`XC1`, `XC2`), LVT CMOS transmission gate (`sky130_fd_pr__nfet_01v8_lvt`, `sky130_fd_pr__pfet_01v8_lvt`), 5 V native-Vt bottom-plate switch (`sky130_fd_pr__nfet_05v0_nvt`), and input clamp diode (`sky130_fd_pr__diode_pw2nd_05v5`) |
 
-To regenerate `rnl-pdk-sky130.rnl` or verify the package and all examples (both without PDK model files and with stubbed `.subckt` / `subckt` definitions):
+To regenerate `pdk-sky130.rnl` or verify the package and all examples (both without PDK model files and with stubbed `.subckt` / `subckt` definitions):
 
 ```sh
 python scripts/pdk/sky130.py
