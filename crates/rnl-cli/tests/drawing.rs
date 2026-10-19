@@ -134,6 +134,54 @@ fn text_at(lv: &LevelView, shown: &str) -> Option<Pt> {
 }
 
 #[test]
+fn scene_positioned_labels_keep_scene_alignment() {
+    for orientation in ["MY", "MX", "R90"] {
+        for position in [
+            ", dx=-0.4, dy=-0.5)",
+            ", dx=-0.4) => @PLACE(y=-0.5)",
+            ", dy=-0.5) => @PLACE(x=-0.4)",
+            ") => @PLACE(-0.4, -0.5)",
+        ] {
+            let body = format!(
+                "#M1 @ORIENT(\"{orientation}\"); #M1 @TEXT(\"${{name}}\", key=\"name\", halign=\"end\", valign=\"top\"{position}"
+            );
+            let source = netlist("0.3", &record(&body)).replace("M1 out", ".model nch nmos\nM1 out");
+            let r = read(&source, &Options::default());
+            assert!(r.diagnostics().iter().all(|d| d.severity != Severity::Error), "{:?}", r.diagnostics());
+            let lv = level(&r, "t.sp");
+            let label = lv
+                .texts
+                .iter()
+                .find(|t| t.attach.as_deref() == Some("#M1") && t.key.as_deref() == Some("name"))
+                .unwrap();
+            assert_eq!(label.anchor, (-0.4, -0.5));
+            let prims = rnl_render::primitives(&lv, &rnl_render::RenderOptions::default());
+            let prim = prims.iter().find(|p| p.owner == "#M1::name").unwrap();
+            let rnl_render::Kind::Text(text) = &prim.kind else { panic!("label must be text") };
+            assert_eq!(text.halign, "end", "{orientation}: {position}");
+            assert_eq!(text.valign, "top", "{orientation}: {position}");
+            assert!(!text.vertical, "{orientation}: {position}");
+            assert!((prim.bbox[2] - label.anchor.0).abs() < 1e-10, "{:?}", prim.bbox);
+        }
+    }
+}
+
+#[test]
+fn a_label_using_a_symbol_axis_keeps_the_symbol_orientation() {
+    for offset in ["", ", dx=-0.4", ", dy=-0.5"] {
+        let body = format!("#M1 @ORIENT(\"MY\"); #M1 @TEXT(\"${{name}}\", key=\"name\", halign=\"end\"{offset})");
+        let source = netlist("0.3", &record(&body)).replace("M1 out", ".model nch nmos\nM1 out");
+        let r = read(&source, &Options::default());
+        assert!(r.diagnostics().iter().all(|d| d.severity != Severity::Error), "{:?}", r.diagnostics());
+        let lv = level(&r, "t.sp");
+        let prims = rnl_render::primitives(&lv, &rnl_render::RenderOptions::default());
+        let prim = prims.iter().find(|p| p.owner == "#M1::name").unwrap();
+        let rnl_render::Kind::Text(text) = &prim.kind else { panic!("label must be text") };
+        assert_eq!(text.halign, "start", "{offset}");
+    }
+}
+
+#[test]
 fn a_text_on_a_wire_drawn_in_part_is_drawn_above_it() {
     let (m1, r1) = pins();
     // the wire is drawn up to (2, 5) and from (8, 5), with a flyline between: its label goes above

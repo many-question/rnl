@@ -1,4 +1,4 @@
-<!-- translated from en/annex-d.md sha256:e2fc46c84cae -->
+<!-- translated from en/annex-d.md sha256:27a468f57dad -->
 ## 附录 D 与 0.2 版相比的改动（说明性）
 
 0.3 版让求解器把自己定下的每个决定都写回，使不求解的查看器画出的就是求解器画的图。0.x 各版本之间不承诺兼容（16.1）；本附录列出改了什么，以及文件怎样迁到 0.3 版。
@@ -82,3 +82,5 @@
 **新加的**：`rnl-std-basic`、`rnl-std-semiconductors` 加了符号，如开关、电流控制的源、传输线、JFET。系列还加了 `rnl-std` 不带进来的包：`rnl-std-functional`、`rnl-std-rf`、`rnl-std-logic`、`rnl-std-signal-flow`，把它们和 `rnl-std` 合在一起的集合 `rnl-std-full`，以及可选的 `rnl-std-no-labels`（16.3）。文件自己定义了、系列 0.3 又新加的名字，如 `$SWITCH`，遮蔽标准包的那个并给提示（6.8），文件用的仍是它自己的。
 
 **修订 2**：编辑性的修订，语言没有改动。1.3 和 5.9 的例子写上了晶体管的模型卡 `.model nch nmos level=1`，让标准包认得出它们的极性、给它们符号。
+
+**后续编辑性澄清**：13.3 明确，文字位置的两个轴都由场景给定时，文字不继承附着对象的朝向，对齐按场景的方向解释。语言没有改动。
