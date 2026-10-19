@@ -92,6 +92,10 @@ cleanup after success or failure. `long.spec.js` checks the 200,000-line fixture
 rendered rows, direct end/top scrolls and drawing-to-source navigation. Its timing excludes trace
 snapshots and is a regression duration, not a native/WASM opening benchmark.
 
+`startup.spec.js` blocks stylesheets and modules to check that the inline startup screen already
+paints in light/dark mode, then resumes normal startup; a failed required stylesheet reports an
+error instead of leaving the startup screen stuck.
+
 ## Known failures
 
 No test is marked as failing. The three that were, an initial of the subcircuit index that scrolled to the end of the list, a double click on a tree row that did not fold the tree in Firefox, and the file tabs that the failed statements' box covered at the narrowest side panel, pass since the page was fixed.

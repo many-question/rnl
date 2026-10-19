@@ -4,12 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RNL Viewer</title>
+<!-- First paint must not wait for the main stylesheet, fonts or JavaScript module graph. -->
+<style>
+html, body { height: 100%; margin: 0; }
+body { background: #f4f4f2; color: #1d1d1f; font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+body.starting > #app, body.starting > .menubar, body.starting > .statusbar { visibility: hidden; }
+.startup { position: fixed; inset: 0; z-index: 15; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; background: var(--bg, #f4f4f2); }
+.startup strong { font-size: 28px; font-weight: 600; }
+.startup small { min-height: 1.4em; color: var(--muted, #6b6b70); font-size: 13px; }
+@media (prefers-color-scheme: dark) {
+  body { background: #1f1f22; color: #e8e8ea; }
+  .startup { background: var(--bg, #1f1f22); }
+  .startup small { color: var(--muted, #9a9aa2); }
+}
+</style>
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/svg+xml" href="icons/favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css">
+<link id="viewer-style" rel="preload" as="style" href="style.css">
 <!-- the drawing's fonts, if scripts/fonts.py web wrote them (decision 0009) -->
-<link rel="stylesheet" href="fonts/fonts.css">
+<link id="viewer-fonts" rel="preload" as="style" href="fonts/fonts.css">
 </head>
 <body class="starting">
 <div id="startup" class="startup" role="status" aria-label="Loading RNL Viewer">

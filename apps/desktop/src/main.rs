@@ -15,6 +15,7 @@ mod pool;
 mod session;
 mod settings;
 mod solve;
+mod startup;
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -251,6 +252,12 @@ fn quit(app: AppHandle) {
     app.exit(0);
 }
 
+/// The initialized page is ready to replace the native Windows startup surface.
+#[tauri::command]
+fn finish_startup(window: WebviewWindow, startup: State<'_, startup::Startup>) -> Result<(), String> {
+    startup.finish(&window)
+}
+
 /// Ask for a file to open; None when the dialog is cancelled.
 #[tauri::command]
 async fn pick_file(window: WebviewWindow) -> Option<String> {
@@ -271,6 +278,7 @@ fn initial_file() -> Option<String> {
 }
 
 fn main() {
+    let startup = startup::Startup::new();
     let session = session::read(std::env::args_os().skip(1)).expect("the viewer session could not be read");
     let mut context = tauri::generate_context!();
     // Keep the small-logo strokes in the title bar and taskbar, including at higher system DPI.
@@ -296,6 +304,7 @@ fn main() {
         .manage(settings::Settings::default())
         .manage(session::Initial(Mutex::new(session)))
         .manage(Core::new())
+        .manage(startup)
         .menu(menu::menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "exit" => request_exit(app),
@@ -320,6 +329,7 @@ fn main() {
             save_file_as,
             set_dirty,
             quit,
+            finish_startup,
             pick_file,
             initial_file,
             session::initial_session,

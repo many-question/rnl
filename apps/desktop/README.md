@@ -1,5 +1,9 @@
 # desktop
 
+On Windows, the main window first paints **RNL Viewer** and the version using a native child
+control, before WebView2 is created. After its first paint, the HTML page takes over in that window, with
+the same size, position and HWND; there is no separate startup window.
+
 RNL Viewer, a small desktop application that opens a netlist and draws it. It can edit the text and apply the changes, solve the netlist as a preview and save a solved copy; it writes a file only when you have edited it and choose Save ([decision 0011](../../docs/decisions/0011-viewers-edit-the-text-and-write-only-what-the-user-saves.md), [0010](../../docs/decisions/0010-desktop-viewer-solves-as-a-preview.md)). As opened, objects without a position are not drawn, as with `rnl render`.
 
 - **File › Open File** (Ctrl+O) opens a SPICE netlist, a Spectre netlist (`.scs`) or a package file (`.rnl`); the file can also be given on the command line, where `--remote-debugging-port=PORT` opens the DevTools port of the app's WebView on 127.0.0.1, as in Chromium, for tests. **File › Reload** (F5) reads it again, keeping the level, the view and the selection.

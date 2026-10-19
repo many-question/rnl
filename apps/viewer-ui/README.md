@@ -4,6 +4,9 @@ During startup the shared page shows **RNL Viewer**, with the version below it, 
 settings and initial document are ready. `startup.js` reads the version independently of the main
 module graph, from Tauri on desktop or the web build's `about.json`. Startup errors reveal the
 normal page with the error message; unavailable version metadata does not block opening it.
+The startup styles are inline and the full stylesheets load without blocking that first paint.
+Layout initialization waits for the main stylesheet. On Windows, the main window paints native
+name/version text before WebView2 starts, then reveals the initialized page in that same window.
 
 The page of the RNL viewers: the drawing, the netlist text, the problems and the subcircuit hierarchy, with a selected instance or net followed between the drawing and the text. The desktop viewer ([`apps/desktop`](../desktop/README.md)) and the web viewer ([`apps/web`](../web/README.md)) show it ([decision 0008](../../docs/decisions/0008-shared-core-per-platform-frontends.md)). The page shows a Document that its shell builds; it never reads files itself.
 
