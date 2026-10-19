@@ -129,6 +129,22 @@ const unit = (dir) =>
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const num = (x) => (Math.round(x * 100) / 100).toString();
 
+/** Primitive boxes exclude outlines. Include their stroke envelope, including SVG's miter limit. */
+function paintedBounds(primitive, scale) {
+  const outline = Math.max(0, ...(primitive.strokes || []).map((s) =>
+    s.width / (s.unit === "pixel" ? scale : 1) * (primitive.kind === "path" && s.join === "miter" ? 2 : 0.5)));
+  const [x0, y0, x1, y1] = primitive.bbox;
+  return [x0 - outline, y0 - outline, x1 + outline, y1 + outline];
+}
+
+/** Round outwards, so serializing a viewBox cannot trim the last fraction of a stroke. */
+function viewBox([x0, y0, x1, y1], scale, margin) {
+  const low = (x) => Math.floor(x * 100) / 100;
+  const high = (x) => Math.ceil(x * 100) / 100;
+  const left = low((x0 - margin) * scale), top = low(-(y1 + margin) * scale);
+  return [left, top, high((x1 + margin) * scale) - left, high(-(y0 - margin) * scale) - top];
+}
+
 /** The netlist that draws each symbol of `symbols` in a subcircuit of its own, as `X1`. */
 function galleryNetlist(pkg, symbols) {
   const lines = [
@@ -207,13 +223,15 @@ function draw(pkg, symbols) {
       x1 = Math.max(x1, c);
       y1 = Math.max(y1, d);
     };
-    for (const prim of level.primitives || []) if (!prim.owner.startsWith("#X1::")) grow(...prim.bbox);
+    for (const prim of level.primitives || []) if (!prim.owner.startsWith("#X1::")) grow(...paintedBounds(prim, scale));
     if (box) grow(...box);
     // a thumbnail shows the symbol alone, without its labels, pins and their tags
     const thumb = Number.isFinite(x0)
-      ? [x0 - 0.2, -(y1 + 0.2), x1 - x0 + 0.4, y1 - y0 + 0.4].map((v) => num(v * scale)).join(" ")
+      ? viewBox([x0, y0, x1, y1], scale, MARGIN).map(num).join(" ")
       : null;
-    for (const prim of level.primitives || []) grow(...prim.bbox);
+    for (const prim of level.primitives || []) grow(...paintedBounds(prim, scale));
+    // The selectable box is also visible when the Box toggle is on (1.2px outline).
+    if (box) grow(box[0] - 0.6 / scale, box[1] - 0.6 / scale, box[2] + 0.6 / scale, box[3] + 0.6 / scale);
     // a pin's mark, and its terminal number and direction beyond its end (see card)
     for (const p of pins) {
       grow(p.at[0] - 0.3, p.at[1] - 0.3, p.at[0] + 0.3, p.at[1] + 0.3);
@@ -243,13 +261,14 @@ function pinTag(p, scale) {
   const text = [].concat(p.terminal).join(",");
   const [dx, dy] = unit(p.dir);
   const [x, y] = [p.at[0] * scale, -p.at[1] * scale];
-  const width = (text.length + (ARROWS[p.dir] ? 1 : 0)) * 0.6 * TAG_SIZE;
+  // Leave an em for the direction glyph, whose fallback font can be wider than a mono figure.
+  const width = (text.length * 0.7 + (ARROWS[p.dir] ? 1 : 0)) * TAG_SIZE;
   const anchor = dx > 0.5 ? "start" : dx < -0.5 ? "end" : p.dir === null ? "start" : "middle";
   const tx = x + dx * 5 + (p.dir === null ? 5 : 0);
   const ty = y - dy * 6 + (Math.abs(dy) > 0.5 ? (dy < 0 ? 8 : 0) : 3.8);
   // the box in pixels, from the baseline up by the figures' height and down by a little
   const left = anchor === "start" ? tx : anchor === "end" ? tx - width : tx - width / 2;
-  const [top, bottom] = [ty - 0.75 * TAG_SIZE, ty + 0.2 * TAG_SIZE];
+  const [top, bottom] = [ty - TAG_SIZE, ty + 0.3 * TAG_SIZE];
   return { text, anchor, x: tx, y: ty, box: [left / scale, -bottom / scale, (left + width) / scale, -top / scale] };
 }
 
@@ -281,7 +300,7 @@ function card(svg, scale, [x0, y0, x1, y1], box, pins) {
         `<text x="${num(tag.x)}" y="${num(tag.y)}" text-anchor="${tag.anchor}">${esc(tag.text)}${arrow}</text></g>`,
     );
   }
-  const vb = [x0 * scale, -y1 * scale, (x1 - x0) * scale, (y1 - y0) * scale].map(num).join(" ");
+  const vb = viewBox([x0, y0, x1, y1], scale, 0).map(num).join(" ");
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" width="${num((x1 - x0) * SCALE_UNIT)}" height="${num((y1 - y0) * SCALE_UNIT)}"` +
     ` font-family="Noto Sans SC, Noto Sans CJK SC, Source Han Sans SC, sans-serif">` +
