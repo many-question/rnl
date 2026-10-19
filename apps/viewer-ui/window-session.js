@@ -3,6 +3,8 @@ export async function openWebWindow(serialize) {
   const token = crypto.randomUUID();
   const url = new URL(location.href);
   url.searchParams.delete("url");
+  url.searchParams.delete("embed");
+  url.searchParams.delete("origin");
   url.searchParams.set("viewer-session", token);
   let popup;
   let timer;

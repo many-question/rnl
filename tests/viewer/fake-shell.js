@@ -129,6 +129,7 @@ const fake = {
 window.fakeShell = fake;
 
 let held = null; // the solve that waits: { resolve, reject }
+let solveCancelled = false; // cancellation can arrive before the fixture fetch finishes
 let heldDrawings = []; // the requests for drawings that wait: their resolve
 let kept = null; // the drawings of the last build that left them out of its Document, by level: { names, drawings }
 let closing = null; // the page's handler of a request to close the window
@@ -151,6 +152,7 @@ const solving = {
     return fake.optionsError;
   },
   async solve(src, settings, edits) {
+    solveCancelled = false;
     fake.calls.push(["solve", src.name, settings]);
     fake.solveEdits.push(edits);
     const fail = fake.solveFail;
@@ -159,10 +161,12 @@ const solving = {
     const response = await fetch(`/fixtures/${encodeURIComponent(src.fixture)}-preview.json`);
     if (!response.ok) throw `${src.name}: there is no such preview`;
     const solved = await response.json();
+    if (solveCancelled) throw "the solve was cancelled";
     if (fake.hold) await new Promise((resolve, reject) => (held = { resolve, reject }));
     return solved;
   },
   cancelSolve() {
+    solveCancelled = true;
     fake.calls.push(["cancelSolve"]);
     if (held) held.reject("the solve was cancelled");
     held = null;

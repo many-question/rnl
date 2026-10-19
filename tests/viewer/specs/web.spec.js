@@ -60,14 +60,15 @@ test("New Window hands local files, applied include text, hierarchy and Library 
 test("Shift double click opens a subcircuit in a real new tab and pop-up blocking is explained", async ({ page }, info) => {
   await start(page, "?url=samples/cases/04-hierarchy.sp");
   await shown(page);
-  const target = await page.evaluate(() => {
+  await page.locator("#canvas").focus();
+  await page.keyboard.press("f");
+  const target = await page.evaluate(async () => {
+    const { view } = await import('./drawing.js');
     const { doc, level } = window.viewer;
     const hit = doc.levels[level].hits.find((h) => h.kind === 'box' && h.objects.some((o) => doc.objects[o].name === 'X2'));
     const [a, b] = hit.points;
     const canvas = document.getElementById('canvas'), rect = canvas.getBoundingClientRect();
-    const [x, y, w] = canvas.querySelector('svg').getAttribute('viewBox').split(' ').map(Number);
-    const scale = canvas.clientWidth / w;
-    return { x: rect.left + ((a[0] + b[0]) / 2 - x) * scale, y: rect.top + ((a[1] + b[1]) / 2 - y) * scale };
+    return { x: rect.left + ((a[0] + b[0]) / 2 - view.x) * view.k, y: rect.top + ((a[1] + b[1]) / 2 - view.y) * view.k };
   });
   const before = await page.evaluate(() => ({ path: window.viewer.path, selected: window.viewer.selected }));
   const popup = page.waitForEvent("popup");
@@ -789,6 +790,7 @@ test("temporary package is absent from include and USE-PACKAGE lookup; applied t
   expect(missing.diagnostics.some((d) => d.message.includes("acme-temp 1.0 cannot be found"))).toBe(true);
   await page.locator("#tab-files").click();
   await opened(page, () => page.locator(".pool-temporary .pool-open").click());
+  await page.locator("#tab-netlist").click();
   await page.evaluate(() => window.viewer.command("toggle-edit"));
   const edited = pkg.replace("1.0", "2.0");
   await page.locator("#source textarea").fill(edited);

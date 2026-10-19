@@ -113,6 +113,11 @@ export function currentSource() {
   return lastSource;
 }
 
+/** A shell that builds its own opening flow (the web embed) publishes the displayed source here. */
+export function adoptSource(source) {
+  lastSource = source;
+}
+
 /** Whether a source is being read. */
 export function isLoading() {
   return loading;
