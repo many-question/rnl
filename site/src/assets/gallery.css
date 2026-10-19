@@ -92,8 +92,11 @@
   background-size: 13px 13px; background-position: center;
 }
 .gl-fig svg, .gl-dlg-fig svg { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; overflow: visible; }
+.gl-fig svg { max-width: none; max-height: none; }
 .gl-card-name { display: flex; align-items: center; gap: 6px; padding: 9px 12px 0; font: 600 13.5px/1.4 var(--f-mono); color: var(--ink); }
 .gl-card-name > span { min-width: 0; overflow-wrap: anywhere; }
+.gl-card-name > span:first-child { flex: 1; }
+.gl-fit { flex: none; margin-left: auto; padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; font: 400 11px/1.6 var(--f-body); color: var(--ink-3); white-space: nowrap; }
 .gl-warn { width: 15px; height: 15px; color: var(--warn); }
 .gl-pins { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 12px 0; }
 .gl-pin {

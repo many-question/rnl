@@ -136,7 +136,7 @@
     }).join('');
     return '<button type="button" class="gl-card" data-sym="' + esc(s.name) + '" data-pkg="' + esc(pkg.name) + '" aria-label="' + esc(label) + '">' +
       '<span class="gl-fig" aria-hidden="true">' + s.svg + '</span>' +
-      '<span class="gl-card-name"><span>' + breakable(s.name) + '</span>' + warn + '</span>' +
+      '<span class="gl-card-name"><span>' + breakable(s.name) + '</span>' + warn + '<small class="gl-fit" hidden></small></span>' +
       (row ? '<span class="gl-pins">' + row + '</span>' : '') +
       '</button>';
   }
@@ -274,6 +274,36 @@
 
   /* ---------------- the page ---------------- */
 
+  /* Keep the common scene scale unless the complete drawing exceeds this card's inner area. */
+  function fitCard(figure) {
+    var svg = $('svg', figure);
+    if (!svg) return;
+    var style = getComputedStyle(figure);
+    var width = figure.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    var height = figure.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+    var naturalWidth = parseFloat(svg.getAttribute('width')), naturalHeight = parseFloat(svg.getAttribute('height'));
+    var ratio = Math.min(1, width / naturalWidth, height / naturalHeight);
+    if (!(ratio > 0)) return;
+    svg.style.width = (naturalWidth * ratio) + 'px';
+    svg.style.height = (naturalHeight * ratio) + 'px';
+    var badge = $('.gl-fit', figure.parentElement);
+    badge.hidden = ratio >= 1;
+    badge.textContent = fill('<zh>缩小显示 ×{r}</zh><en>Shown at ×{r}</en>', { r: ratio.toFixed(2) });
+  }
+
+  var cardSizes = global.ResizeObserver ? new ResizeObserver(function (entries) {
+    entries.forEach(function (entry) { fitCard(entry.target); });
+  }) : null;
+
+  function fitCards() {
+    if (cardSizes) cardSizes.disconnect();
+    $$('.gl-fig', main).forEach(function (figure) {
+      fitCard(figure);
+      if (cardSizes) cardSizes.observe(figure);
+    });
+  }
+  if (!cardSizes) global.addEventListener('resize', function () { if (main) fitCards(); });
+
   function render() {
     var group = state.groups[state.group];
     if (!group) return;
@@ -288,6 +318,7 @@
     });
     main.innerHTML = (terms().length && !count ? '<p class="gl-status"><zh>没有找到。</zh><en>Nothing found.</en></p>' : '') + html;
     main.className = 'gl-main' + (state.show.pins ? ' show-pins' : '') + (state.show.box ? ' show-box' : '') + (state.show.labels ? ' show-labels' : '');
+    fitCards();
     renderNav();
     $('#tb-series').textContent = groupTitle(group);
     $('#tb-packages').textContent = group.counts.packages;
