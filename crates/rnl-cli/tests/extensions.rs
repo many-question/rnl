@@ -114,7 +114,7 @@ fn the_diamond_sources_have_their_terminals_box_and_labels() {
             serde_json::json!([{"terminal": 1, "at": [0.0, 2.0], "direction": "up"}, {"terminal": 2, "at": [0.0, -2.0], "direction": "down"}]),
             "{name}"
         );
-        assert_eq!(s["box"], serde_json::json!([-2.4, -2.4, 1.5, 2.4]), "{name}");
+        assert_eq!(s["box"], serde_json::json!([-2.4, -2.0, 1.5, 2.0]), "{name}");
         assert_eq!(s["labels"], serde_json::json!([label("name", 0.25), label("value", -0.95)]), "{name}");
     }
 }
@@ -123,7 +123,7 @@ fn the_diamond_sources_have_their_terminals_box_and_labels() {
 /// the diamonds (rnl 0d8e1d9), written as a package of their own, under other names.
 const BEFORE_THE_DIAMONDS: &str = r#"@RNL(type="header") { @VERSION("0.3"); @PACKAGE(name="before-the-diamonds", version="0.1")}
 @RNL {
-  $BEFORE_VCVS = @DEFINE-SYMBOL(box=[-2.4, -2.4, 1.5, 2.4]) {
+  $BEFORE_VCVS = @DEFINE-SYMBOL(box=[-2.4, -2, 1.5, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     (0, 0) @CIRCLE(radius=1.0756);
@@ -135,7 +135,7 @@ const BEFORE_THE_DIAMONDS: &str = r#"@RNL(type="header") { @VERSION("0.3"); @PAC
     ? @TEXT("${name}", key="name") => @PLACE(1.5, 0.25);
     ? @TEXT("${value}", key="value") => @PLACE(1.5, -0.95)
   };
-  $BEFORE_VCCS = @DEFINE-SYMBOL(box=[-1.5, -2.4, 1.5, 2.4]) {
+  $BEFORE_VCCS = @DEFINE-SYMBOL(box=[-1.5, -2, 1.5, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     (0, 0) @CIRCLE(radius=1.0756);
@@ -146,7 +146,7 @@ const BEFORE_THE_DIAMONDS: &str = r#"@RNL(type="header") { @VERSION("0.3"); @PAC
     ? @TEXT("${name}", key="name") => @PLACE(1.5, 0.25);
     ? @TEXT("${value}", key="value") => @PLACE(1.5, -0.95)
   };
-  $BEFORE_CCVS = @DEFINE-SYMBOL(box=[-2.4, -2.4, 1.5, 2.4]) {
+  $BEFORE_CCVS = @DEFINE-SYMBOL(box=[-2.4, -2, 1.5, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     (0, 0) @CIRCLE(radius=1.0756);
@@ -158,7 +158,7 @@ const BEFORE_THE_DIAMONDS: &str = r#"@RNL(type="header") { @VERSION("0.3"); @PAC
     ? @TEXT("${name}", key="name") => @PLACE(1.5, 0.25);
     ? @TEXT("${value}", key="value") => @PLACE(1.5, -0.95)
   };
-  $BEFORE_CCCS = @DEFINE-SYMBOL(box=[-1.5, -2.4, 1.5, 2.4]) {
+  $BEFORE_CCCS = @DEFINE-SYMBOL(box=[-1.5, -2, 1.5, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     (0, 0) @CIRCLE(radius=1.0756);
@@ -222,10 +222,10 @@ fn the_circle_sources_are_in_the_catalog_with_their_terminals_box_and_labels() {
     let c = serde_json::to_value(rnl_view::catalog(&FsProvider::new(&[]), &options)).unwrap();
     let label = |key: &str, y: f64| serde_json::json!({"key": key, "text": format!("${{{key}}}"), "at": [1.5, y], "halign": "start", "valign": "baseline"});
     for (name, bbox) in [
-        ("$CANVAS_VCVS_CIRCLE", [-2.4, -2.4, 1.5, 2.4]),
-        ("$CANVAS_CCVS_CIRCLE", [-2.4, -2.4, 1.5, 2.4]),
-        ("$CANVAS_VCCS_CIRCLE", [-1.5, -2.4, 1.5, 2.4]),
-        ("$CANVAS_CCCS_CIRCLE", [-1.5, -2.4, 1.5, 2.4]),
+        ("$CANVAS_VCVS_CIRCLE", [-2.4, -2.0, 1.5, 2.0]),
+        ("$CANVAS_CCVS_CIRCLE", [-2.4, -2.0, 1.5, 2.0]),
+        ("$CANVAS_VCCS_CIRCLE", [-1.5, -2.0, 1.5, 2.0]),
+        ("$CANVAS_CCCS_CIRCLE", [-1.5, -2.0, 1.5, 2.0]),
     ] {
         let s = c["symbols"]
             .as_array()

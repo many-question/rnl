@@ -10,7 +10,7 @@
 /* ---------------------------------------------------------------- rnl-std-semiconductors: symbols drawn from Analog Canvas */
 @RNL {
   /* a k; from Analog Canvas diode */
-  $DIODE = @DEFINE-SYMBOL(box=[-2.4, -1, 2.4, 1]) {
+  $DIODE = @DEFINE-SYMBOL(box=[-2, -1, 2, 1]) {
     (-2, 0) @PIN(terminal=1, direction="left");
     (2, 0) @PIN(terminal=2, direction="right");
     @LINE {(-2, 0) (-0.8333, 0)};
@@ -21,7 +21,7 @@
   };
 
   /* a k; from Analog Canvas zener-diode */
-  $ZENER_DIODE = @DEFINE-SYMBOL(box=[-2.4, -1, 2.4, 1]) {
+  $ZENER_DIODE = @DEFINE-SYMBOL(box=[-2, -1, 2, 1]) {
     (-2, 0) @PIN(terminal=1, direction="left");
     (2, 0) @PIN(terminal=2, direction="right");
     @LINE {(-2, 0) (-0.7803, 0)};
@@ -32,7 +32,7 @@
   };
 
   /* d g s (b); from Analog Canvas nmos (textbook-3terminal) */
-  $NMOS = @DEFINE-SYMBOL(box=[-3.4, -2.4, 1.4, 2.4]) {
+  $NMOS = @DEFINE-SYMBOL(box=[-3, -2, 1.4, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, -2) @PIN(terminal=3, direction="down");
@@ -47,7 +47,7 @@
   };
 
   /* d g s b; from Analog Canvas nmos */
-  $NMOS_4TERM = @DEFINE-SYMBOL(box=[-3.4, -2.4, 1.4, 2.4]) {
+  $NMOS_4TERM = @DEFINE-SYMBOL(box=[-3, -2, 1, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, -2) @PIN(terminal=3, direction="down");
@@ -65,7 +65,7 @@
   };
 
   /* d g s (b); from Analog Canvas pmos (textbook-3terminal) */
-  $PMOS = @DEFINE-SYMBOL(box=[-3.4, -2.4, 1.4, 2.4]) {
+  $PMOS = @DEFINE-SYMBOL(box=[-3, -2, 1.4, 2]) {
     (0, -2) @PIN(terminal=1, direction="down");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, 2) @PIN(terminal=3, direction="up");
@@ -80,7 +80,7 @@
   };
 
   /* d g s b; from Analog Canvas pmos */
-  $PMOS_4TERM = @DEFINE-SYMBOL(box=[-3.4, -2.4, 1.4, 2.4]) {
+  $PMOS_4TERM = @DEFINE-SYMBOL(box=[-3, -2, 1, 2]) {
     (0, -2) @PIN(terminal=1, direction="down");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, 2) @PIN(terminal=3, direction="up");
@@ -97,7 +97,7 @@
   };
 
   /* d g s (b); from Analog Canvas depletion-nmos (textbook-3terminal) */
-  $DEPLETION_NMOS = @DEFINE-SYMBOL(box=[-3.4, -2.4, 1.4, 2.4]) {
+  $DEPLETION_NMOS = @DEFINE-SYMBOL(box=[-3, -2, 1.4, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, -2) @PIN(terminal=3, direction="down");
@@ -113,7 +113,7 @@
   };
 
   /* d g s b; from Analog Canvas depletion-nmos */
-  $DEPLETION_NMOS_4TERM = @DEFINE-SYMBOL(box=[-3.4, -2.4, 1.4, 2.4]) {
+  $DEPLETION_NMOS_4TERM = @DEFINE-SYMBOL(box=[-3, -2, 1, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, -2) @PIN(terminal=3, direction="down");
@@ -132,7 +132,7 @@
   };
 
   /* d g s (b); from Analog Canvas depletion-pmos (textbook-3terminal) */
-  $DEPLETION_PMOS = @DEFINE-SYMBOL(box=[-3.4, -2.4, 1.4, 2.4]) {
+  $DEPLETION_PMOS = @DEFINE-SYMBOL(box=[-3, -2, 1.4, 2]) {
     (0, -2) @PIN(terminal=1, direction="down");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, 2) @PIN(terminal=3, direction="up");
@@ -148,7 +148,7 @@
   };
 
   /* d g s b; from Analog Canvas depletion-pmos */
-  $DEPLETION_PMOS_4TERM = @DEFINE-SYMBOL(box=[-3.4, -2.4, 1.4, 2.4]) {
+  $DEPLETION_PMOS_4TERM = @DEFINE-SYMBOL(box=[-3, -2, 1, 2]) {
     (0, -2) @PIN(terminal=1, direction="down");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, 2) @PIN(terminal=3, direction="up");
@@ -166,7 +166,7 @@
   };
 
   /* d g s (b); from Analog Canvas ndmos (standard-3terminal) */
-  $NDMOS = @DEFINE-SYMBOL(box=[-3.4, -2.4, 1.4, 2.4]) {
+  $NDMOS = @DEFINE-SYMBOL(box=[-3, -2, 1.4, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, -2) @PIN(terminal=3, direction="down");
@@ -182,7 +182,7 @@
   };
 
   /* d g s b; from Analog Canvas ndmos */
-  $NDMOS_4TERM = @DEFINE-SYMBOL(box=[-3.4, -2.4, 1.4, 2.4]) {
+  $NDMOS_4TERM = @DEFINE-SYMBOL(box=[-3, -2, 1, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, -2) @PIN(terminal=3, direction="down");
@@ -201,7 +201,7 @@
   };
 
   /* d g s (b); from Analog Canvas pdmos (standard-3terminal) */
-  $PDMOS = @DEFINE-SYMBOL(box=[-3.4, -2.4, 1.4, 2.4]) {
+  $PDMOS = @DEFINE-SYMBOL(box=[-3, -2, 1.4, 2]) {
     (0, -2) @PIN(terminal=1, direction="down");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, 2) @PIN(terminal=3, direction="up");
@@ -217,7 +217,7 @@
   };
 
   /* d g s b; from Analog Canvas pdmos */
-  $PDMOS_4TERM = @DEFINE-SYMBOL(box=[-3.4, -2.4, 1.4, 2.4]) {
+  $PDMOS_4TERM = @DEFINE-SYMBOL(box=[-3, -2, 1, 2]) {
     (0, -2) @PIN(terminal=1, direction="down");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, 2) @PIN(terminal=3, direction="up");
@@ -235,7 +235,7 @@
   };
 
   /* c b e (s); from Analog Canvas npn */
-  $NPN = @DEFINE-SYMBOL(box=[-3.4, -2.4, 0.8, 2.4]) {
+  $NPN = @DEFINE-SYMBOL(box=[-3, -2, 0.8, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, -2) @PIN(terminal=3, direction="down");
@@ -250,7 +250,7 @@
   };
 
   /* c b e (s); from Analog Canvas pnp */
-  $PNP = @DEFINE-SYMBOL(box=[-3.4, -2.4, 0.8, 2.4]) {
+  $PNP = @DEFINE-SYMBOL(box=[-3, -2, 0.8, 2]) {
     (0, -2) @PIN(terminal=1, direction="down");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, 2) @PIN(terminal=3, direction="up");
@@ -279,7 +279,7 @@
     ? @TEXT("${model}", key="model") => @PLACE(0.5, -1.75)
   };
   /* the arrow on the gate points at the channel */
-  $NJFET = @DEFINE-SYMBOL(box=[-3.4, -2.4, 0.8, 2.4]) {
+  $NJFET = @DEFINE-SYMBOL(box=[-3, -2, 0.8, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, -2) @PIN(terminal=3, direction="down");
@@ -287,7 +287,7 @@
     @LINE(fill="linecolor", linestyle="none") {(-1.66, 0) (-2.3, 0.35) (-2.3, -0.35) (-1.66, 0)}
   };
   /* and away from it; the source is up and the drain down, as in $PMOS */
-  $PJFET = @DEFINE-SYMBOL(box=[-3.4, -2.4, 0.8, 2.4]) {
+  $PJFET = @DEFINE-SYMBOL(box=[-3, -2, 0.8, 2]) {
     (0, -2) @PIN(terminal=1, direction="down");
     (-3, 0) @PIN(terminal=2, direction="left");
     (0, 2) @PIN(terminal=3, direction="up");

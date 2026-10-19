@@ -174,9 +174,9 @@
           "name": "$CURRENT_SOURCE",
           "box": [
             -1.5,
-            -2.4,
+            -2.0,
             1.5,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -288,9 +288,9 @@
           "name": "$VOLTAGE_SOURCE",
           "box": [
             -2.4,
-            -2.4,
+            -2.0,
             1.5,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -712,10 +712,10 @@
         {
           "name": "$PMOS_4TERM",
           "box": [
-            -3.4,
-            -2.4,
-            1.4,
-            2.4
+            -3.0,
+            -2.0,
+            1.0,
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -916,10 +916,10 @@
         {
           "name": "$NMOS_4TERM",
           "box": [
-            -3.4,
-            -2.4,
-            1.4,
-            2.4
+            -3.0,
+            -2.0,
+            1.0,
+            2.0
           ],
           "box_written": true,
           "default": false,

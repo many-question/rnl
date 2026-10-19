@@ -297,7 +297,7 @@ test("a catalog request lists the packages, through the core and through the Wor
     { terminal: 1, at: [0, 2], direction: "up" },
     { terminal: 2, at: [0, -2], direction: "down" },
   ]);
-  assert.deepEqual(resistor.box, [-1, -2.4, 1, 2.4]);
+  assert.deepEqual(resistor.box, [-1, -2, 1, 2]);
   assert.deepEqual(resistor.labels.map((l) => l.key), ["name", "value"]);
   assert.equal(c.symbols.find((s) => s.symbol === "$GROUND_SYMBOL").definition, "$GROUND");
   assert.equal(c.definitions.find((d) => d.definition === "$GROUND").symbol, "$GROUND_SYMBOL");

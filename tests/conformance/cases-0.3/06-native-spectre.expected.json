@@ -10,9 +10,9 @@
           "name": "$RESISTOR",
           "box": [
             -1.0,
-            -2.4,
+            -2.0,
             1.0,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -94,9 +94,9 @@
           "name": "$CAPACITOR",
           "box": [
             -1.2,
-            -2.4,
+            -2.0,
             1.2,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -192,9 +192,9 @@
           "name": "$INDUCTOR",
           "box": [
             -1.0,
-            -2.4,
+            -2.0,
             1.0,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -370,9 +370,9 @@
           "name": "$VOLTAGE_SOURCE",
           "box": [
             -2.4,
-            -2.4,
+            -2.0,
             1.5,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -488,9 +488,9 @@
           "name": "$CURRENT_SOURCE",
           "box": [
             -1.5,
-            -2.4,
+            -2.0,
             1.5,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -601,10 +601,10 @@
         {
           "name": "$VCVS_4TERM",
           "box": [
-            -4.4,
-            -2.4,
+            -4.0,
+            -2.0,
             1.65,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -817,10 +817,10 @@
         {
           "name": "$VCCS_4TERM",
           "box": [
-            -4.4,
-            -2.4,
+            -4.0,
+            -2.0,
             1.65,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -1030,9 +1030,9 @@
           "name": "$CCCS",
           "box": [
             -1.5,
-            -2.4,
+            -2.0,
             1.5,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -1160,9 +1160,9 @@
           "name": "$CCVS",
           "box": [
             -2.4,
-            -2.4,
+            -2.0,
             1.5,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -1294,9 +1294,9 @@
           "name": "$BEHAVIORAL_SOURCE",
           "box": [
             -1.5,
-            -2.4,
+            -2.0,
             1.5,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -1381,9 +1381,9 @@
         {
           "name": "$SWITCH",
           "box": [
-            -3.4,
+            -2.0,
             -1.2,
-            3.4,
+            2.0,
             1.8
           ],
           "box_written": true,
@@ -1482,9 +1482,9 @@
           "name": "$RF_PORT",
           "box": [
             -1.5,
-            -3.4,
+            -3.0,
             1.5,
-            3.4
+            3.0
           ],
           "box_written": true,
           "default": false,
@@ -1625,9 +1625,9 @@
         {
           "name": "$DIODE",
           "box": [
-            -2.4,
+            -2.0,
             -1.0,
-            2.4,
+            2.0,
             1.0
           ],
           "box_written": true,
@@ -1729,10 +1729,10 @@
         {
           "name": "$NPN",
           "box": [
-            -3.4,
-            -2.4,
+            -3.0,
+            -2.0,
             0.8,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -1882,10 +1882,10 @@
         {
           "name": "$PNP",
           "box": [
-            -3.4,
-            -2.4,
+            -3.0,
+            -2.0,
             0.8,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -2021,10 +2021,10 @@
         {
           "name": "$NMOS_4TERM",
           "box": [
-            -3.4,
-            -2.4,
-            1.4,
-            2.4
+            -3.0,
+            -2.0,
+            1.0,
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -2239,10 +2239,10 @@
         {
           "name": "$PMOS_4TERM",
           "box": [
-            -3.4,
-            -2.4,
-            1.4,
-            2.4
+            -3.0,
+            -2.0,
+            1.0,
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -2443,10 +2443,10 @@
         {
           "name": "$NJFET",
           "box": [
-            -3.4,
-            -2.4,
+            -3.0,
+            -2.0,
             0.8,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -2594,10 +2594,10 @@
         {
           "name": "$PJFET",
           "box": [
-            -3.4,
-            -2.4,
+            -3.0,
+            -2.0,
             0.8,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -2745,9 +2745,9 @@
         {
           "name": "$VOLTAGE_CONTROLLED_SWITCH",
           "box": [
-            -3.4,
+            -2.0,
             -3.8,
-            3.4,
+            2.0,
             1.7
           ],
           "box_written": true,
@@ -3005,9 +3005,9 @@
         {
           "name": "$TRANSFORMER",
           "box": [
+            -2.0,
             -2.4,
-            -2.4,
-            2.4,
+            2.0,
             2.4
           ],
           "box_written": true,

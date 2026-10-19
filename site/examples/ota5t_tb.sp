@@ -32,7 +32,7 @@ M5 tail vbias vss  vss nch W=4u L=1u
 *   };
 *   this subcircuit # @SET-SYMBOL to $OTA_SYM
 * }
-* @RNL(type="generated", priority="high", author="rnl-solver", hash="sig2:f4cc8322102b280e.ffc36700559c31e7") {
+* @RNL(type="generated", priority="high", author="rnl-solver", hash="sig2:ffad8672ab912e17.ffc36700559c31e7") {
 *   #M1 @PLACE(12, 8) => @ORIENT("R0");  #M2 @PLACE(28, 8) => @ORIENT("MY");
 *   #M3 @PLACE(12, 16) => @ORIENT("MY");  #M4 @PLACE(28, 16) => @ORIENT("R0");
 *   #M5 @PLACE(20, 0);  %ja = (16, 16);  %jb = (12, 12);
@@ -67,7 +67,7 @@ CL  out 0 1p
 *   nets {&inp &inn &out &vdd &vb} are fully @ROUTE;
 *   at (-0.5, 24) there is a @TEXT("5T OTA testbench") => it @SET-STYLE to $note
 * }
-* @RNL(type="generated", priority="high", author="rnl-solver", hash="sig2:a282bc208d796358.ffc36700559c31e7") {
+* @RNL(type="generated", priority="high", author="rnl-solver", hash="sig2:a753fcb23538f920.ffc36700559c31e7") {
 *   #VIP @PLACE(4, 13) => @ORIENT("R0");
 *   #VIN @PLACE(7, 10) => @ORIENT("R0");
 *   #VB @PLACE(17, 4) => @ORIENT("R0");

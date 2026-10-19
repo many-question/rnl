@@ -757,6 +757,29 @@ fn a_solve_puts_the_tails_under_the_middle_and_leaves_nothing_unsolved() {
 }
 
 #[test]
+fn a_solve_of_0_3_spaces_symbols_from_their_pins() {
+    // $NMOS and $RESISTOR both have their vertical pins at y = ±2 and box y1 = -2, y2 = 2, so a
+    // bottom-to-top distance of at least 2 places their origins 6 grid steps apart and routes a
+    // straight wire between #M1:d and #RD:n
+    let body = ".model nch nmos level=1\nM1 out in 0 0 nch W=4u L=1u\nRD vdd out 5k\nVDD vdd 0 1.8\n\
+                VIN in 0 DC 0.6 AC 1\n* @RNL {\n*   # @SELECT-INSTANCE(model=\"nch\") => @SET-SYMBOL $NMOS;\n\
+                *   {#RD #M1} @ALIGN(\"x\");\n*   #M1 #RD @DISTANCE(\"bottom-to-top\", min=2);\n\
+                *   &vdd @ADD-TO $SUPPLY_NET_SET;\n*   {#VIN #M1} @AS $FLOW;\n*   {&in &out} @ROUTE\n* }\n";
+    let files = MemoryProvider::new().with("/w/t.sp", &netlist("0.3", "", body));
+    let options = SolveOptions { solver: SolverOptions::without_time_limit(), ..SolveOptions::default() };
+    let run = solve(Path::new("/w/t.sp"), &files, &options).unwrap();
+    assert!(run.levels[0].written.unsolved.is_empty(), "{:?}", run.levels[0].written.unsolved);
+    let solved = MemoryProvider::new().with("/w/t.sp", &run.files[0].text);
+    let r = read(&solved, "/w/t.sp", &Options::default());
+    assert!(errors(&r).is_empty(), "{:?}", errors(&r));
+    let lv = level(&r, "t.sp");
+    let at = |id: &str| lv.objects.iter().find(|o| o.id == id).and_then(|o| o.at).unwrap();
+    assert_eq!(at("#RD").0, at("#M1").0);
+    assert_eq!(at("#RD").1 - at("#M1").1, 6.0);
+    assert!(run.files[0].text.contains("&out @WIRE(mode=\"straight\") {#M1:d #RD:n}"), "{}", run.files[0].text);
+}
+
+#[test]
 fn a_current_mirror_is_one_usage_whatever_its_transistors() {
     // ref and out are set roles: one usage of each mirror (9.4)
     let r = with_record(&[

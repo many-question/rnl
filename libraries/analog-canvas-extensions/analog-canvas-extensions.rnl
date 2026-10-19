@@ -12,7 +12,7 @@
 /* ---------------------------------------------------------------- symbols (9.2) drawn from Analog Canvas */
 @RNL {
   /* inp inn (vp) (vn) out; from Analog Canvas opamp-lettered-inputs-swapped */
-  $CANVAS_OPAMP_LETTERED = @DEFINE-SYMBOL(box=[-4.4, -3.4, 4.4, 3.4]) {
+  $CANVAS_OPAMP_LETTERED = @DEFINE-SYMBOL(box=[-4, -3.4, 3, 3.4]) {
     (-4, 1) @PIN(terminal=1, direction="left");
     (-4, -1) @PIN(terminal=2, direction="left");
     (3, 0) @PIN(terminal=5, direction="right");
@@ -28,7 +28,7 @@
   };
 
   /* inp inn (vp) (vn) out; from Analog Canvas opamp-wide-inputs-swapped */
-  $CANVAS_OPAMP_WIDE = @DEFINE-SYMBOL(box=[-4.4, -3.4, 4.4, 3.4]) {
+  $CANVAS_OPAMP_WIDE = @DEFINE-SYMBOL(box=[-4, -3.4, 3, 3.4]) {
     (-4, 2) @PIN(terminal=1, direction="left");
     (-4, -2) @PIN(terminal=2, direction="left");
     (3, 0) @PIN(terminal=5, direction="right");
@@ -43,7 +43,7 @@
   };
 
   /* inp inn (vp) (vn) out; from Analog Canvas opamp-wide-lettered-inputs-swapped */
-  $CANVAS_OPAMP_WIDE_LETTERED = @DEFINE-SYMBOL(box=[-4.4, -3.4, 4.4, 3.4]) {
+  $CANVAS_OPAMP_WIDE_LETTERED = @DEFINE-SYMBOL(box=[-4, -3.4, 3, 3.4]) {
     (-4, 2) @PIN(terminal=1, direction="left");
     (-4, -2) @PIN(terminal=2, direction="left");
     (3, 0) @PIN(terminal=5, direction="right");
@@ -59,7 +59,7 @@
   };
 
   /* inp inn out (vp) (vn); from Analog Canvas comparator-unmarked-inputs-swapped */
-  $CANVAS_COMPARATOR_UNMARKED = @DEFINE-SYMBOL(box=[-4.4, -3.4, 4.4, 3.4]) {
+  $CANVAS_COMPARATOR_UNMARKED = @DEFINE-SYMBOL(box=[-4, -3.4, 3, 3.4]) {
     (-4, 1) @PIN(terminal=1, direction="left");
     (-4, -1) @PIN(terminal=2, direction="left");
     (3, 0) @PIN(terminal=3, direction="right");
@@ -72,7 +72,7 @@
   };
 
   /* inp inn outp outn (vp) (vn); from Analog Canvas opamp-differential-inputs-swapped */
-  $CANVAS_OPAMP_DIFFERENTIAL_CROSSED = @DEFINE-SYMBOL(box=[-4.4, -3.4, 4.4, 3.4]) {
+  $CANVAS_OPAMP_DIFFERENTIAL_CROSSED = @DEFINE-SYMBOL(box=[-4, -3.4, 3, 3.4]) {
     (-4, 1) @PIN(terminal=1, direction="left");
     (-4, -1) @PIN(terminal=2, direction="left");
     (3, -1) @PIN(terminal=3, direction="right");
@@ -92,7 +92,7 @@
   };
 
   /* inp inn outp outn (vp) (vn); from Analog Canvas opamp-differential-crossed-lettered-inputs-swapped */
-  $CANVAS_OPAMP_DIFFERENTIAL_LETTERED = @DEFINE-SYMBOL(box=[-4.4, -3.4, 4.4, 3.4]) {
+  $CANVAS_OPAMP_DIFFERENTIAL_LETTERED = @DEFINE-SYMBOL(box=[-4, -3.4, 3, 3.4]) {
     (-4, 1) @PIN(terminal=1, direction="left");
     (-4, -1) @PIN(terminal=2, direction="left");
     (3, 1) @PIN(terminal=3, direction="right");
@@ -113,7 +113,7 @@
   };
 
   /* inp inn outp outn (vp) (vn); from Analog Canvas opamp-differential-lettered-inputs-swapped */
-  $CANVAS_OPAMP_DIFFERENTIAL_CROSSED_LETTERED = @DEFINE-SYMBOL(box=[-4.4, -3.4, 4.4, 3.4]) {
+  $CANVAS_OPAMP_DIFFERENTIAL_CROSSED_LETTERED = @DEFINE-SYMBOL(box=[-4, -3.4, 3, 3.4]) {
     (-4, 1) @PIN(terminal=1, direction="left");
     (-4, -1) @PIN(terminal=2, direction="left");
     (3, -1) @PIN(terminal=3, direction="right");
@@ -134,7 +134,7 @@
   };
 
   /* inp inn outp outn (vp) (vn); from Analog Canvas opamp-differential-wide-crossed-inputs-swapped */
-  $CANVAS_OPAMP_DIFFERENTIAL_WIDE = @DEFINE-SYMBOL(box=[-4.4, -3.4, 4.4, 3.4]) {
+  $CANVAS_OPAMP_DIFFERENTIAL_WIDE = @DEFINE-SYMBOL(box=[-4, -3.4, 3, 3.4]) {
     (-4, 2) @PIN(terminal=1, direction="left");
     (-4, -2) @PIN(terminal=2, direction="left");
     (3, 2) @PIN(terminal=3, direction="right");
@@ -154,7 +154,7 @@
   };
 
   /* inp inn outp outn (vp) (vn); from Analog Canvas opamp-differential-wide-inputs-swapped */
-  $CANVAS_OPAMP_DIFFERENTIAL_WIDE_CROSSED = @DEFINE-SYMBOL(box=[-4.4, -3.4, 4.4, 3.4]) {
+  $CANVAS_OPAMP_DIFFERENTIAL_WIDE_CROSSED = @DEFINE-SYMBOL(box=[-4, -3.4, 3, 3.4]) {
     (-4, 2) @PIN(terminal=1, direction="left");
     (-4, -2) @PIN(terminal=2, direction="left");
     (3, -2) @PIN(terminal=3, direction="right");
@@ -174,7 +174,7 @@
   };
 
   /* inp inn outp outn (vp) (vn); from Analog Canvas opamp-differential-wide-crossed-lettered-inputs-swapped */
-  $CANVAS_OPAMP_DIFFERENTIAL_WIDE_LETTERED = @DEFINE-SYMBOL(box=[-4.4, -3.4, 4.4, 3.4]) {
+  $CANVAS_OPAMP_DIFFERENTIAL_WIDE_LETTERED = @DEFINE-SYMBOL(box=[-4, -3.4, 3, 3.4]) {
     (-4, 2) @PIN(terminal=1, direction="left");
     (-4, -2) @PIN(terminal=2, direction="left");
     (3, 2) @PIN(terminal=3, direction="right");
@@ -195,7 +195,7 @@
   };
 
   /* inp inn outp outn (vp) (vn); from Analog Canvas opamp-differential-wide-lettered-inputs-swapped */
-  $CANVAS_OPAMP_DIFFERENTIAL_WIDE_CROSSED_LETTERED = @DEFINE-SYMBOL(box=[-4.4, -3.4, 4.4, 3.4]) {
+  $CANVAS_OPAMP_DIFFERENTIAL_WIDE_CROSSED_LETTERED = @DEFINE-SYMBOL(box=[-4, -3.4, 3, 3.4]) {
     (-4, 2) @PIN(terminal=1, direction="left");
     (-4, -2) @PIN(terminal=2, direction="left");
     (3, -2) @PIN(terminal=3, direction="right");
@@ -216,7 +216,7 @@
   };
 
   /* in out (vp) (vn); from Analog Canvas voltage-amplifier-lettered */
-  $CANVAS_VOLTAGE_AMPLIFIER_LETTERED = @DEFINE-SYMBOL(box=[-4.4, -3.4, 4.4, 3.4]) {
+  $CANVAS_VOLTAGE_AMPLIFIER_LETTERED = @DEFINE-SYMBOL(box=[-4, -3.4, 3, 3.4]) {
     (-4, 0) @PIN(terminal=1, direction="left");
     (3, 0) @PIN(terminal=2, direction="right");
     @LINE {(-4, 0) (-3, 0)};
@@ -227,7 +227,7 @@
   };
 
   /* p n; from Analog Canvas inductor */
-  $CANVAS_INDUCTOR_LARGE = @DEFINE-SYMBOL(box=[-1.5, -3.2, 1.5, 3.2]) {
+  $CANVAS_INDUCTOR_LARGE = @DEFINE-SYMBOL(box=[-1.5, -3, 1.5, 3]) {
     (0, 3) @PIN(terminal=1, direction="up");
     (0, -3) @PIN(terminal=2, direction="down");
     @LINE {(0, 3) (0, 1.8)};
@@ -243,7 +243,7 @@
   };
 
   /* p n (cp) (cn); from Analog Canvas simple-switch */
-  $CANVAS_SIMPLE_SWITCH = @DEFINE-SYMBOL(box=[-3.4, -1.2, 3.4, 1.8]) {
+  $CANVAS_SIMPLE_SWITCH = @DEFINE-SYMBOL(box=[-2, -1.2, 2, 1.8]) {
     (-2, 0) @PIN(terminal=1, direction="left");
     (2, 0) @PIN(terminal=2, direction="right");
     @LINE {(-2, 0) (-1, 0)};
@@ -253,7 +253,7 @@
   };
 
   /* draws $SPDT_SWITCH; com a b; from Analog Canvas simple-spdt-switch */
-  $CANVAS_SIMPLE_SPDT_SWITCH = @DEFINE-SYMBOL(box=[-3.4, -2, 3.4, 2]) {
+  $CANVAS_SIMPLE_SPDT_SWITCH = @DEFINE-SYMBOL(box=[-2, -2, 2, 2]) {
     (-2, 0) @PIN(terminal=1, direction="left");
     (2, 1) @PIN(terminal=2, direction="right");
     (2, -1) @PIN(terminal=3, direction="right");
@@ -264,7 +264,7 @@
   };
 
   /* draws $IO_PORT; p; from Analog Canvas port-filled */
-  $CANVAS_PORT_FILLED = @DEFINE-SYMBOL(box=[-1.4, -0.7, 0.4, 0.7]) {
+  $CANVAS_PORT_FILLED = @DEFINE-SYMBOL(box=[-1.4, -0.7, 0, 0.7]) {
     (0, 0) @PIN(terminal=1, direction="right");
     (-0.7087, 0) @CIRCLE(radius=0.2479, fill="linecolor");
     @LINE {(0, 0) (-0.4608, 0)};
@@ -272,7 +272,7 @@
   };
 
   /* p n; from Analog Canvas current-source (diamond) */
-  $CANVAS_CURRENT_SOURCE_DIAMOND = @DEFINE-SYMBOL(box=[-1.5, -2.4, 1.5, 2.4]) {
+  $CANVAS_CURRENT_SOURCE_DIAMOND = @DEFINE-SYMBOL(box=[-1.5, -2, 1.5, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     @LINE {(0, 0.6977) (0, 0.2326)};
@@ -285,7 +285,7 @@
   };
 
   /* p n (cp) (cn); from Analog Canvas vccs (diamond) */
-  $CANVAS_VCCS_DIAMOND = @DEFINE-SYMBOL(box=[-1.5, -2.4, 1.5, 2.4]) {
+  $CANVAS_VCCS_DIAMOND = @DEFINE-SYMBOL(box=[-1.5, -2, 1.5, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     @LINE {(0, 0.6977) (0, 0.2326)};
@@ -298,7 +298,7 @@
   };
 
   /* p n; from Analog Canvas cccs (diamond) */
-  $CANVAS_CCCS_DIAMOND = @DEFINE-SYMBOL(box=[-1.5, -2.4, 1.5, 2.4]) {
+  $CANVAS_CCCS_DIAMOND = @DEFINE-SYMBOL(box=[-1.5, -2, 1.5, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     @LINE {(0, 0.6977) (0, 0.2326)};
@@ -311,7 +311,7 @@
   };
 
   /* p n (cp) (cn); from Analog Canvas vcvs (diamond) */
-  $CANVAS_VCVS_DIAMOND = @DEFINE-SYMBOL(box=[-2.4, -2.4, 1.5, 2.4]) {
+  $CANVAS_VCVS_DIAMOND = @DEFINE-SYMBOL(box=[-2.4, -2, 1.5, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     @LINE {(-2.0058, 1.4535) (-1.1919, 1.4535)};
@@ -325,7 +325,7 @@
   };
 
   /* p n; from Analog Canvas ccvs (diamond) */
-  $CANVAS_CCVS_DIAMOND = @DEFINE-SYMBOL(box=[-2.4, -2.4, 1.5, 2.4]) {
+  $CANVAS_CCVS_DIAMOND = @DEFINE-SYMBOL(box=[-2.4, -2, 1.5, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     @LINE {(-2.0058, 1.4535) (-1.1919, 1.4535)};
@@ -340,7 +340,7 @@
 
   /* p n (cp) (cn); from Analog Canvas vcvs (circle): the drawing that the standard series 0.3 had
      before it drew the diamond, which the standard symbol $VCVS draws now */
-  $CANVAS_VCVS_CIRCLE = @DEFINE-SYMBOL(box=[-2.4, -2.4, 1.5, 2.4]) {
+  $CANVAS_VCVS_CIRCLE = @DEFINE-SYMBOL(box=[-2.4, -2, 1.5, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     (0, 0) @CIRCLE(radius=1.0756);
@@ -354,7 +354,7 @@
   };
 
   /* p n (cp) (cn); from Analog Canvas vccs (circle) */
-  $CANVAS_VCCS_CIRCLE = @DEFINE-SYMBOL(box=[-1.5, -2.4, 1.5, 2.4]) {
+  $CANVAS_VCCS_CIRCLE = @DEFINE-SYMBOL(box=[-1.5, -2, 1.5, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     (0, 0) @CIRCLE(radius=1.0756);
@@ -367,7 +367,7 @@
   };
 
   /* p n; from Analog Canvas ccvs (circle) */
-  $CANVAS_CCVS_CIRCLE = @DEFINE-SYMBOL(box=[-2.4, -2.4, 1.5, 2.4]) {
+  $CANVAS_CCVS_CIRCLE = @DEFINE-SYMBOL(box=[-2.4, -2, 1.5, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     (0, 0) @CIRCLE(radius=1.0756);
@@ -381,7 +381,7 @@
   };
 
   /* p n; from Analog Canvas cccs (circle) */
-  $CANVAS_CCCS_CIRCLE = @DEFINE-SYMBOL(box=[-1.5, -2.4, 1.5, 2.4]) {
+  $CANVAS_CCCS_CIRCLE = @DEFINE-SYMBOL(box=[-1.5, -2, 1.5, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     (0, 0) @CIRCLE(radius=1.0756);
@@ -394,7 +394,7 @@
   };
 
   /* p n; from Analog Canvas pulse-voltage-source */
-  $CANVAS_PULSE_VOLTAGE_SOURCE = @DEFINE-SYMBOL(box=[-2.4, -2.4, 1.5, 2.4]) {
+  $CANVAS_PULSE_VOLTAGE_SOURCE = @DEFINE-SYMBOL(box=[-2.4, -2, 1.5, 2]) {
     (0, 2) @PIN(terminal=1, direction="up");
     (0, -2) @PIN(terminal=2, direction="down");
     (0, 0) @CIRCLE(radius=1.0756);
@@ -406,7 +406,7 @@
   };
 
   /* inp inn outp outn (ck); from Analog Canvas chopper */
-  $CANVAS_CHOPPER = @DEFINE-SYMBOL(box=[-2.4, -3.4, 2.4, 3.4]) {
+  $CANVAS_CHOPPER = @DEFINE-SYMBOL(box=[-2, -3.4, 2, 3.4]) {
     (-2, 1) @PIN(terminal=1, direction="left");
     (-2, -1) @PIN(terminal=2, direction="left");
     (2, 1) @PIN(terminal=3, direction="right");
@@ -422,7 +422,7 @@
   };
 
   /* a b c d y (vp) (vn); from Analog Canvas and-gate-4 */
-  $CANVAS_AND_4INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $CANVAS_AND_4INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 2, 2.4]) {
     (-3, 1.2) @PIN(terminal=1, direction="left");
     (-3, 0.4) @PIN(terminal=2, direction="left");
     (-3, -0.4) @PIN(terminal=3, direction="left");
@@ -439,7 +439,7 @@
   };
 
   /* a b c d y (vp) (vn); from Analog Canvas nand-gate-4 */
-  $CANVAS_NAND_4INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $CANVAS_NAND_4INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 3, 2.4]) {
     (-3, 1.2) @PIN(terminal=1, direction="left");
     (-3, 0.4) @PIN(terminal=2, direction="left");
     (-3, -0.4) @PIN(terminal=3, direction="left");
@@ -457,7 +457,7 @@
   };
 
   /* a b c d y (vp) (vn); from Analog Canvas or-gate-4 */
-  $CANVAS_OR_4INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $CANVAS_OR_4INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 2, 2.4]) {
     (-3, 1.2) @PIN(terminal=1, direction="left");
     (-3, 0.4) @PIN(terminal=2, direction="left");
     (-3, -0.4) @PIN(terminal=3, direction="left");
@@ -475,7 +475,7 @@
   };
 
   /* a b c d y (vp) (vn); from Analog Canvas nor-gate-4 */
-  $CANVAS_NOR_4INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $CANVAS_NOR_4INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 3, 2.4]) {
     (-3, 1.2) @PIN(terminal=1, direction="left");
     (-3, 0.4) @PIN(terminal=2, direction="left");
     (-3, -0.4) @PIN(terminal=3, direction="left");
@@ -494,7 +494,7 @@
   };
 
   /* a b c d y (vp) (vn); from Analog Canvas xor-gate-4 */
-  $CANVAS_XOR_4INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $CANVAS_XOR_4INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 3, 2.4]) {
     (-3, 1.2) @PIN(terminal=1, direction="left");
     (-3, 0.4) @PIN(terminal=2, direction="left");
     (-3, -0.4) @PIN(terminal=3, direction="left");
@@ -513,7 +513,7 @@
   };
 
   /* a b c d y (vp) (vn); from Analog Canvas xnor-gate-4 */
-  $CANVAS_XNOR_4INPUT = @DEFINE-SYMBOL(box=[-4.4, -2.4, 4.4, 2.4]) {
+  $CANVAS_XNOR_4INPUT = @DEFINE-SYMBOL(box=[-3, -2.4, 4, 2.4]) {
     (-3, 1.2) @PIN(terminal=1, direction="left");
     (-3, 0.4) @PIN(terminal=2, direction="left");
     (-3, -0.4) @PIN(terminal=3, direction="left");

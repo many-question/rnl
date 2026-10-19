@@ -88,7 +88,7 @@ Because `key="model"` and `key="value"` match the keys defined in the symbols, o
 
 ### Custom Symbols Defined by `rnl-pdk-sky130`
 
-All pins are placed on integer grid points (standard 9.2.4):
+All pins are placed on integer grid points (standard 9.2.4), and on any side with pins the symbol's `box` edge lies on the outermost pin of that side (existing solver records solved against earlier boxes will be flagged as not matching the current input):
 
 | Symbol | Pins (`terminal: (x, y) direction`) | Used For |
 | --- | --- | --- |

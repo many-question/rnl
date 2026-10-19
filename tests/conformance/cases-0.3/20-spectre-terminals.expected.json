@@ -10,9 +10,9 @@
           "name": "$RESISTOR",
           "box": [
             -1.0,
-            -2.4,
+            -2.0,
             1.0,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -93,9 +93,9 @@
         {
           "name": "$DIODE",
           "box": [
-            -2.4,
+            -2.0,
             -1.0,
-            2.4,
+            2.0,
             1.0
           ],
           "box_written": true,
@@ -197,10 +197,10 @@
         {
           "name": "$VCVS_4TERM",
           "box": [
-            -4.4,
-            -2.4,
+            -4.0,
+            -2.0,
             1.65,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -413,9 +413,9 @@
         {
           "name": "$VOLTAGE_CONTROLLED_SWITCH",
           "box": [
-            -3.4,
+            -2.0,
             -3.8,
-            3.4,
+            2.0,
             1.7
           ],
           "box_written": true,
@@ -673,9 +673,9 @@
         {
           "name": "$TRANSFORMER",
           "box": [
+            -2.0,
             -2.4,
-            -2.4,
-            2.4,
+            2.0,
             2.4
           ],
           "box_written": true,
@@ -1111,10 +1111,10 @@
         {
           "name": "$PMOS_4TERM",
           "box": [
-            -3.4,
-            -2.4,
-            1.4,
-            2.4
+            -3.0,
+            -2.0,
+            1.0,
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -1315,10 +1315,10 @@
         {
           "name": "$NPN",
           "box": [
-            -3.4,
-            -2.4,
+            -3.0,
+            -2.0,
             0.8,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -1468,10 +1468,10 @@
         {
           "name": "$PJFET",
           "box": [
-            -3.4,
-            -2.4,
+            -3.0,
+            -2.0,
             0.8,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,

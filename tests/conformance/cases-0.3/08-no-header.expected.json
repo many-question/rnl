@@ -10,9 +10,9 @@
           "name": "$RESISTOR",
           "box": [
             -1.0,
-            -2.4,
+            -2.0,
             1.0,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -94,9 +94,9 @@
           "name": "$CAPACITOR",
           "box": [
             -1.2,
-            -2.4,
+            -2.0,
             1.2,
-            2.4
+            2.0
           ],
           "box_written": true,
           "default": false,
@@ -191,9 +191,9 @@
         {
           "name": "$TRANSMISSION_LINE",
           "box": [
-            -4.4,
-            -2.4,
-            4.4,
+            -4.0,
+            -2.0,
+            4.0,
             1.2
           ],
           "box_written": true,

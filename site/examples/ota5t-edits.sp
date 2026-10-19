@@ -22,7 +22,7 @@ M5 tail vbias vss  vss nch W=4u L=1u
 *   #M5:d @CURRENT("in")
 *   /* {#M1 #M2 #M9} @ALIGN("y") */
 * }
-* @RNL(type="generated", priority="high", author="rnl-solver", hash="sig2:f4cc8322102b280e.ffc36700559c31e7") {
+* @RNL(type="generated", priority="high", author="rnl-solver", hash="sig2:e4b28fb08d72e162.ffc36700559c31e7") {
 *   #M1 @PLACE(12, 8) => @ORIENT("R0");  #M2 @PLACE(28, 8) => @ORIENT("MY");
 *   #M3 @PLACE(12, 16) => @ORIENT("MY");  #M4 @PLACE(28, 16) => @ORIENT("R0");
 *   #M5 @PLACE(20, 0);  %ja = (16, 16);  %jb = (12, 12);
