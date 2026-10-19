@@ -9,6 +9,7 @@
 
 mod core_thread;
 mod files;
+mod load_progress;
 mod menu;
 mod pool;
 mod session;
@@ -93,6 +94,8 @@ const NETLISTS: [&str; 10] = ["sp", "spi", "spice", "cir", "ckt", "net", "inc", 
 /// files are those, over what is on disk. The drawings of the objects it lists without a position
 /// are kept for `unplaced_drawings`, in place of those of the last document.
 #[tauri::command]
+// Tauri injects the window and managed state alongside the separate IPC arguments.
+#[allow(clippy::too_many_arguments)]
 async fn open_document(
     window: WebviewWindow,
     unsaved: State<'_, Unsaved>,
@@ -101,10 +104,12 @@ async fn open_document(
     pool: Option<Vec<String>>,
     path: String,
     edits: Option<Edits>,
+    request_id: Option<String>,
 ) -> Result<Document, String> {
     let core = core.inner().clone();
     let paths = settings.paths()?;
     let pool = pool.unwrap_or_default();
+    let progress_window = window.clone();
     let doc = tauri::async_runtime::spawn_blocking(move || {
         core.run(move |drawn| {
             let path = if path.starts_with(rnl_view::BUNDLED_DIR) {
@@ -116,7 +121,9 @@ async fn open_document(
             let held = files::held(&entry, &edits.unwrap_or_default());
             let disk = FsProvider::new(&paths).with_search_paths(&paths);
             let disk = rnl_runtime::source::FilePool { files: &disk, paths: &pool };
-            let (doc, kept) = rnl_view::build_drawn(&entry, &files::layered(&held, &disk), &BuildOptions::default())?;
+            let layered = files::layered(&held, &disk);
+            let provider = load_progress::LoadingProvider::new(&layered, &progress_window, request_id.as_deref());
+            let (doc, kept) = rnl_view::build_drawn(&entry, &provider, &BuildOptions::default())?;
             *drawn = Some(kept);
             Ok::<_, String>(doc)
         })
@@ -141,10 +148,12 @@ async fn open_text(
     name: String,
     text: String,
     edits: Option<Edits>,
+    request_id: Option<String>,
 ) -> Result<Document, String> {
     let core = core.inner().clone();
     let paths = settings.paths()?;
     let pool = pool.unwrap_or_default();
+    let progress_window = window.clone();
     let doc = tauri::async_runtime::spawn_blocking(move || {
         core.run(move |drawn| {
             let entry = format!("/{name}");
@@ -152,7 +161,8 @@ async fn open_text(
             let disk = FsProvider::new(&paths).with_search_paths(&paths);
             let disk = rnl_runtime::source::FilePool { files: &disk, paths: &pool };
             let files = files::layered(&held, &disk);
-            let (doc, kept) = rnl_view::build_drawn(&entry, &files, &BuildOptions::default())?;
+            let provider = load_progress::LoadingProvider::new(&files, &progress_window, request_id.as_deref());
+            let (doc, kept) = rnl_view::build_drawn(&entry, &provider, &BuildOptions::default())?;
             *drawn = Some(kept);
             Ok::<_, String>(doc)
         })

@@ -1,7 +1,7 @@
 // The problems list: the errors, warnings and hints, the most serious first; clicking one shows
 // its line in the text. The line numbers of the lines they are on are coloured.
 
-import { fileViews, revealLine } from "./text.js";
+import { markSourceDiagnostics, revealLine } from "./text.js";
 import { $, span } from "./util.js";
 import { shell } from "./shell.js";
 import { includePublicPackage } from "./pool.js";
@@ -97,9 +97,5 @@ export function markDiagnostics(list) {
     const was = worst.get(key);
     if (!was || SEVERITY_ORDER[d.severity] < SEVERITY_ORDER[was]) worst.set(key, d.severity);
   }
-  for (const [key, sev] of worst) {
-    const [f, line] = key.split(":").map(Number);
-    const el = fileViews[f] && fileViews[f].lines[line - 1];
-    if (el) el.classList.add(`d-${sev}`);
-  }
+  markSourceDiagnostics(worst);
 }

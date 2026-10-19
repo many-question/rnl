@@ -16,6 +16,10 @@
   <strong>RNL Viewer</strong>
   <small id="startup-version"></small>
 </div>
+<div id="loading" class="loading" role="status" aria-live="polite" hidden>
+  <span id="loading-stage">Reading files…</span>
+  <div class="loading-track" role="progressbar" aria-label="Loading netlist"><span></span></div>
+</div>
 <nav id="menubar" class="menubar" role="menubar" aria-label="Menu bar" hidden></nav>
 <div id="app" class="app">
   <aside id="sidebar" class="sidebar" aria-label="Side panel">
@@ -42,6 +46,7 @@
       <p id="path-note" class="pool-note"></p>
     </div>
     <div id="pane-netlist" class="pane netlist-pane" role="tabpanel">
+      <div class="netlist-head">
       <div id="file-bar" class="file-bar">
         <nav id="file-tabs" class="tabs file-tabs" aria-label="Files"></nav>
         <span id="edit-state" class="edit-state" role="status" hidden></span>
@@ -52,6 +57,14 @@
           <span class="key"><span class="swatch x-failed" aria-hidden="true"></span><span class="legend">error</span></span>
           <span class="key"><span class="swatch x-overridden" aria-hidden="true"></span><span class="legend">overridden</span></span>
         </label>
+      </div>
+      <div id="netlist-find" class="netlist-find" hidden>
+        <input id="netlist-query" type="search" aria-label="Find in netlist" placeholder="Find in netlist" spellcheck="false">
+        <span id="netlist-matches" role="status"></span>
+        <button id="netlist-previous" type="button" aria-label="Previous match" title="Previous match (Shift+Enter)" disabled>↑</button>
+        <button id="netlist-next" type="button" aria-label="Next match" title="Next match (Enter)" disabled>↓</button>
+        <button id="netlist-find-close" type="button" aria-label="Close find" title="Close find (Escape)">×</button>
+      </div>
       </div>
       <div id="source" class="source" tabindex="-1"><p class="placeholder">No file is open.</p></div>
       <div id="hsplit" class="hsplit" role="separator" aria-orientation="horizontal" title="Drag to resize"></div>

@@ -7,7 +7,7 @@ import { includeFiles } from "./pool.js";
 import { setBackground } from "./background.js";
 import { inform } from "./dialog.js";
 import { cancelGesture, fit, pan, zoomCenter } from "./drawing.js";
-import { applyChanges, discardChanges, save, saveAs, toggleEdit } from "./editor.js";
+import { applyChanges, discardChanges, editing, save, saveAs, toggleEdit } from "./editor.js";
 import { duplicateWindow } from "./navigation.js";
 import { gridCommand } from "./grid.js";
 import { hoverNamesOn, setHoverNames } from "./hover.js";
@@ -17,7 +17,8 @@ import { clearSelection } from "./selection.js";
 import { shell } from "./shell.js";
 import { closePreview, saveSolved, solve } from "./solve.js";
 import { settings } from "./solve-settings.js";
-import { selected } from "./state.js";
+import { doc, selected } from "./state.js";
+import { findInSource } from "./text.js";
 import { ascend, descend, opens } from "./subcircuits.js";
 import { checkForUpdates } from "./updates.js";
 import { $ } from "./util.js";
@@ -33,6 +34,7 @@ export async function startCommands() {
   for (const [id, checked] of checks) shell.setCheck(id, checked);
   shell.onCommand(command);
   setEnabled("descend-new-window", false);
+  setEnabled("find-text", false);
 }
 
 /**
@@ -56,6 +58,7 @@ export function command(id, options = {}) {
     case "toggle-edit": toggleEdit(); break;
     case "apply-edits": applyChanges(); break;
     case "discard-edits": discardChanges(); break;
+    case "find-text": return findInSource();
     case "fit": fit(); break;
     case "zoom-in": zoomCenter(1.25); break;
     case "zoom-out": zoomCenter(0.8); break;
@@ -77,6 +80,7 @@ export function command(id, options = {}) {
       "E or Enter: Open Subcircuit. Ctrl+E or Backspace: Up to Parent Level.",
       "Shift+E or Shift+Enter: Open Subcircuit in New Window. Hold Shift during any circuit navigation to open its target in a new window.",
       "Ctrl+Q: Edit Text (the physical Control key on macOS too). Ctrl+Enter: Apply and Exit Editing.",
+      "Ctrl+F: Find in Netlist, including offscreen text. Enter / Shift+Enter: next / previous match.",
     ] }); break;
     case "solve": solve(); break;
     case "solve-close": closePreview(); break;
@@ -127,7 +131,7 @@ export function isChecked(id) {
   return checks.get(id) === true;
 }
 
-export const isEnabled = (id) => id !== "descend-new-window" || opens(selected) !== null;
+export const isEnabled = (id) => id === "find-text" ? !!doc && !editing : id !== "descend-new-window" || opens(selected) !== null;
 export function setEnabled(id, enabled) {
   shell?.setEnabled?.(id, enabled);
 }
@@ -233,6 +237,7 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     return;
   } else id = keyCommand(e, typing);
+  if (id === "find-text" && (typing || !isEnabled(id))) return;
   // Enter opens a selected subcircuit instance, and presses a button that has the focus; a button
   // hidden with the focus still on it, until the browser moves the focus, is pressed by nothing
   const button = e.target instanceof HTMLButtonElement && e.target.getClientRects().length > 0;

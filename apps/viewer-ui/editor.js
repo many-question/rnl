@@ -6,14 +6,14 @@
 // downloads the file shown), and a document, or the window, is not left with changes unsaved without
 // asking. A solve (solve.js) is of the text applied.
 
-import { setCheck } from "./commands.js";
+import { setCheck, setEnabled } from "./commands.js";
 import { decide, inform, modal } from "./dialog.js";
 import { applyEdits, currentSource, openSource } from "./open.js";
 import * as edits from "./edits.js";
 import { shell } from "./shell.js";
 import { previewing } from "./solve.js";
 import { doc } from "./state.js";
-import { fileShown, fileViews, showFile } from "./text.js";
+import { fileShown, fileViews, showFile, sourceLineHeight, refreshSource } from "./text.js";
 import { $ } from "./util.js";
 
 const source = $("source");
@@ -40,10 +40,10 @@ function keepPosition() {
     const old = positions.get(file.path) || { caret: 0, line: 0 };
     if (editing && e) {
       const height = parseFloat(getComputedStyle(e.area).lineHeight) || 19;
-      positions.set(file.path, { caret: e.area.selectionStart, line: firstLine(e.area.scrollTop, height) });
+      positions.set(file.path, { caret: e.area.selectionStart, line: firstLine(e.el.hidden ? e.scroll : e.area.scrollTop, height) });
     } else {
       const v = fileViews[k];
-      const height = v?.lines[0]?.getBoundingClientRect().height || 19;
+      const height = sourceLineHeight(k);
       const scroll = k === fileShown ? source.scrollTop : v?.scroll || 0;
       positions.set(file.path, { ...old, line: firstLine(scroll, height) });
     }
@@ -58,14 +58,15 @@ function restorePosition() {
     const e = editors.get(file.path);
     if (editing && e) {
       e.area.setSelectionRange(p.caret, p.caret);
-      e.area.scrollTop = 4 + p.line * (parseFloat(getComputedStyle(e.area).lineHeight) || 19);
+      e.area.scrollTop = e.scroll = 4 + p.line * (parseFloat(getComputedStyle(e.area).lineHeight) || 19);
       e.gutter.scrollTop = e.area.scrollTop;
     } else if (fileViews[k]) {
-      const height = fileViews[k].lines[0]?.getBoundingClientRect().height || 19;
+      const height = sourceLineHeight(k);
       fileViews[k].scroll = 4 + p.line * height;
       if (k === fileShown) source.scrollTop = fileViews[k].scroll;
     }
   }
+  refreshSource();
 }
 
 /** The files shown in the pane, as their paths. */
@@ -73,7 +74,7 @@ const paths = () => (doc ? doc.files.map((f) => f.path) : []);
 
 /** Make the text boxes of the files of the document, if the pane is in edit; those of a document read again start from the buffers. */
 export function renderEditors() {
-  const kept = new Map([...editors].map(([path, e]) => [path, { caret: e.area.selectionStart, scroll: e.area.scrollTop }]));
+  const kept = new Map([...editors].map(([path, e]) => [path, { caret: e.area.selectionStart, scroll: e.el.hidden ? e.scroll : e.area.scrollTop }]));
   const focused = [...editors].find(([, e]) => e.area === document.activeElement);
   for (const e of editors.values()) e.el.remove();
   editors.clear();
@@ -141,15 +142,20 @@ function number(e) {
   const lines = e.area.value.split("\n").length;
   if (lines === e.lines) return;
   e.lines = lines;
+  e.el.style.setProperty("--line-number-width", `${Math.max(4.5, String(lines).length + 1.4)}em`);
   e.gutter.textContent = Array.from({ length: lines }, (_, k) => k + 1).join("\n");
 }
 
 /** Show the text box of the file at index `f` when the pane is in edit, and no other. */
 export function showEditor(f) {
   const path = doc && doc.files[f] ? doc.files[f].path : null;
+  for (const e of editors.values()) if (!e.el.hidden) e.scroll = e.area.scrollTop;
   for (const [p, e] of editors) e.el.hidden = !editing || p !== path;
   const e = editors.get(path);
-  if (editing && e) e.gutter.scrollTop = e.area.scrollTop;
+  if (editing && e) {
+    e.area.scrollTop = e.scroll;
+    e.gutter.scrollTop = e.area.scrollTop;
+  }
 }
 
 /** Give the focus to the text box of the file shown, as when the user chooses its tab or begins to edit. */
@@ -179,6 +185,7 @@ export function revealInEditor(f, line) {
 
 /** Show what the bar above the text says, the marks of the tabs, and tell the shell whether changes are not saved. */
 export function refreshEditing() {
+  setEnabled("find-text", !!doc && !editing);
   const unapplied = edits.unappliedPaths();
   const dirty = edits.dirtyPaths();
   pane.classList.toggle("editing", editing);

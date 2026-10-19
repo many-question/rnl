@@ -85,6 +85,13 @@ before/after demo screenshots in that directory (Chromium only).
 
 `specs/web.spec.js` uses the site as a browser does, with no fake shell and nothing of the tests in the page. It opens by `?url=` the samples `cases/04-hierarchy.sp`, whose include it fetches, `cases/01-rc-lowpass.sp`, `cases/12-diagnostics.sp` and `equivalence/inverter-chain.scs`; files set on `#file-input`, a netlist with its include and two netlists, for which the page asks which to open; a folder set on `#folder-input`; files dropped on the page, in a `drop` event the test makes; a Latin-1 file; a netlist whose include is not there, and one whose include is above the files opened; a served netlist that changes, with its include, before Reload; and from a web server of the test's own, which lets the page read it (CORS), addresses that redirect to a netlist, which open as its own address does, its include above it too, and a netlist at the server's root, named after the server. Each Document must be the one `rnl view` builds for the same files, deep-equal but for the paths that name them in the workspace: the entry's, and those of the files missing. The tests also check what the page shows of it: the drawing, the file tabs and the lines, the problems and the hierarchy; that Help > About names the version and the commit of `about.json`; that File > Load from Clipboard opens the clipboard's text alone, as the Document `rnl view` builds for that text in a file of its own; and that Help > Desktop Viewer opens the project site's page of the tools in a new tab, which the test answers itself rather than fetch the site. A test whose served file changes writes it into a directory of its own under `apps/web/dist`, and removes it after.
 
+`virtual-text.spec.js` exercises offscreen diagnostics/selection/scope, multiline highlighting,
+per-file and edit-mode scroll positions, full-file copy, drag selection/auto-scroll and model-based
+find. `loading.spec.js` holds read/parse stages to verify visible progress without a percentage and
+cleanup after success or failure. `long.spec.js` checks the 200,000-line fixture with fewer than 300
+rendered rows, direct end/top scrolls and drawing-to-source navigation. Its timing excludes trace
+snapshots and is a regression duration, not a native/WASM opening benchmark.
+
 ## Known failures
 
 No test is marked as failing. The three that were, an initial of the subcircuit index that scrolled to the end of the list, a double click on a tree row that did not fold the tree in Firefox, and the file tabs that the failed statements' box covered at the narrowest side panel, pass since the page was fixed.

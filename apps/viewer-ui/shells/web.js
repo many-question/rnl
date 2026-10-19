@@ -597,10 +597,11 @@ export default {
    * texts of `edits`, by the paths the Document names the files by, are those of the files, not what
    * is read.
    */
-  async build(source, edits) {
+  async build(source, edits, progress) {
     const again = built.has(source);
     built.add(source);
     try {
+      progress?.("reading");
       const held = source.text !== undefined;
       const entry = held ? { path: source.path || `/${source.name}`, text: source.text } : await source.open(again);
       const dir = entry.path.slice(0, entry.path.lastIndexOf("/"));
@@ -615,8 +616,12 @@ export default {
       Object.assign(files, source.snapshot || {});
       for (const [path, text] of Object.entries(edits || {})) files[joined(dir, path)] = text;
       const request = { entry: entry.path, files, pool: [...poolFiles.keys()].map(poolPath), svg: true, primitives: false, lazy_unplaced: true };
-      const read = held ? async () => null : (path) => path.startsWith("/<pool>/") ? Promise.resolve(null) : source.read(path, again);
-      const { document: doc } = await collect(core, request, read);
+      const read = held ? async () => null : (path) => {
+        progress?.("reading");
+        return path.startsWith("/<pool>/") ? Promise.resolve(null) : source.read(path, again);
+      };
+      const builder = { build: (request) => { progress?.("parsing"); return core.build(request); } };
+      const { document: doc } = await collect(builder, request, read);
       if (!embed) document.title = `${doc.name} - RNL Viewer`;
       return doc;
     } catch (e) {

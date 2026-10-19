@@ -24,6 +24,7 @@ import { namedPath, restorePath } from "./subcircuits.js";
 import { clearSource, fileShown, fileViews, renderFiles, showFile } from "./text.js";
 import { $ } from "./util.js";
 import { setEnabled } from "./commands.js";
+import { startLoading, nextPaint } from "./loading.js";
 
 let lastSource = null; // what was last opened, also when it failed to open, for reloading
 let loading = false;
@@ -40,16 +41,21 @@ export async function openSource(source, keep, edited) {
   if (loading) return;
   loading = true;
   document.body.classList.add("busy");
+  const progress = startLoading();
   try {
     lastSource = source;
-    const d = await shell.build(source, edited);
+    await progress.stage("reading");
+    const d = await shell.build(source, edited, progress.setStage);
+    await progress.stage("displaying");
     endPreview();
     if (edited) adoptBuffers(d);
     else resetBuffers(d);
     showBuilt(d, keep);
     sourceOpened(source, d, !keep, !!edited);
+    await nextPaint();
     return true;
   } catch (e) {
+    progress.finish();
     if (keep && edited) {
       await inform({ title: "Rebuild", paragraphs: [`The document could not be rebuilt: ${e}. Your edits are still kept.`] });
       return;
@@ -64,6 +70,7 @@ export async function openSource(source, keep, edited) {
     setProblems(true);
     sourceOpened(source, null, false);
   } finally {
+    progress.finish();
     loading = false;
     document.body.classList.remove("busy");
   }
@@ -89,15 +96,20 @@ export async function applyEdits() {
   if (!lastSource || !doc || loading || previewing()) return false;
   loading = true;
   document.body.classList.add("busy");
+  const progress = startLoading();
   let failed = null;
   try {
-    const d = await shell.build(lastSource, changes(false));
+    await progress.stage("reading");
+    const d = await shell.build(lastSource, changes(false), progress.setStage);
+    await progress.stage("displaying");
     adoptBuffers(d);
     showBuilt(d, true);
     sourceOpened(lastSource, d, false, true);
+    await nextPaint();
   } catch (e) {
     failed = e instanceof Error ? e.message : String(e);
   } finally {
+    progress.finish();
     loading = false;
     document.body.classList.remove("busy");
   }

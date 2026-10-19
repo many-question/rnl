@@ -21,6 +21,7 @@ find apps/viewer-ui -name '*.js' -print0 | xargs -0 -n 1 node --check
 | --- | --- |
 | `index.html`, `style.css` | The page and its styles, light and dark. |
 | `main.js` | The start: the stored layout, the shell, the command table, the first document, and the debug handle. |
+| `loading.js` | Reading, parsing and displaying stages with an indeterminate bar; operation ownership prevents stale progress/completions from replacing a newer load. |
 | `shell.js` | The shell interface, and choosing the shell. |
 | `shells/desktop.js` | The desktop shell, the only module that uses `window.__TAURI__`. |
 | `shells/web.js` | The web shell: files, a folder, a URL or what is dropped, read as the core asks for them, and built by the core in a Worker. |
@@ -35,6 +36,8 @@ find apps/viewer-ui -name '*.js' -print0 | xargs -0 -n 1 node --check
 | `selection.js` | Selecting an instance or a net. |
 | `subcircuits.js` | The hierarchy path of the level shown and the bar above the drawing that shows it (see [The hierarchy path](#the-hierarchy-path)): going down into a subcircuit instance and back along the path, each level with the view it had on it. |
 | `text.js` | The text pane: the tabs and the lines of each file, the statements that do not take effect, the places of the selection, revealing a line, the text outside the definition of the subcircuit drawn dimmed (`Level.lines`), the statements of the objects that are not drawn greyed (`Level.unplaced`), and clicks in the text. |
+| `text-lines.js`, `line-window.js` | Full text and lexical checkpoints, with a bounded DOM window for large files. |
+| `virtual-selection.js`, `text-find.js` | File-coordinate text selection/copy and full-model find, including rows outside the DOM window. |
 | `syntax.js` | Highlighting the host statements and the RNL records. |
 | `edits.js` | The text the user edits (decision 0011): per file, what it was when read, what the editor holds and what the Document was built from; which files have changes not saved, and which not applied; the texts to build or solve over the files. |
 | `navigation.js`, `window-session.js` | The common navigation entry point and new-window session handoff (see [Navigation and new windows](#navigation-and-new-windows)). |
@@ -56,6 +59,26 @@ find apps/viewer-ui -name '*.js' -print0 | xargs -0 -n 1 node --check
 | `fonts/` | The drawing's web fonts, which [`scripts/fonts.py`](../../scripts/README.md) writes and git ignores (see [Fonts](#fonts)). |
 
 The modules import each other in cycles. At its top level a module only looks up its elements, keeps its own state and adds listeners; it calls nothing of another module there, so no imported binding is read before its module has run.
+
+## Loading and large netlists
+
+Opening, reloading and applying text show **Reading files…**, **Parsing netlist…** and
+**Displaying netlist…** above an indeterminate bar. No percentage is claimed. The web shell reports
+file collection and Worker builds; the desktop shell matches native parsing events to one request.
+Completion and errors clear the indicator. Embedded viewers use the same stages, and a late result
+from an older open cannot clear the newer open's indicator. Reduced-motion preferences stop the bar's animation.
+
+Files over 1,000 lines keep their full text and lexical state but render only the viewport and 40
+overscan rows on each side. Diagnostics, selected statements, scope and not-drawn marks are attached
+to logical lines and reapplied to recycled rows. File switches, hierarchy/Problems jumps, sidebar
+resizing and editing preserve the line position; the gutter grows to fit large line numbers.
+Editing continues to use a native textarea containing the complete file.
+
+**Edit › Find in Netlist** / **Ctrl+F** (Cmd+F on macOS) searches the entire active read-only file, including offscreen
+text; Enter and Shift+Enter move between matches, Escape closes find. Mouse selection is retained
+in file coordinates while scrolling. **Ctrl+A** in the read view selects the whole file, and copying
+uses the full text rather than just rendered rows. Copied line endings are normalized to LF.
+Small files retain ordinary DOM and native selection.
 
 ## Viewing and output
 
@@ -183,7 +206,7 @@ Everything platform-specific goes through the shell, chosen at start: `shells/de
 | `nativeMenu` | Whether the platform shows the menu bar itself; if not, the page shows its own. |
 | `initial()` | What to open at start, or null; on the desktop, the file on the command line. |
 | `pick(kind)` | Ask for something to open: `"file"`, and on the web also `"folder"` or `"url"`; null when nothing is chosen. |
-| `build(source, edits)` | Read a source and return its Document; rejects with a message when it cannot. With `edits`, `{ path: text }` by the path the Document names a file by, the texts of those files are the ones given, not what is read: Edit > Apply Changes. A source that holds its text takes the text of its one file. The Document's TypeScript declarations are generated from the core's Rust types ([`crates/rnl-view/types`](../../crates/rnl-view/README.md#type-definitions)); `shell.js` refers to them in its JSDoc, which loads nothing at run time. |
+| `build(source, edits, progress)` | Read a source and return its Document; rejects with a message when it cannot. Optional `progress(stage)` reports `reading` or `parsing`. With `edits`, `{ path: text }` by the path the Document names a file by, the texts of those files are the ones given, not what is read: Edit > Apply Changes. A source that holds its text takes the text of its one file. The Document's TypeScript declarations are generated from the core's Rust types ([`crates/rnl-view/types`](../../crates/rnl-view/README.md#type-definitions)); `shell.js` refers to them in its JSDoc, which loads nothing at run time. |
 | `setCheck(id, checked)` | Show a check-mark command's state in the platform's menu. |
 | `onCommand(handler)` | Call `handler(id)` for each command chosen in the platform's menu. |
 | `onOpen(handler)` | Optional. Call `handler(source)` for each source opened without `pick`, such as files dropped on the page. |

@@ -1,0 +1,131 @@
+// Prepare line data and lexical checkpoints without constructing offscreen DOM. Syntax state is
+// retained across continued host statements and multi-line RNL comments, so any row can render alone.
+import { hostLine, mark, rnlRange } from "./syntax.js";
+
+export function lineModel(file, f, allSpans, dialect) {
+  const texts = file.text.split(/\r?\n/);
+  if (texts.length > 1 && texts.at(-1) === "") texts.pop();
+  const starts = new Map();
+  const unit = (n, c) => {
+    if (!starts.has(n)) starts.set(n, characterStarts(texts[n - 1]));
+    return starts.get(n)(c);
+  };
+  const rnl = new Map(), spans = new Map(), failed = new Map();
+  const add = (map, i, value) => { if (!map.has(i)) map.set(i, []); map.get(i).push(value); };
+  for (const [l0, c0, l1, c1] of file.records) {
+    for (let n = l0; n <= l1 && n <= texts.length; n++) {
+      add(rnl, n - 1, { from: n === l0 ? unit(n, c0 - 1) : 0,
+        to: n === l1 ? unit(n, c1) : texts[n - 1].length, first: n === l0 });
+    }
+  }
+  for (const span of allSpans) if (span.file === f && texts[span.line - 1] !== undefined) add(spans, span.line - 1, span);
+  for (const [l0, c0, l1, c1, overridden] of file.failed) {
+    for (let n = l0; n <= l1 && n <= texts.length; n++) {
+      add(failed, n - 1, { from: n === l0 ? unit(n, c0 - 1) : leadingCarrier(texts[n - 1]),
+        to: n === l1 ? unit(n, c1) : texts[n - 1].length, kind: overridden ? "overridden" : "failed" });
+    }
+  }
+  function syntax(i, flags) {
+    const text = texts[i], cls = new Array(text.length).fill("");
+    const state = { comment: !!(flags & 2) };
+    let joined = false;
+    if (i === 0 && f === 0 && dialect === "spice") mark(cls, 0, text.length, "comment");
+    else if (rnl.has(i)) {
+      hostLine(text, cls, false, rnl.get(i));
+      for (const r of rnl.get(i)) {
+        if (r.first) state.comment = false;
+        rnlRange(text, r.from, Math.min(r.to, text.length), r.first, cls, state);
+      }
+    } else joined = hostLine(text, cls, !!(flags & 1) || /^\s*\+/.test(text), null);
+    return { cls, flags: (joined ? 1 : 0) | (state.comment ? 2 : 0) };
+  }
+  const states = new Uint8Array(texts.length);
+  let flags = 0, longest = "", columns = 0;
+  for (let i = 0; i < texts.length; i++) {
+    states[i] = flags;
+    flags = syntax(i, flags).flags;
+    const text = texts[i];
+    // A conservative monospace width estimate, refined from rendered rows by LineWindow.
+    let width = 0;
+    for (const c of text) width = c === "\t" ? width + 8 - width % 8 : width + (c.codePointAt(0) >= 0x1100 ? 2 : 1);
+    if (width > columns) { columns = width; longest = text; }
+  }
+  return {
+    texts, columns, longest, text: file.text.replace(/\r\n/g, "\n"),
+    render(i) {
+      const text = texts[i], { cls } = syntax(i, states[i]);
+      const fail = new Array(text.length).fill("");
+      for (const r of failed.get(i) || []) {
+        for (let c = r.from; c < r.to && c < text.length; c++) if (fail[c] !== "failed") fail[c] = r.kind;
+      }
+      const objs = new Array(text.length).fill(null);
+      for (const s of (spans.get(i) || []).slice().sort((a, b) => a.len - b.len)) {
+        const from = unit(i + 1, s.col - 1), to = unit(i + 1, s.col - 1 + s.len);
+        for (let c = from; c < to; c++) {
+          if (!objs[c]) objs[c] = [];
+          if (!objs[c].includes(s.object)) objs[c].push(s.object);
+        }
+      }
+      return lineElement(text, i + 1, cls, objs.map(o => o ? o.join(" ") : ""), fail);
+    },
+  };
+}
+
+/**
+ * Where each character of a line starts in its text, by 0-based column: JavaScript indexes a string
+ * in UTF-16 units, two for a character outside the BMP, such as an emoji. A column past the last
+ * character is the text's end.
+ */
+function characterStarts(text) {
+  const at = [];
+  for (let u = 0; u < text.length; u += text.codePointAt(u) > 0xffff ? 2 : 1) at.push(u);
+  if (at.length === text.length) return (c) => Math.min(c, text.length);
+  return (c) => (c < at.length ? at[c] : text.length);
+}
+
+/** Where a later line of a record starts: after its comment marker and the blanks around it. */
+function leadingCarrier(text) {
+  const m = /^\s*(\/\/|\*)?\s*/.exec(text);
+  return m ? m[0].length : 0;
+}
+
+const FAIL_TITLE = {
+  failed: "Failed: this does not take effect (see Problems)",
+  overridden: "Overridden: another statement wins this conflict (7.5)",
+};
+
+function lineElement(text, n, cls, obj, fail) {
+  const div = document.createElement("div");
+  div.className = "ln";
+  div.dataset.line = String(n);
+  const no = document.createElement("span");
+  no.className = "no";
+  no.textContent = String(n);
+  const code = document.createElement("span");
+  code.className = "code";
+  let i = 0;
+  while (i < text.length) {
+    let j = i + 1;
+    while (j < text.length && cls[j] === cls[i] && obj[j] === obj[i] && fail[j] === fail[i]) j++;
+    const piece = text.slice(i, j);
+    if (!cls[i] && !obj[i] && !fail[i]) {
+      code.append(piece);
+    } else {
+      const s = document.createElement("span");
+      s.textContent = piece;
+      if (cls[i]) s.className = `s-${cls[i]}`;
+      if (fail[i]) {
+        s.classList.add(`x-${fail[i]}`);
+        s.title = FAIL_TITLE[fail[i]];
+      }
+      if (obj[i]) {
+        s.classList.add("obj");
+        s.dataset.obj = obj[i];
+      }
+      code.append(s);
+    }
+    i = j;
+  }
+  div.append(no, code);
+  return div;
+}

@@ -8,15 +8,23 @@ import { expect, test } from "../viewer.js";
 
 test.use({ trace: "off" });
 
-test("a file of more lines than a call takes as its arguments opens whole", async ({ page, viewer }) => {
+test("200000 lines stay accessible with a bounded DOM while scrolling and selecting", async ({ page, viewer }) => {
   test.slow();
   await viewer.open("long");
   const last = LONG + 4;
-  await expect(page.locator("#source .file:not([hidden]) .ln")).toHaveCount(last);
+  const rows = page.locator("#source .file:not([hidden]) .ln");
+  expect(await rows.count()).toBeLessThan(300);
   await expect(viewer.line(1).locator(".code")).toHaveText("* a long file");
+  await page.locator("#source").evaluate(s => { s.scrollTop = s.scrollHeight; });
   await expect(viewer.line(last).locator(".code")).toHaveText(".end");
+  expect(await rows.count()).toBeLessThan(300);
+  await expect(viewer.line(1)).toHaveCount(0);
   // R1's statement, near the end, is shown when R1 is selected on the drawing
   await viewer.click("R1");
   await viewer.selected("instance R1 in long.sp");
   await expect.poll(() => viewer.within(viewer.line(LONG + 2))).toBe(true);
+  await expect(viewer.line(LONG + 2)).toHaveClass(/hl-line/);
+  await page.locator("#source").evaluate(s => { s.scrollTop = 0; });
+  await expect(viewer.line(1).locator(".code")).toHaveText("* a long file");
+  expect(await rows.count()).toBeLessThan(300);
 });
