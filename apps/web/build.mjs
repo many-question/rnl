@@ -83,6 +83,11 @@ if (samples) {
     cpSync(join(root, "tests", "conformance", name), join(out, "samples", name), { recursive: true });
   }
   cpSync(join(root, "site", "examples"), join(out, "samples", "site"), { recursive: true });
+  mkdirSync(join(out, "samples", "brand"), { recursive: true });
+  // Caption the interactive sample; the canonical source still generates the text-free icons.
+  const logo = readFileSync(join(root, "brand", "rnl-logo.sp"), "utf8");
+  const caption = '* @RNL {\n*   (4.5, 0.3) @TEXT("RNL", size=11, bold=true, valign="middle");\n*   (28, -4.5) @TEXT("logo by RNL", size=3.3, bold=false)\n* }\n.end';
+  writeFileSync(join(out, "samples", "brand", "rnl-logo.sp"), logo.replace(/^\.end[ \t]*\r?$/im, caption));
 }
 
 /** The files under a directory, by their paths relative to it, `/`-separated. */
