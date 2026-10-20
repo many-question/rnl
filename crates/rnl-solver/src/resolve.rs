@@ -158,6 +158,9 @@ impl<'c> Deadline<'c> {
         }
         let Some(at) = self.at else { return false };
         let out = self.clock.elapsed() > at;
+        if out {
+            crate::profile::set("deadline_reached", 1);
+        }
         self.out.set(out);
         out
     }
@@ -478,6 +481,8 @@ impl<'a> Resolver<'a> {
 
     /// Takes a unit in (8.5).
     pub(crate) fn add(&mut self, u: usize) -> Outcome {
+        crate::profile::add("fact_add_calls", 1);
+        crate::profile::checkpoint();
         if self.holds(u) {
             let saved = self.save();
             if self.commit(u).is_ok() && self.hold_new(u).is_ok() {
@@ -495,6 +500,8 @@ impl<'a> Resolver<'a> {
     /// Kept when the unit has a solution alone, a conflict, which names no other unit, when it has
     /// none, undecided when its check did not finish. Only while nothing is taken in.
     pub(crate) fn alone(&mut self, u: usize) -> Outcome {
+        crate::profile::add("individual_checks", 1);
+        crate::profile::checkpoint();
         debug_assert!(self.kept.is_empty() && self.held.is_empty());
         let saved = self.save();
         let outcome = self.add(u);
@@ -737,6 +744,7 @@ impl<'a> Resolver<'a> {
     /// conflict names a literal, a search, which may change any. Undecided when the time is out
     /// before or during the check, or a cap runs out.
     fn decide(&mut self, u: usize) -> Outcome {
+        crate::profile::add("fact_checks", 1);
         if self.limits.out_of_time() {
             return Outcome::Undecided;
         }
@@ -754,6 +762,7 @@ impl<'a> Resolver<'a> {
         }
         if quickly {
             self.nodes += 1;
+            crate::profile::add("resolve_nodes", 1);
             let quick = match self.hold_new(u) {
                 Ok(()) => self.check(),
                 Err(tags) => Err(Failure::Conflict(tags)),
@@ -1015,6 +1024,8 @@ impl<'a> Resolver<'a> {
             return Node::Stopped;
         }
         search.nodes += 1;
+        crate::profile::add("resolve_nodes", 1);
+        crate::profile::checkpoint();
         let cp = self.checkpoint();
         let mut conflict = None;
         'assert: for (i, lit) in lits.iter().enumerate() {
@@ -1036,6 +1047,7 @@ impl<'a> Resolver<'a> {
                         .collect();
                     search.solution = Some(values);
                     self.backtrack(cp);
+                    crate::profile::add("feasible_leaves", 1);
                     return Node::Sat;
                 }
                 Err(Failure::Conflict(tags)) => conflict = Some(tags),
@@ -1057,6 +1069,7 @@ impl<'a> Resolver<'a> {
         let mut union: BTreeSet<Tag> = BTreeSet::new();
         let mut involved: BTreeSet<usize> = BTreeSet::new();
         for v in self.values(lit) {
+            crate::profile::add("branch_attempts", 1);
             let result = if let Some(n) = self.pruned(lits, decided, (i, v)) {
                 Node::Conflict(self.nogoods[n].lits.iter().chain(&self.nogoods[n].facts).copied().collect())
             } else {
@@ -1069,6 +1082,7 @@ impl<'a> Resolver<'a> {
                     }
                 }
                 let result = result.unwrap_or_else(|| {
+                    crate::profile::add("branches", 1);
                     decided.push((i, v));
                     let r = self.node(lits, decided, search);
                     decided.pop();
@@ -1401,6 +1415,7 @@ pub(crate) fn resolve(problem: &LevelProblem, options: &SolverOptions, clock: &d
         .filter(|t| *t >= Q::zero())
         .unwrap_or_else(|| from_f64(rnl_runtime::geom::TOL).unwrap_or_default());
     let n = problem.objects.len();
+    crate::profile::add("deadline_reached", 0);
     let deadline = Deadline::new(clock, options.time_limit);
     let limits = Limits::Time(&deadline);
     let seconds = fmt_num(options.time_limit.unwrap_or_default());
@@ -1408,7 +1423,12 @@ pub(crate) fn resolve(problem: &LevelProblem, options: &SolverOptions, clock: &d
     // Facts that contradict themselves (the draft 0.3, 8.5): each fact is first checked on its
     // own, within the limit, as this is checking too. One with no solution fails (7.6) and takes
     // no part in the resolution; one whose check does not finish is discarded undecided.
+    let phase = crate::profile::span("resolve_phase", "individual_checks");
     let whole = Model::new(problem, tol.clone());
+    if crate::profile::enabled() {
+        crate::profile::set("disjunction_facts", whole.units.iter().filter(|u| !u.choices.is_empty()).count() as u64);
+        crate::profile::set("selectors", whole.units.iter().map(|u| u.choices.len() as u64).sum());
+    }
     let mut failed = Vec::new();
     let mut undecided = Vec::new();
     let mut alone = Resolver::new(&whole, n, limits);
@@ -1422,6 +1442,8 @@ pub(crate) fn resolve(problem: &LevelProblem, options: &SolverOptions, clock: &d
     work.resolve_nodes += alone.nodes;
     work.pivots += alone.pivots();
     drop(alone);
+    drop(phase);
+    let phase = crate::profile::span("resolve_phase", "ordered_selection");
     // the others are resolved on the model without them, as if they were not written
     let model = if failed.is_empty() {
         whole
@@ -1441,6 +1463,8 @@ pub(crate) fn resolve(problem: &LevelProblem, options: &SolverOptions, clock: &d
     }
     work.resolve_nodes += r.nodes;
     work.pivots += r.pivots();
+    drop(phase);
+    let phase = crate::profile::span("resolve_phase", "conflict_groups");
     undecided.sort_unstable();
     let warnings = undecided
         .iter()
@@ -1497,6 +1521,8 @@ pub(crate) fn resolve(problem: &LevelProblem, options: &SolverOptions, clock: &d
     if !first_only.is_empty() {
         notes.push(first_groups_only(&first_only));
     }
+    drop(phase);
+    let _phase = crate::profile::span("resolve_phase", "witness_as_written");
     let placed = taken_as_written(problem, &model, &kept, &mut work);
     if placed.is_none() {
         notes.push(
@@ -1858,6 +1884,10 @@ impl Map {
                 return Seed::None;
             }
             self.nodes += 1;
+            crate::profile::add("resolve_nodes", 1);
+            if self.nodes % SEED_NODES_PER_READ == 0 {
+                crate::profile::checkpoint();
+            }
         }
         for &(c, want) in &fresh {
             if let State::Unit(j) = self.state(self.clause(c, want), want) {
@@ -1873,6 +1903,10 @@ impl Map {
                 return Seed::None;
             }
             self.nodes += 1;
+            crate::profile::add("resolve_nodes", 1);
+            if self.nodes % SEED_NODES_PER_READ == 0 {
+                crate::profile::checkpoint();
+            }
             if self.nodes % SEED_NODES_PER_READ == 0 && limits.out_of_time() {
                 return Seed::Stopped;
             }

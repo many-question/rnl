@@ -5,6 +5,7 @@
 pub mod dump;
 pub mod preview;
 pub mod problem;
+pub mod profile;
 pub mod provider;
 pub mod solve;
 

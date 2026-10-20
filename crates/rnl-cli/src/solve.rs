@@ -616,6 +616,24 @@ pub fn destinations(run: &SolveRun, target: &Target) -> Result<Vec<PathBuf>, Str
         .collect()
 }
 
+/// Every path the solve may write, including unchanged dependencies copied under `-o`.
+/// Used by auxiliary outputs so they cannot collide with either writeback or copying.
+pub fn all_destinations(run: &SolveRun, target: &Target) -> Result<Vec<PathBuf>, String> {
+    let mut out = destinations(run, target)?;
+    if let Target::Dir(dir) = target {
+        let base = dirname(&normalize(&run.entry));
+        for path in &run.read {
+            if let Some(relative) = name_in(path, &base) {
+                let path = dir.join(relative);
+                if !out.contains(&path) {
+                    out.push(path);
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// `path` relative to the directory `dir`, both normalized; "" is the working directory.
 fn name_in(path: &str, dir: &str) -> Option<String> {
     let path = normalize(path);

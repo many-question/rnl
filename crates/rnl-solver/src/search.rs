@@ -1634,6 +1634,8 @@ impl Search<'_> {
     /// The layered estimate of a plan, and its candidate.
     fn estimate(&mut self, plan: &Plan) -> (Vec<Q>, Candidate) {
         self.made += 1;
+        crate::profile::add("candidate_estimates", 1);
+        crate::profile::checkpoint();
         let c = self.candidate(plan, "beam");
         let ori = c.orientations(self.s);
         let at = sketch(self.problem, self.s, &c, &ori, self.options);
@@ -1814,6 +1816,7 @@ impl Search<'_> {
 
     /// The variants of a node (see the module), best first.
     fn node(&mut self, node: usize, plan: &Plan, variants: &BTreeMap<usize, Vec<Variant>>) -> Vec<Variant> {
+        crate::profile::add("expanded_group_nodes", 1);
         let s = self.s;
         let beam = self.options.beam.max(1);
         let n = &s.tree.nodes[node];
@@ -1837,6 +1840,7 @@ impl Search<'_> {
                 continue;
             }
             let mut next = ranked(s, next);
+            crate::profile::add("beam_pruned", next.len().saturating_sub(beam) as u64);
             next.truncate(beam);
             combos = next.into_iter().map(|(e, _, p)| (e, p)).collect();
         }
@@ -1964,6 +1968,7 @@ impl Search<'_> {
             }
         }
         picked.sort_unstable();
+        crate::profile::add("diversity_pruned", found.len().saturating_sub(picked.len()) as u64);
         let mut found: Vec<Scored> = picked.into_iter().map(|i| found[i].clone()).collect();
         // 4. the best checked by the resolution with the node's relations
         found.truncate(2 * beam);
@@ -1995,6 +2000,7 @@ impl Search<'_> {
                 kept.push(c);
             }
         }
+        crate::profile::add("checked_pruned", checked.len().saturating_sub(kept.len()) as u64);
         kept.sort_unstable();
         kept.into_iter()
             .map(|(_, i)| {
@@ -2225,6 +2231,8 @@ pub(crate) fn search(
     });
     // the candidates estimated, and P0 and the twins, which are not
     let estimated = out.iter().filter(|c| c.origin == "beam" && !c.even).count() as u64;
+    crate::profile::add("generated_candidates", search.made + out.len() as u64 - estimated);
+    crate::profile::add("returned_candidates", out.len() as u64);
     search.work.candidates += search.made + out.len() as u64 - estimated;
     out
 }

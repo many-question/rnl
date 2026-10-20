@@ -132,3 +132,46 @@ See the [roadmap](../../docs/roadmap.md) for planned work.
 `rnl check top.sp --path ./models --path ./packages` searches both packages and bare include filenames. `--package-dir DIR` remains package-only. Both options participate in package directory order as written on the command line; only `--path` participates in include fallback. These options work for checks, rendering, views, previews and solving.
 
 Includes are first resolved relative to the file containing the include. Only a filename without directory components falls back to `--path`, in order, with a hint naming the file used; explicit relative and absolute paths keep their previous meaning. Within each package directory, try `<name>.rnl`, then `<version>/<name>.rnl`, then scan the other `.rnl` files. Package names and versions always come from the `PACKAGE` header, and a conventional filename with a mismatching header warns. Filenames need not match package names. Version selection follows 16.2 and copies of the same version use the first directory. User directories precede bundled packages, including user replacements of `rnl-std` (16.3). The include fallback and filename preference are tool behavior, not changes to the language standard.
+
+
+`rnl solve FILE -o DIR --profile OUT.json` writes optional timing observations separately
+from all solver records. The destination must not already exist, and its parent directory must exist. It must differ from every solved output path. The file is valid JSON
+from before solving begins and is replaced atomically at stage transitions and at throttled
+work checkpoints (normally at most every 0.5 seconds; a single long arithmetic operation can
+delay an update). A killed run retains its last snapshot. `status`, `last_updated_seconds`,
+`current_stage`, `active_span`, `counts_complete` and each span's `complete` distinguish partial
+work from a finished solve. A writer error makes the command fail.
+
+Schema version 1 has `levels[]`, each with input counts, `problem_hash`, `options_canonical`,
+`total_seconds`, `stage_seconds`, `metrics`, and `spans[]`. The six top-level stage times are
+mutually exclusive; nested span times are inclusive and must not be added to those totals.
+Spans have an `id`/`parent`, a category (`stage`, `resolve_phase`, `lp`, `lex_layer`,
+`route_net`, or `route_path`), a name, candidate ID where applicable, and counters in `metrics`.
+A coordinate LP span covers one axis and its successive objectives and grid passes. LP
+`variables` includes slack variables, `tableau_rows` counts defining equalities, and
+`constraints` counts active lower/upper bounds (an equality is two bounds), each a high-water
+mark. Rational bit maxima cover stored tableau values, bounds and coefficients at observations,
+not temporary arithmetic intermediates. Missing metrics mean unobserved; peak memory is `null`
+and can be collected by the process supervisor. Input host-instance counts exclude bundles.
+
+Profiling is not a solver option and does not enter `sig2`, alter budgets, change comparisons,
+or add deadline-clock reads. Disabled profiling performs no timing or number-size scans. Tests
+compare complete solutions and written record bytes, including their hashes, with profiling
+on/off and with deterministic clocks that stop resolution at the same check. With a real wall
+clock, observation overhead can make a resolution reach its existing deadline sooner. Exact
+result equality is guaranteed when neither run reaches that deadline; a reached deadline
+(`deadline_reached` in level metrics) requires treating the comparison as time-dependent.
+The tool never adjusts `time_limit` to conceal that boundary. Timings include observation
+costs; counters and rational scans also add cost, so compare against unprofiled runs when
+estimating that overhead.
+
+The document-level `solver_total_seconds` is the sum of all level solver times.
+`cli_elapsed_seconds` (also retained as `elapsed_seconds`) additionally includes interpretation,
+version re-reading and record construction. Use solver time for solver-stage shares.
+
+Router `join_retries` counts attempts for a part that already had a failed join in that net;
+`failed_join_attempts` includes seed and later tree joins. These are not the number of nets left unrouted.
+
+`disjunction_facts` counts facts with encoded unit choices; `selectors` counts those choices.
+Dynamic centre/orientation alternatives are reflected in branch/node counts, not in that input count.
+`deadline_reached` is explicitly zero when monitored resolution has not reached its deadline.
