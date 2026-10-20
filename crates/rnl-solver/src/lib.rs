@@ -48,6 +48,7 @@ mod model;
 mod objectives;
 mod options;
 mod orient;
+pub mod profile;
 mod rational;
 mod resolve;
 mod route;
@@ -247,6 +248,13 @@ pub trait Clock {
     /// Only differences count: the limit of a level runs from the reading when its resolution
     /// begins.
     fn elapsed(&self) -> f64;
+
+    /// Optional profiling, kept outside all solver options and results. Profile timing uses
+    /// this observer's `Clock`; the deadline continues to read only `self.elapsed()` at the
+    /// original check sites. Wall-clock observation overhead can still move a deadline boundary.
+    fn profiler(&self) -> Option<profile::ProfileHandle> {
+        None
+    }
 }
 
 /// A clock that never advances: no time limit is ever reached, and the resolution is that of 8.5
@@ -284,7 +292,30 @@ pub fn solve(problem: &LevelProblem, options: &SolverOptions) -> Solved {
 /// for its minimal conflict groups; the witness taken as written, the search, the coordinates and
 /// the routing are counted in work.
 pub fn solve_with_clock(problem: &LevelProblem, options: &SolverOptions, clock: &dyn Clock) -> Solved {
-    driver::solve(problem, options, clock)
+    profile::with(clock.profiler(), || {
+        if profile::enabled() {
+            profile::emit(profile::ProfileEvent::Level {
+                level: problem.level,
+                title: problem.title.clone(),
+                objects: problem.objects.len(),
+                facts: problem.facts.len(),
+                routes: problem.routes.len(),
+                options: options.canonical(),
+                hash: rnl_runtime::problem::sig2(problem, &options.canonical()),
+            });
+        }
+        if profile::enabled() {
+            profile::set("input_nets", problem.nets.len() as u64);
+            profile::set("input_groups", problem.groups.len() as u64);
+            profile::set(
+                "input_host_instances",
+                problem.objects.iter().filter(|o| o.kind == rnl_runtime::problem::ObjectKind::Instance).count() as u64,
+            );
+        }
+        let solved = driver::solve(problem, options, clock);
+        profile::emit(profile::ProfileEvent::LevelEnd);
+        solved
+    })
 }
 
 /// Resolves the facts of one drawing level (8.5): checks each on its own first, a fact with no

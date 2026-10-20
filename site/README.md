@@ -62,6 +62,14 @@ With a release, the build keeps the `<!--release-->` blocks and fills in `{{view
 
 The data is scripts that the page loads with `<script>`, `index.js` and one file per group, so that the page also works opened from the disk.
 
+The Origin toggle adds a red registration mark at each symbol's `@PLACE(0, 0)` point on
+cards, rule thumbnails and enlarged views. It starts off and is saved with the other
+display settings. The build includes that point in both SVG frames and writes its SVG
+coordinates as `origin`; the page keeps the cross at 10 screen pixels, its stroke at
+1.5 pixels and its centre dot at a 1.5-pixel radius as previews resize. It reserves space
+for the mark at the frame's edge when needed. Compared with the previous frames, only
+`rnl-std-virtual 0.2`'s `$CURRENT_ARROW_SYM` expands to include an outside origin.
+
 ## For agents
 
 `agents.html` and the files it links make the entry for AI agents. The page is built by `build.py` like the others, from `src/agents.html`, with its own `assets/agents.css` and `assets/agents.js` (the copy buttons of the sentence to give an agent and of the commands); like the gallery it has no single-file version, and it has no old address at the root of the site (`NEW_PAGES`). What it links is not written by `build.py` but by [`scripts/skill/build.py --site`](../skills/README.md), which `pages.yml` runs:
@@ -92,6 +100,10 @@ Set `RNL_SITE_SCREENSHOTS` to an output directory to capture the five Chinese li
 1440px, the introduction and gallery in English dark at 1440px and with the menu open at 390px,
 and a gallery fixture with 15 groups and long names. The fixture is intercepted in the test browser;
 it does not change the generated gallery or the published libraries.
+
+Set `RNL_GALLERY_ORIGIN_SCREENSHOTS` to capture the standard 0.3 gallery with Origin off,
+on and in the dark theme, an outside origin, and an enlarged symbol. The origin tests also
+check saved settings, coordinates, fixed screen sizes and framing in both browsers.
 
 The tools page offers Windows downloads and, for tags that include `apps/desktop/tauri.linux.conf.json` with both Linux bundle targets, Linux AppImage and deb downloads. `build.py` checks the configuration at the selected `viewer-v*` tag, so old Windows-only tags do not acquire broken Linux links. `<!--linux-release-->` and `<!--no-linux-release-->` are top-level conditional blocks alongside the existing release blocks. Run `python -m unittest discover -s site -p 'test_*.py'` to check old releases, Linux releases, and the bilingual and standalone pages; `pages.yml` runs these checks too.
 
@@ -188,6 +200,8 @@ Both languages sit one level below the root, `zh/` and `en/`, alike. The root, `
 | `src/assets/scenes.js` | Circuits, layouts, wiring, annotations, and example files for the introduction's demos |
 | `src/assets/common.js` | Shared by all pages: theme, navigation (a top bar whose links do not fit draws them closer, then writes the short forms, such as T1 to T9 in the tour, and then folds them into a menu), tabs, segmented controls, highlighting of static snippets |
 | `src/assets/intro.js` | Introduction interactions: the hero, the scenarios and the journey |
+| `tests/logo-embed.spec.mjs` | The homepage logo's lazy iframe, close/focus handling, theme synchronization and 390px layout, tested in Chromium and WebKit. `RNL_EMBED_REVIEW_DIR` saves screenshots and a before/after click request log. |
+| `serve.py` | Local static server for browser tests, with enough queued connections for both workers' viewer module requests. |
 | `src/assets/toolchain.js` | The toolchain diagram of the page of the tools |
 | `src/assets/glance.js` | The language at a glance, with the 46-keyword reference, and the examples, of the language tour |
 | `src/assets/tour.js` | The interactions of the nine sections of the language tour |

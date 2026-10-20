@@ -8,6 +8,73 @@
 
   /* ================= Hero ================= */
 
+  function initLogoViewer() {
+    var button = $('#hero-logo'), panel = $('#hero-logo-panel'), closeButton = $('#hero-logo-close'), brand = $('#hero-brand');
+    if (!button || !panel || !closeButton || !brand) return;
+    var frame = null, viewerOrigin = null, ready = false, needsFit = false;
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    function theme() {
+      var chosen = document.documentElement.getAttribute('data-theme');
+      return chosen === 'dark' || chosen === 'light' ? chosen : mq.matches ? 'dark' : 'light';
+    }
+    function syncTheme() {
+      if (frame && ready) frame.contentWindow.postMessage({ rnl: 1, type: 'background', value: theme() }, viewerOrigin);
+    }
+    function fitIfNeeded() {
+      if (!frame || !ready || panel.hidden || !needsFit) return;
+      frame.contentWindow.postMessage({ rnl: 1, type: 'fit' }, viewerOrigin);
+      needsFit = false;
+    }
+    function close() {
+      panel.hidden = true;
+      brand.classList.remove('is-viewing');
+      button.setAttribute('aria-expanded', 'false');
+      // Let the hidden iframe release focus before returning it to the restored wordmark.
+      requestAnimationFrame(function () { if (panel.hidden) button.focus({ preventScroll: true }); });
+    }
+    function escape(e) {
+      if (e.key !== 'Escape' || panel.hidden) return;
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    }
+    button.addEventListener('click', function () {
+      if (!panel.hidden) { close(); return; }
+      panel.hidden = false;
+      brand.classList.add('is-viewing');
+      button.setAttribute('aria-expanded', 'true');
+      if (!frame) {
+        var url = new URL(panel.getAttribute('data-viewer-url'), document.baseURI);
+        url.search = new URLSearchParams({ embed: '1', url: 'samples/brand/rnl-logo.sp', background: theme(), grid: 'off' });
+        if (location.origin !== 'null') url.searchParams.set('origin', location.origin);
+        viewerOrigin = url.origin;
+        frame = document.createElement('iframe');
+        frame.title = panel.getAttribute('aria-label');
+        frame.addEventListener('load', function () {
+          // The published homepage and viewer are same-origin. Capture Escape inside the iframe
+          // too; keyboard events do not bubble between browsing contexts.
+          var child = frame.contentDocument;
+          if (child) child.addEventListener('keydown', escape, true);
+        });
+        frame.src = url.href;
+        panel.appendChild(frame);
+      } else { syncTheme(); fitIfNeeded(); }
+      closeButton.focus({ preventScroll: true });
+    });
+    closeButton.addEventListener('click', close);
+    document.addEventListener('keydown', escape, true);
+    window.addEventListener('message', function (e) {
+      if (!frame || e.source !== frame.contentWindow || e.origin !== viewerOrigin || e.data?.rnl !== 1) return;
+      if (e.data.type === 'ready') { ready = true; syncTheme(); fitIfNeeded(); }
+    });
+    new MutationObserver(syncTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    new ResizeObserver(function () {
+      needsFit = true;
+      fitIfNeeded();
+    }).observe(brand);
+    mq.addEventListener('change', syncTheme);
+  }
+
   function drawBode(svg) {
     var el = S.el, W = 340, H = 220, m = { l: 40, r: 12, t: 24, b: 32 };
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
@@ -394,6 +461,7 @@
   /* ================= Startup ================= */
 
   function boot() {
+    initLogoViewer();
     initHero();
     initOwners();
     initFixes();

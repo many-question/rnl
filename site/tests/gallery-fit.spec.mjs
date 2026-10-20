@@ -12,6 +12,8 @@ for (const width of [1440, 390]) {
       await expect(page.locator(".gl-card")).toHaveCount(group.counts.symbols);
       await page.evaluate(() => document.fonts.ready);
       await page.locator("#gl-main").evaluate(el => el.classList.add("show-pins", "show-box", "show-labels"));
+      const origin = page.locator('[data-show="origin"]');
+      if (await origin.getAttribute("aria-pressed") !== "true") await origin.click();
       await expect.poll(() => page.locator(".gl-card").evaluateAll(cards => cards.every(card => {
         const fig = card.querySelector(".gl-fig"), svg = fig.querySelector("svg"), s = getComputedStyle(fig);
         return svg.clientWidth <= fig.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) + 0.1
@@ -24,7 +26,10 @@ for (const width of [1440, 390]) {
           const scale = Math.min(svg.getBoundingClientRect().width / vb.width, svg.getBoundingClientRect().height / vb.height);
           for (const el of svg.querySelectorAll("path,rect,circle,ellipse,line,polyline,polygon,text")) {
             if (!el.getClientRects().length || !el.checkVisibility()) continue;
-            const b = el.getBBox(), style = getComputedStyle(el);
+            const local = el.getBBox(), style = getComputedStyle(el);
+            const matrix = svg.getCTM().inverse().multiply(el.getCTM());
+            const corners = [[local.x,local.y], [local.x+local.width,local.y+local.height]].map(([x,y]) => new DOMPoint(x,y).matrixTransform(matrix));
+            const b = { x: corners[0].x, y: corners[0].y, width: corners[1].x-corners[0].x, height: corners[1].y-corners[0].y };
             const stroke = style.stroke === "none" ? 0 : parseFloat(style.strokeWidth) / 2 / (style.vectorEffect === "non-scaling-stroke" ? scale : 1);
             const tolerance = 0.1;
             if (b.x - stroke < vb.x - tolerance || b.y - stroke < vb.y - tolerance || b.x + b.width + stroke > vb.x + vb.width + tolerance || b.y + b.height + stroke > vb.y + vb.height + tolerance) {
@@ -35,6 +40,12 @@ for (const width of [1440, 390]) {
         return errors;
       });
       expect(outside, group.id).toEqual([]);
+      const markerSizes = await page.locator(".gl-fig .g-origin-mark, .gl-thumb .g-origin-mark").evaluateAll(marks => marks.map(mark => {
+        const m = mark.getScreenCTM();
+        return { symbol: mark.closest("[data-sym]").dataset.sym, size: 10 * Math.hypot(m.a,m.b) };
+      }));
+      expect(markerSizes.length).toBeGreaterThanOrEqual(group.counts.symbols);
+      for (const marker of markerSizes) expect(marker.size, `${group.id}: ${marker.symbol}`).toBeCloseTo(10, 2);
       const ratios = await page.locator(".gl-card").evaluateAll(cards => cards.map(card => {
         const svg = card.querySelector("svg"), fig = card.querySelector(".gl-fig"), s = getComputedStyle(fig);
         const ratio = Math.min(1, (fig.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)) / Number(svg.getAttribute("width")),
@@ -48,8 +59,10 @@ for (const width of [1440, 390]) {
         if (!row.hidden) expect(row.badge).toBe(`Shown at ×${row.ratio.toFixed(2)}`);
       }
     }
-    await page.goto("/en/packages.html?series=eda-style&package=eda-style");
+    await page.goto("/en/packages.html?series=eda-symbol&package=eda-symbol");
     const osc = page.locator('.gl-card[data-sym="$OSC"]');
+    // The previous group kept the origin setting in localStorage.
+    await expect(page.locator('[data-show="origin"]')).toHaveAttribute("aria-pressed", "true");
     await expect(osc.locator(".gl-fit")).toBeVisible();
     await osc.click();
     await expect(page.locator("#gl-dlg")).toBeVisible();

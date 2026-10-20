@@ -125,16 +125,26 @@ pub(crate) fn solve_exact_with(
         count(problem.facts.len(), "fact"),
         count(problem.routes.len(), "ROUTE")
     ));
+    let phase = crate::profile::span("stage", "resolve");
     let resolved = crate::resolve::resolve(problem, options, clock);
+    drop(phase);
     notes.extend(resolved.notes.iter().cloned());
     let mut work = resolved.work;
+    let phase = crate::profile::span("stage", "structure");
     let structure = analyse(problem, &resolved, options, caps, &mut work);
     notes.extend(structure.notes.iter().cloned());
+    drop(phase);
+    let phase = crate::profile::span("stage", "search");
     let candidates = search(problem, &structure, options, &mut work);
+    drop(phase);
     let placed_count = candidates.len();
     let mut all: Vec<Placing> = Vec::new();
-    for c in candidates {
+    for (candidate_id, c) in candidates.into_iter().enumerate() {
+        let phase = crate::profile::span("stage", "coords");
+        crate::profile::set("candidate_id", candidate_id as u64);
         let placed = place(problem, &structure, &c, options, &mut work);
+        drop(phase);
+        let phase = crate::profile::span("stage", "score");
         let estimate = layers(&structure, &placed.origins, &placed.geometry, None);
         let written = drawn(problem, &structure, &placed.geometry, &Routing::default());
         let entry = Entry {
@@ -146,15 +156,23 @@ pub(crate) fn solve_exact_with(
             code: c.code(&structure),
         };
         all.push(Placing { candidate: c, placed, entry });
+        drop(phase);
     }
     // the best `beam` by the estimate are routed and scored on their wires (plan 5.8)
+    let phase = crate::profile::span("stage", "score");
     let estimated: Vec<Entry> = all.iter().map(|c| c.entry.clone()).collect();
     let ranked = order(&structure.active, &estimated);
     let beam = options.beam.max(1);
     let mut finals: Vec<(usize, Routing, Entry)> = Vec::new();
+    drop(phase);
     for &i in ranked.iter().take(beam) {
         let p = &all[i];
+        let phase = crate::profile::span("stage", "route");
+        crate::profile::set("candidate_id", i as u64);
         let routing = route(problem, &structure, &p.placed.geometry, &p.placed.origins, options, &mut work);
+        crate::profile::add("wires", routing.wires.len() as u64);
+        drop(phase);
+        let phase = crate::profile::span("stage", "score");
         let wires = drawn(problem, &structure, &p.placed.geometry, &routing);
         let score = layers(&structure, &p.placed.origins, &p.placed.geometry, Some(&wires));
         let entry = Entry {
@@ -164,12 +182,15 @@ pub(crate) fn solve_exact_with(
             ..p.entry.clone()
         };
         finals.push((i, routing, entry));
+        drop(phase);
     }
+    let phase = crate::profile::span("stage", "score");
     let entries: Vec<Entry> = finals.iter().map(|(_, _, e)| e.clone()).collect();
     let best = order(&structure.active, &entries)[0];
     let (taken, routing, entry) = finals.swap_remove(best);
     let Placing { candidate, placed, .. } = all.swap_remove(taken);
     let score = entry.layers;
+    drop(phase);
     notes.push(format!(
         "{} placed and {} routed; the one taken comes from {}",
         count(placed_count, "candidate"),

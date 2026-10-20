@@ -430,6 +430,7 @@ fn layers(
     axis: usize,
 ) -> Result<(), ()> {
     let fail = |_| ();
+    let phase = crate::profile::span("lex_layer", "1_wire_length");
     // 1. the wire length: a pin of a net routed by the end of its lead
     let mut objective = LinExpr::default();
     for d in &s.connections.drawn {
@@ -448,6 +449,8 @@ fn layers(
         objective.add_term(lo, &-Q::one());
     }
     minimise_and_keep(sx, &objective)?;
+    drop(phase);
+    let phase = crate::profile::span("lex_layer", "2_envelope");
     // 2. the envelope of the components
     let boxes: Vec<(Var, [Q; 4])> =
         own.iter().filter(|(k, _)| solid(s, *k)).filter_map(|&(k, v)| Some((v, s.box_offset(k, ori[k])?))).collect();
@@ -459,6 +462,8 @@ fn layers(
         }
         minimise_and_keep(sx, &LinExpr::diff(hi, lo))?;
     }
+    drop(phase);
+    let phase = crate::profile::span("lex_layer", "3_stub_extent");
     // 3. the nets that only stubs draw: the extent of the pins of the elements on each
     let mut objective = LinExpr::default();
     for ends in stub_nets(model, s, ori, axis) {
@@ -471,6 +476,8 @@ fn layers(
         objective.add_term(lo, &-Q::one());
     }
     minimise_and_keep(sx, &objective)?;
+    drop(phase);
+    let _phase = crate::profile::span("lex_layer", "4_origin_distance");
     // 4. the distance to where the resolution put each origin, or to a text's anchor:
     // d ≥ e − c and d ≥ c − e, for e = v or e = v − base
     let mut objective = LinExpr::default();
@@ -600,9 +607,13 @@ fn optimise(r: &mut Resolver, model: &Model, s: &Structure, options: &SolverOpti
     let at_anchor = |k: usize, axis: usize| s.anchors.contains_key(&k) && !s.objects[k].fact_axes[axis];
     let mut out = fallback.clone();
     for axis in 0..2 {
+        let _lp = crate::profile::span_lazy("lp", || format!("axis_{axis}"));
+        crate::profile::add("lps", 1);
+        crate::profile::set("axis", axis as u64);
         let mut order: Vec<Visit> = own.iter().filter(|(k, _)| solid(s, *k)).map(|&(k, v)| (k, v, true)).collect();
         order.extend(own.iter().filter(|(k, _)| !solid(s, *k) && !at_anchor(*k, axis)).map(|&(k, v)| (k, v, false)));
         let sx = r.simplex_mut(axis);
+        sx.profile_tableau();
         let linked = link(sx, model, &ori, axis);
         if !linked {
             return (fallback, false);

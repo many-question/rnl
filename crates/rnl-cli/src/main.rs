@@ -54,6 +54,7 @@ solve options (the levels are read without their type=\"generated\" records; -o 
                       finish within it is discarded with a warning, and the result may then differ
                       from one run to the next; when the conflict groups of a fact are not all found
                       within it, its hint says that the list is not complete
+  --profile OUT.json  checkpoint solver timings and counters (solve only; may affect a wall-clock deadline)
   --report            print what became of every fact, not only of the facts discarded, and the hints
                       of the facts of priority low and of the statements only they lose (8.5), whose
                       minimal conflict groups the solver then seeks all, not only the first
@@ -90,6 +91,7 @@ struct Args {
     solver_options: Option<String>,
     in_place: bool,
     report: bool,
+    profile: Option<PathBuf>,
     previous: bool,
     author: Option<String>,
     parts: Option<String>,
@@ -116,6 +118,7 @@ fn parse_args() -> Result<Args, String> {
     let mut level = None;
     let mut previous = false;
     let mut solver_options = None;
+    let mut profile = None;
     let (mut in_place, mut report) = (false, false);
     let mut author = None;
     let mut parts = None;
@@ -142,6 +145,7 @@ fn parse_args() -> Result<Args, String> {
             "--solver-options" => solver_options = Some(it.next().ok_or("--solver-options needs a text")?),
             "--in-place" => in_place = true,
             "--report" => report = true,
+            "--profile" => profile = Some(PathBuf::from(it.next().ok_or("--profile needs a JSON path")?)),
             "--author" => author = Some(it.next().ok_or("--author needs a name")?),
             "--parts" => parts = Some(it.next().ok_or("--parts needs a list, such as host,model")?),
             "--package" => packages.push(it.next().ok_or("--package needs a name, such as rnl-std-basic")?),
@@ -149,6 +153,9 @@ fn parse_args() -> Result<Args, String> {
             _ if a.starts_with('-') => return Err(format!("unknown option {a}\n{USAGE}")),
             _ => file = Some(PathBuf::from(a)),
         }
+    }
+    if profile.is_some() && command != "solve" {
+        return Err("--profile is an option of solve".into());
     }
     // the catalog reads the package directories and the bundled packages, not a file
     let file = match (command.as_str(), file) {
@@ -173,6 +180,7 @@ fn parse_args() -> Result<Args, String> {
         solver_options,
         in_place,
         report,
+        profile,
         previous,
         author,
         parts,
@@ -398,9 +406,33 @@ fn solve(args: &Args, provider: &FsProvider) -> Result<ExitCode, String> {
     // the groups of the facts of priority low are sought only for their hints (8.5, 7.6)
     let solver = SolverOptions { hints_for_low: args.report, ..solver };
     let options = SolveOptions { dialect: args.dialect.clone(), std: args.std, level: args.level.clone(), solver };
-    let run = rnl_cli::solve::solve(&args.file, provider, &options)?;
+    let profile_clock = args
+        .profile
+        .as_ref()
+        .map(|path| {
+            if std::fs::canonicalize(path).ok().zip(std::fs::canonicalize(&args.file).ok()).is_some_and(|(a, b)| a == b)
+            {
+                return Err("--profile must differ from the input file".to_string());
+            }
+            rnl_cli::profile::ProfileClock::new(path)
+        })
+        .transpose()?;
+    let result = match &profile_clock {
+        Some(clock) => rnl_cli::solve::solve_with_clock(&args.file, provider, &options, clock),
+        None => rnl_cli::solve::solve(&args.file, provider, &options),
+    };
+    if let Some(clock) = &profile_clock {
+        clock.finish(result.is_ok())?;
+    }
+    let run = result?;
     // nothing is written when a file has no place to go
-    rnl_cli::solve::destinations(&run, &target)?;
+    let output_paths = rnl_cli::solve::all_destinations(&run, &target)?;
+    if let Some(profile) = &args.profile {
+        let profile = std::fs::canonicalize(profile).map_err(|e| format!("cannot resolve profile path: {e}"))?;
+        if output_paths.iter().any(|p| std::fs::canonicalize(p).is_ok_and(|p| p == profile)) {
+            return Err("--profile conflicts with a solved output path".into());
+        }
+    }
     println!("solver options: {}", options.solver.canonical());
     if run.levels.is_empty() && run.not_solved.is_empty() {
         println!("{} has no drawing level to solve", run.entry);

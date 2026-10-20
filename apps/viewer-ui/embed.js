@@ -110,6 +110,12 @@ async function open(message, initial = false) {
     showBuilt(built, false);
     document.title = `${built.name} - RNL Viewer`;
     if (initial && params.has("level")) level(params.get("level"));
+    // A short embed fits visible ink, so its first view needs the drawing's actual font metrics.
+    if (getComputedStyle($("canvas")).getPropertyValue("--fit-content").trim() === "1") {
+      $("canvas").getBoundingClientRect();
+      await document.fonts.ready;
+      if (request !== generation) return;
+    }
     fit();
     await nextPaint();
     if (request !== generation) return;
