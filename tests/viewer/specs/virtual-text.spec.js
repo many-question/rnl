@@ -5,6 +5,15 @@ const reveal = (page, file, line) => page.evaluate(async ({ file, line }) => {
 }, { file, line });
 const lineOf = (page, fragment, file = 0) => page.evaluate(({ fragment, file }) =>
   window.viewer.doc.files[file].text.split(/\r?\n/).findIndex(s => s.includes(fragment)) + 1, { fragment, file });
+const copy = (page) => page.locator("#source").evaluate(source => {
+  const event = new ClipboardEvent('copy', {
+    bubbles: true, cancelable: true, clipboardData: new DataTransfer(),
+  });
+  source.dispatchEvent(event);
+  // Firefox creates its own data store instead of using the constructor argument.
+  // Read the same store as the copy handler (Mozilla bug 2027025).
+  return event.clipboardData.getData('text/plain');
+});
 
 test("offscreen object, diagnostic, scope and unplaced marks survive recycling", async ({ page, viewer }) => {
   await viewer.open("virtual");
@@ -77,19 +86,11 @@ test("select all and copy include offscreen text without adding offscreen rows",
   await viewer.open("virtual");
   await page.locator("#source").focus();
   await page.keyboard.press("Control+a");
-  const copied = await page.locator("#source").evaluate(source => {
-    const data = new DataTransfer();
-    source.dispatchEvent(new ClipboardEvent('copy', { bubbles: true, cancelable: true, clipboardData: data }));
-    return data.getData('text/plain');
-  });
+  const copied = await copy(page);
   expect(copied).toBe(await page.evaluate(() => window.viewer.doc.files[0].text.replace(/\r\n/g, '\n')));
   await page.locator("#source").evaluate(s => { s.scrollTop = s.scrollHeight; });
   await expect(viewer.line(1)).toHaveCount(0);
-  const again = await page.locator("#source").evaluate(source => {
-    const data = new DataTransfer();
-    source.dispatchEvent(new ClipboardEvent('copy', { bubbles: true, cancelable: true, clipboardData: data }));
-    return data.getData('text/plain');
-  });
+  const again = await copy(page);
   expect(again).toBe(copied);
   expect(await page.locator("#source .file:not([hidden]) .ln").count()).toBeLessThan(300);
 });
@@ -124,16 +125,11 @@ test("a dragged text selection copies the same text after both endpoints scroll 
   await page.mouse.down();
   await page.mouse.move(b.x + 70, b.y + b.height / 2, { steps: 8 });
   await page.mouse.up();
-  const copy = () => page.locator('#source').evaluate(source => {
-    const data = new DataTransfer();
-    source.dispatchEvent(new ClipboardEvent('copy', { bubbles: true, cancelable: true, clipboardData: data }));
-    return data.getData('text/plain');
-  });
-  const before = await copy();
+  const before = await copy(page);
   expect(before).toContain('prefix 100');
   await page.locator('#source').evaluate(s => { s.scrollTop = s.scrollHeight; });
   await expect(viewer.line(96)).toHaveCount(0);
-  expect(await copy()).toBe(before);
+  expect(await copy(page)).toBe(before);
 });
 
 test("drag selection auto-scrolls and stops when the window loses focus", async ({ page, viewer }) => {
