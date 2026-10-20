@@ -35,11 +35,18 @@ export default {
   initial: () => invoke("initial_file").then(file),
   pick: (kind) => (kind === "file" ? invoke("pick_file").then(file) : Promise.resolve(null)),
   // a file by its path, or text held by the source, with edits to it and its includes
-  build: async (source, edits) => {
+  build: async (source, edits, progress) => {
     await flushSettings();
-    return source.text === undefined
-      ? invoke("open_document", { path: source.path, edits: edits || null, pool })
-      : invoke("open_text", { name: source.name, text: source.text, edits: edits || null, pool });
+    const requestId = progress ? crypto.randomUUID() : null;
+    const unlisten = progress ? await tauri.event.listen("load-stage", ({ payload }) => {
+      if (payload.id === requestId) progress(payload.stage);
+    }) : null;
+    try {
+      progress?.("reading");
+      return await (source.text === undefined
+        ? invoke("open_document", { path: source.path, edits: edits || null, pool, requestId })
+        : invoke("open_text", { name: source.name, text: source.text, edits: edits || null, pool, requestId }));
+    } finally { unlisten?.(); }
   },
   // the drawings of the objects listed without a position, which the app keeps from the last build
   unplacedDrawings: (level, items, names) => invoke("unplaced_drawings", { level, items, names }),

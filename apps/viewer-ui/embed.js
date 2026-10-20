@@ -11,6 +11,7 @@ import { prepareEmbed, sourceFromUrl } from "./shells/web.js";
 import { current, doc, path, setDoc } from "./state.js";
 import { backTo, enterRow, enterRoot } from "./subcircuits.js";
 import { $, span, svgElement } from "./util.js";
+import { startLoading, nextPaint } from "./loading.js";
 
 const params = new URLSearchParams(location.search);
 const targetOrigin = params.has("origin") ? params.get("origin") : "*";
@@ -86,6 +87,7 @@ async function open(message, initial = false) {
   const request = ++generation;
   opening = true;
   document.body.classList.add("busy");
+  const progress = startLoading();
   link.hidden = true;
   try {
     let source;
@@ -96,7 +98,10 @@ async function open(message, initial = false) {
       source = sourceFromUrl(message.url);
       url = message.url;
     } else throw new Error("open needs text and name, or url.");
-    const built = await shell.build(source);
+    await progress.stage("reading");
+    const built = await shell.build(source, undefined, progress.setStage);
+    if (request !== generation) return;
+    await progress.stage("displaying");
     if (request !== generation) return;
     const errors = built.diagnostics.filter((item) => item.severity === "error");
     if (built.failed || errors.length) throw new Error(built.failed || errors[0].message);
@@ -112,6 +117,8 @@ async function open(message, initial = false) {
       if (request !== generation) return;
     }
     fit();
+    await nextPaint();
+    if (request !== generation) return;
     if (url !== null) {
       const full = new URL(location.href);
       full.searchParams.delete("embed");
@@ -132,6 +139,7 @@ async function open(message, initial = false) {
   } catch (reason) {
     if (request === generation) error(reason);
   } finally {
+    progress.finish();
     if (request === generation) {
       opening = false;
       document.body.classList.remove("busy");

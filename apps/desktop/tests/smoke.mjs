@@ -757,7 +757,9 @@ async function filePoolSmoke(page) {
     document.getElementById('tab-files').click();
     document.querySelector('[aria-label="Exclude part.inc"]').click();
   })()`);
-  await until("the excluded include missing", () => page.evaluate(`window.viewer.doc.diagnostics.some(d => d.message.includes('part.inc cannot be found'))`));
+  // The document is installed before its first frame is painted. Let this reload finish before
+  // the synthetic chooser starts another rebuild; a synchronous click can beat that final paint.
+  await until("the excluded include missing", () => page.evaluate(`window.viewer.doc.diagnostics.some(d => d.message.includes('part.inc cannot be found')) && !document.body.classList.contains('busy')`));
   await page.evaluate(`(async () => {
     const shell = (await import('./shells/desktop.js')).default;
     shell.pickPath = async () => ${JSON.stringify(slashed(parts))};

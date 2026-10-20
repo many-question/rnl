@@ -1,5 +1,9 @@
 # desktop
 
+On Windows, the main window first paints **RNL Viewer** and the version using a native child
+control, before WebView2 is created. After its first paint, the HTML page takes over in that window, with
+the same size, position and HWND; there is no separate startup window.
+
 RNL Viewer, a small desktop application that opens a netlist and draws it. It can edit the text and apply the changes, solve the netlist as a preview and save a solved copy; it writes a file only when you have edited it and choose Save ([decision 0011](../../docs/decisions/0011-viewers-edit-the-text-and-write-only-what-the-user-saves.md), [0010](../../docs/decisions/0010-desktop-viewer-solves-as-a-preview.md)). As opened, objects without a position are not drawn, as with `rnl render`.
 
 - **File › Open File** (Ctrl+O) opens a SPICE netlist, a Spectre netlist (`.scs`) or a package file (`.rnl`); the file can also be given on the command line, where `--remote-debugging-port=PORT` opens the DevTools port of the app's WebView on 127.0.0.1, as in Chromium, for tests. **File › Reload** (F5) reads it again, keeping the level, the view and the selection.
@@ -19,6 +23,11 @@ RNL Viewer, a small desktop application that opens a netlist and draws it. It ca
 - **Edit › Edit Text** (Ctrl+Q) switches the netlist view to edit: a text box for each file, an included file in its own tab, with line numbers and no highlighting. A change is shown as *Changes not applied yet*, and a dot on the tab of each file with changes not saved. **Edit › Apply and Exit Editing** (Ctrl+Enter, or the button above the text) builds the netlist again from the texts in memory, over the files on disk, and draws it and checks it as opening them would: the drawing, the problems and the hierarchy are made again, keeping the level, the view and the selection. Exiting editing also applies pending changes, and applying exits editing. Edit › Discard Changes confirms before dropping pending changes and exiting. Entering and exiting preserve the first visible text line. Nothing solves itself: **Solve** is a separate step, of the text applied, and the Solve view is not edited (**Close Preview** shows the text again).
 - **File › Save** (Ctrl+S) writes the files with changes not saved where they were read from, in the encoding and with the line ends each had (a file that is not UTF-8 stays Latin-1; text it cannot hold is refused, and the message says to use Save As); no other file is written. **File › Save As** writes the netlist that was opened, the first tab, under a name you give, and opens that file; included files are saved where they are with Save, and Save As waits until they are. A text from the clipboard has no file: Save and Save As ask where, and the file written is the netlist from then on. The window's title has a dot while changes are not saved, and **opening another file, File › Reload and closing the window** ask first to save them, leave them unsaved or go no further. Before it writes, Save looks at each file on disk: one that is no longer what was read, because another program changed it or took it away (compared as the core reads it, so another program's change of the line ends or the byte order mark does not count), is not written, nor are the others, and a dialog asks: **Overwrite** writes the text in the viewer over it, **Reload** reads the files again and drops the changes made in the viewer, **Cancel** leaves everything as it is.
 - **Help › Check for Updates** looks on GitHub for a newer release of the viewer when it is chosen, never by itself ([Checking for updates](#checking-for-updates)).
+
+Large netlists show reading, parsing and display stages with an indeterminate bar. The Netlist
+read view renders a viewport of large files; Edit > Find in Netlist (Ctrl+F) and copy still use the
+complete text. File and edit-mode changes keep the first visible line. See the shared
+[large-netlist behavior](../viewer-ui/README.md#loading-and-large-netlists).
 
 ## File pool and search paths
 

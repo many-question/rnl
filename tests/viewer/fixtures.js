@@ -343,6 +343,18 @@ export function writeFixtures(rnl, dir) {
   fs.writeFileSync(path.join(changed, "04-hierarchy.sp"), edited);
   fs.writeFileSync(path.join(dir, "04-hierarchy-changed.json"), view(rnl, "04-hierarchy.sp", changed));
 
+  // Real core spans/diagnostics in files larger than a DOM window, including an included file.
+  const virtual = path.join(dir, "virtual-data");
+  fs.mkdirSync(virtual);
+  const pad = (n, label) => Array.from({ length: n }, (_, i) => `* ${label} ${i + 1}`).join("\n") + "\n";
+  const virtualText = text.replace(/^(.*\r?\n)/, "$1" + pad(1300, "prefix")).replace(/^\.end\s*$/m,
+    '* @RNL { /* a long comment\n' + pad(180, "inside RNL comment") + '* end */ }\n' +
+    'Runplaced spare 0 11k\n* @RNL { #missing @PLACE(1, 1) }\n' + pad(1300, "suffix") + ".end\n");
+  fs.writeFileSync(path.join(virtual, "virtual.sp"), virtualText);
+  const lib = fs.readFileSync(path.join(cases, "04-hierarchy-lib.inc"), "utf8");
+  fs.writeFileSync(path.join(virtual, "04-hierarchy-lib.inc"), "* long include\n" + pad(1100, "include") + lib);
+  fs.writeFileSync(path.join(dir, "virtual.json"), view(rnl, "virtual.sp", virtual));
+
   const lines = ["* a subcircuit for each initial"];
   for (const name of SUBCIRCUITS) lines.push(`.subckt ${name} p q`, "R1 p q 1k", ".ends");
   SUBCIRCUITS.forEach((name, k) => lines.push(`X${k + 1} n${k + 1} 0 ${name}`));

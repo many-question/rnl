@@ -17,13 +17,14 @@ import {
   setIndexHeight, setPane, setProblems, setProblemsHeight, setShowFailed, setSidebar, setSidebarWidth,
 } from "./panels.js";
 import { loadShell } from "./shell.js";
-import { finishStartup } from "./startup.js";
+import { finishStartup, stylesReady } from "./startup.js";
 import { current, doc, path, selected } from "./state.js";
 import { renderUnplaced } from "./unplaced.js";
 import { $, load, startSettings } from "./util.js";
 
 /** Load the shell and the command table, then open what the shell has for the start. */
 async function start() {
+  await stylesReady;
   const shell = await loadShell();
   await startSettings(shell);
   if (shell.embed) {

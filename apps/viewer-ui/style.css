@@ -101,20 +101,26 @@ body {
 }
 
 body.busy, body.busy *, body.checking, body.checking * { cursor: progress !important; }
-body.starting > #app, body.starting > .menubar, body.starting > .statusbar { visibility: hidden; }
-.startup {
+.loading {
   position: fixed;
-  inset: 0;
-  z-index: 15;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  background: var(--bg);
+  z-index: 16;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(320px, calc(100vw - 32px));
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 4px 18px #0002;
+  pointer-events: none;
 }
-.startup strong { font-size: 28px; font-weight: 600; }
-.startup small { min-height: 1.4em; color: var(--muted); font-size: 13px; }
+.loading[hidden] { display: none; }
+.loading-track { height: 3px; margin-top: 9px; overflow: hidden; background: var(--line); border-radius: 2px; }
+.loading-track span { display: block; height: 100%; width: 35%; background: var(--accent); animation: loading 1.4s ease-in-out infinite; }
+@keyframes loading { from { transform: translateX(-100%); } to { transform: translateX(390%); } }
+body.starting .loading { top: calc(50% + 65px); bottom: auto; border: 0; box-shadow: none; background: transparent; text-align: center; }
+@media (prefers-reduced-motion: reduce) { .loading-track span { animation: none; transform: translateX(90%); } }
 body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select: none; }
 body.resizing-y, body.resizing-y * { cursor: row-resize !important; user-select: none; }
 
@@ -268,6 +274,12 @@ button.crumb:hover:not(:disabled) { color: var(--fg); }
 }
 /* the file tabs ask for the room they take up, unlike other tabs (.tabs) */
 .file-bar .file-tabs { flex: 1 1 auto; margin-right: 8px; }
+.netlist-head { min-width: 0; }
+.netlist-find { display: flex; align-items: center; gap: 4px; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.netlist-find[hidden], .netlist-pane.editing .netlist-find { display: none; }
+.netlist-find input { flex: 1; min-width: 0; font: inherit; color: var(--fg); background: var(--tab); border: 1px solid var(--line); border-radius: 3px; padding: 3px 6px; }
+.netlist-find span { font-size: 11px; white-space: nowrap; color: var(--muted); }
+.netlist-find button { flex: none; padding: 2px 5px; }
 
 /* editing the text (editor.js): the state and the Apply button take the place of the failed statements' box */
 .edit-state { flex: none; margin-right: 8px; color: var(--muted); font-size: 12px; white-space: nowrap; }
@@ -284,7 +296,7 @@ button.crumb:hover:not(:disabled) { color: var(--fg); }
 .editor[hidden] { display: none; }
 .editor .gutter {
   flex: none;
-  width: 4.5em;
+  width: var(--line-number-width, 4.5em);
   padding: 4px 1em 24px 0;
   overflow: hidden;
   text-align: right;
@@ -484,6 +496,8 @@ body[data-background="dark"] .unplaced-row .thumb { background: var(--drawing-ba
   margin: 0;
 }
 .source .file { min-width: fit-content; padding: 4px 0 24px; }
+.source.virtualized { overflow-anchor: none; }
+.line-spacer { pointer-events: none; user-select: none; }
 
 .ln {
   display: flex;
@@ -492,7 +506,7 @@ body[data-background="dark"] .unplaced-row .thumb { background: var(--drawing-ba
 }
 .ln .no {
   flex: 0 0 auto;
-  width: 4.5em;
+  width: var(--line-number-width, 4.5em);
   padding-right: 1em;
   text-align: right;
   color: var(--syn-marker);

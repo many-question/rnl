@@ -17,6 +17,11 @@ test("F and Backspace do not count while Ctrl or Alt is held", async ({ page, vi
   for (const key of ["Control+F", "Alt+F"]) {
     await page.keyboard.press(key);
     expect(await viewer.viewBox()).toBe(zoomed);
+    if (key === "Control+F") {
+      const find = page.getByRole('searchbox', { name: 'Find in netlist' });
+      await expect(find).toBeFocused();
+      await find.press('Escape');
+    }
   }
   await page.keyboard.press("f");
   await expect.poll(() => viewer.viewBox()).not.toBe(zoomed);

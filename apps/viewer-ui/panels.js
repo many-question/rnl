@@ -3,7 +3,7 @@
 
 import { setCheck } from "./commands.js";
 import { updateHierarchy } from "./hierarchy.js";
-import { revealPending } from "./text.js";
+import { revealPending, refreshSource } from "./text.js";
 import { showUnplaced } from "./unplaced.js";
 import { $, clamp, load, save } from "./util.js";
 
@@ -24,7 +24,7 @@ export function setSidebar(shown) {
   app.classList.toggle("sidebar-hidden", !shown);
   save("sidebar-shown", shown);
   setCheck("toggle-netlist", shown);
-  if (shown) revealPending();
+  if (shown) { refreshSource(); revealPending(); }
 }
 
 /**
@@ -44,6 +44,7 @@ export function setPane(name) {
   save("side-pane", view === "solve" ? "netlist" : view);
   if (view === "netlist") {
     setProblemsHeight(load("problems-height", 180));
+    refreshSource();
     revealPending();
   } else if (view === "hierarchy") {
     setIndexHeight(load("index-height", 260));

@@ -9,11 +9,13 @@
 
 mod core_thread;
 mod files;
+mod load_progress;
 mod menu;
 mod pool;
 mod session;
 mod settings;
 mod solve;
+mod startup;
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -93,6 +95,8 @@ const NETLISTS: [&str; 10] = ["sp", "spi", "spice", "cir", "ckt", "net", "inc", 
 /// files are those, over what is on disk. The drawings of the objects it lists without a position
 /// are kept for `unplaced_drawings`, in place of those of the last document.
 #[tauri::command]
+// Tauri injects the window and managed state alongside the separate IPC arguments.
+#[allow(clippy::too_many_arguments)]
 async fn open_document(
     window: WebviewWindow,
     unsaved: State<'_, Unsaved>,
@@ -101,10 +105,12 @@ async fn open_document(
     pool: Option<Vec<String>>,
     path: String,
     edits: Option<Edits>,
+    request_id: Option<String>,
 ) -> Result<Document, String> {
     let core = core.inner().clone();
     let paths = settings.paths()?;
     let pool = pool.unwrap_or_default();
+    let progress_window = window.clone();
     let doc = tauri::async_runtime::spawn_blocking(move || {
         core.run(move |drawn| {
             let path = if path.starts_with(rnl_view::BUNDLED_DIR) {
@@ -116,7 +122,9 @@ async fn open_document(
             let held = files::held(&entry, &edits.unwrap_or_default());
             let disk = FsProvider::new(&paths).with_search_paths(&paths);
             let disk = rnl_runtime::source::FilePool { files: &disk, paths: &pool };
-            let (doc, kept) = rnl_view::build_drawn(&entry, &files::layered(&held, &disk), &BuildOptions::default())?;
+            let layered = files::layered(&held, &disk);
+            let provider = load_progress::LoadingProvider::new(&layered, &progress_window, request_id.as_deref());
+            let (doc, kept) = rnl_view::build_drawn(&entry, &provider, &BuildOptions::default())?;
             *drawn = Some(kept);
             Ok::<_, String>(doc)
         })
@@ -141,10 +149,12 @@ async fn open_text(
     name: String,
     text: String,
     edits: Option<Edits>,
+    request_id: Option<String>,
 ) -> Result<Document, String> {
     let core = core.inner().clone();
     let paths = settings.paths()?;
     let pool = pool.unwrap_or_default();
+    let progress_window = window.clone();
     let doc = tauri::async_runtime::spawn_blocking(move || {
         core.run(move |drawn| {
             let entry = format!("/{name}");
@@ -152,7 +162,8 @@ async fn open_text(
             let disk = FsProvider::new(&paths).with_search_paths(&paths);
             let disk = rnl_runtime::source::FilePool { files: &disk, paths: &pool };
             let files = files::layered(&held, &disk);
-            let (doc, kept) = rnl_view::build_drawn(&entry, &files, &BuildOptions::default())?;
+            let provider = load_progress::LoadingProvider::new(&files, &progress_window, request_id.as_deref());
+            let (doc, kept) = rnl_view::build_drawn(&entry, &provider, &BuildOptions::default())?;
             *drawn = Some(kept);
             Ok::<_, String>(doc)
         })
@@ -241,6 +252,12 @@ fn quit(app: AppHandle) {
     app.exit(0);
 }
 
+/// The initialized page is ready to replace the native Windows startup surface.
+#[tauri::command]
+fn finish_startup(window: WebviewWindow, startup: State<'_, startup::Startup>) -> Result<(), String> {
+    startup.finish(&window)
+}
+
 /// Ask for a file to open; None when the dialog is cancelled.
 #[tauri::command]
 async fn pick_file(window: WebviewWindow) -> Option<String> {
@@ -261,6 +278,7 @@ fn initial_file() -> Option<String> {
 }
 
 fn main() {
+    let startup = startup::Startup::new();
     let session = session::read(std::env::args_os().skip(1)).expect("the viewer session could not be read");
     let mut context = tauri::generate_context!();
     // Keep the small-logo strokes in the title bar and taskbar, including at higher system DPI.
@@ -286,6 +304,7 @@ fn main() {
         .manage(settings::Settings::default())
         .manage(session::Initial(Mutex::new(session)))
         .manage(Core::new())
+        .manage(startup)
         .menu(menu::menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "exit" => request_exit(app),
@@ -310,6 +329,7 @@ fn main() {
             save_file_as,
             set_dirty,
             quit,
+            finish_startup,
             pick_file,
             initial_file,
             session::initial_session,
