@@ -465,6 +465,9 @@ impl<T: Clone + Ord> Simplex<T> {
     /// of the resolution of 8.5 (the draft 0.3, 8.5). A check stopped leaves a valid tableau, its
     /// variables not all within their bounds; a later check goes on from there.
     pub(crate) fn check_until(&mut self, out_of_time: &dyn Fn() -> bool) -> Result<(), Failure<T>> {
+        crate::profile::add("simplex_checks", 1);
+        self.profile_tableau();
+        crate::profile::checkpoint();
         // the variables that have left the basis in this check, and how many times one left again
         let mut left = vec![false; self.vars.len()];
         let mut repeats: u64 = 0;
@@ -541,6 +544,7 @@ impl<T: Clone + Ord> Simplex<T> {
     /// reduced costs, and the pivots keep it up to date. A layer of the lexicographic LP that
     /// bounds the form by its optimum then bounds that same row.
     pub(crate) fn minimize(&mut self, objective: &LinExpr) -> Result<Q, Failure<T>> {
+        crate::profile::add("simplex_minimizations", 1);
         self.check()?;
         let Some((_, lead)) = objective.terms.first() else { return Ok(objective.constant.clone()) };
         let lead = lead.clone();
@@ -548,6 +552,7 @@ impl<T: Clone + Ord> Simplex<T> {
             LinExpr { terms: objective.terms.iter().map(|(v, a)| (*v, a / &lead)).collect(), constant: Q::zero() };
         // the objective is `lead · s` and a constant
         let s = self.add_row(&form);
+        self.profile_tableau();
         let flip = lead.is_negative();
         loop {
             // Bland: the smallest variable whose move lowers the objective; its reduced cost is
@@ -595,6 +600,11 @@ impl<T: Clone + Ord> Simplex<T> {
                 let target = if increase { value + &theta } else { value - &theta };
                 self.update(xk, target);
                 self.pivots += 1;
+                crate::profile::add("pivots", 1);
+                self.profile_tableau();
+                if self.pivots % PIVOTS_PER_READ == 0 {
+                    crate::profile::checkpoint();
+                }
             } else {
                 let rate = coefficient(&self.rows[self.vars[xl].row.expect("basic")].terms, xk).expect("in the row");
                 let up = rate.is_positive() == increase;
@@ -702,6 +712,44 @@ impl<T: Clone + Ord> Simplex<T> {
         self.vars[xi].row = None;
         self.vars[xj].row = Some(r);
         self.pivots += 1;
+        crate::profile::add("pivots", 1);
+        self.profile_tableau();
+        if self.pivots % PIVOTS_PER_READ == 0 {
+            crate::profile::checkpoint();
+        }
+    }
+
+    /// Maximum stored tableau sizes and rational bit lengths; never called on a clock.
+    pub(crate) fn profile_tableau(&self) {
+        if !crate::profile::enabled() {
+            return;
+        }
+        crate::profile::add("tableau_scans", 1);
+        crate::profile::add("pivots", 0);
+        let mut numerator = 0;
+        let mut denominator = 0;
+        let mut observe = |q: &Q| {
+            numerator = numerator.max(q.numer().bits());
+            denominator = denominator.max(q.denom().bits());
+        };
+        let mut bounds = 0;
+        for v in &self.vars {
+            observe(&v.value);
+            for b in [&v.lower, &v.upper].into_iter().flatten() {
+                observe(&b.value);
+                bounds += 1;
+            }
+        }
+        for row in &self.rows {
+            for (_, q) in &row.terms {
+                observe(q);
+            }
+        }
+        crate::profile::max("variables", self.vars.len() as u64);
+        crate::profile::max("tableau_rows", self.rows.len() as u64);
+        crate::profile::max("constraints", bounds);
+        crate::profile::max("max_numerator_bits", numerator);
+        crate::profile::max("max_denominator_bits", denominator);
     }
 
     /// Checks the invariants: every row holds under the current values, nonbasic variables are

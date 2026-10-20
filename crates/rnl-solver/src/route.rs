@@ -857,8 +857,14 @@ impl<'a> Grid<'a> {
         budget: &mut u64,
         expansions: &mut u64,
     ) -> Result<Vec<usize>, Failure> {
+        let _path = crate::profile::span("route_path", "astar");
+        crate::profile::add("astar_searches", 1);
+        crate::profile::add("astar_expansions", 0);
+        crate::profile::set("sources", sources.len() as u64);
+        crate::profile::set("targets", targets.len() as u64);
         let unit = self.lat.unit;
         if targets.is_empty() || sources.is_empty() {
+            crate::profile::add("astar_no_path_failures", 1);
             return Err(Failure::NoPath);
         }
         // the box of the targets, for a heuristic that never overestimates
@@ -885,10 +891,15 @@ impl<'a> Grid<'a> {
                 continue;
             }
             if *budget == 0 {
+                crate::profile::add("astar_budget_failures", 1);
                 return Err(Failure::Budget);
             }
             *budget -= 1;
             *expansions += 1;
+            crate::profile::add("astar_expansions", 1);
+            if *expansions % 256 == 0 {
+                crate::profile::checkpoint();
+            }
             if self.has(node, TARGET) {
                 let mut nodes = vec![node];
                 let mut at = st;
@@ -953,6 +964,7 @@ impl<'a> Grid<'a> {
                 }
             }
         }
+        crate::profile::add("astar_no_path_failures", 1);
         Err(Failure::NoPath)
     }
 
@@ -1056,6 +1068,7 @@ impl<'a> Grid<'a> {
         let mut joined = vec![false; parts.len()];
         let mut failed = walled.clone();
         let mut failure = None;
+        let mut previous_failures = crate::profile::enabled().then(BTreeSet::new);
 
         // the two nearest parts first
         let dist = |lat: &Lattice, a: &[usize], b: &[usize]| -> i64 {
@@ -1076,6 +1089,10 @@ impl<'a> Grid<'a> {
             for &x in &parts[b] {
                 tree.entry(nodes[x].unwrap_or(0)).or_insert(TreeNode::Anchor(x));
             }
+            if previous_failures.as_ref().is_some_and(|failed| failed.contains(&a)) {
+                crate::profile::add("join_retries", 1);
+            }
+            crate::profile::add("join_attempts", 1);
             match self.join(&parts, a, &tree, &nodes, &exit, &mut budget, expansions) {
                 Ok(path) => {
                     self.grow(&mut tree, &mut made, &mut branches, &parts[a], &nodes, path);
@@ -1085,6 +1102,10 @@ impl<'a> Grid<'a> {
                     break;
                 }
                 Err(f) => {
+                    crate::profile::add("failed_join_attempts", 1);
+                    if let Some(failed) = &mut previous_failures {
+                        failed.insert(a);
+                    }
                     tree.clear();
                     failure = Some(f);
                     if f == Failure::Budget {
@@ -1109,6 +1130,10 @@ impl<'a> Grid<'a> {
                 })
                 .min();
             let Some((_, p)) = next else { break };
+            if previous_failures.as_ref().is_some_and(|failed| failed.contains(&p)) {
+                crate::profile::add("join_retries", 1);
+            }
+            crate::profile::add("join_attempts", 1);
             match self.join(&parts, p, &tree, &nodes, &exit, &mut budget, expansions) {
                 Ok(path) => {
                     self.grow(&mut tree, &mut made, &mut branches, &parts[p], &nodes, path);
@@ -1118,10 +1143,18 @@ impl<'a> Grid<'a> {
                     failed.clone_from(&walled);
                 }
                 Err(Failure::NoPath) => {
+                    crate::profile::add("failed_join_attempts", 1);
+                    if let Some(failed) = &mut previous_failures {
+                        failed.insert(p);
+                    }
                     failed[p] = true;
                     failure = Some(Failure::NoPath);
                 }
                 Err(f) => {
+                    crate::profile::add("failed_join_attempts", 1);
+                    if let Some(failed) = &mut previous_failures {
+                        failed.insert(p);
+                    }
                     failure = Some(f);
                     break;
                 }
@@ -1340,6 +1373,10 @@ pub(crate) fn route_layout(layout: &Layout, budget: u64) -> (Vec<NetOut>, u64) {
             return (outs, 0);
         }
     };
+    crate::profile::set("grid_width", grid.lat.nx() as u64);
+    crate::profile::set("grid_height", grid.lat.ny() as u64);
+    crate::profile::set("grid_cells", grid.lat.len() as u64);
+    crate::profile::set("grid_states", grid.best.len() as u64);
     // the smallest nets first: by the half perimeter of their points, then their number
     let mut order: Vec<(Q, usize, usize)> = layout
         .nets
@@ -1358,6 +1395,9 @@ pub(crate) fn route_layout(layout: &Layout, budget: u64) -> (Vec<NetOut>, u64) {
     order.sort();
     let mut outs: Vec<NetOut> = vec![NetOut::default(); layout.nets.len()];
     for (_, _, i) in order {
+        let _net = crate::profile::span_lazy("route_net", || format!("net_{i}"));
+        crate::profile::add("nets", 1);
+        crate::profile::set("endpoints", layout.nets[i].anchors.len() as u64);
         outs[i] = grid.route_net(i, budget, &mut expansions);
         // its wires are other wires now: the leads it kept and did not take are free
         for n in std::mem::take(&mut grid.kept_by[i]) {
