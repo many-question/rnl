@@ -1885,6 +1885,9 @@ impl Map {
             }
             self.nodes += 1;
             crate::profile::add("resolve_nodes", 1);
+            if self.nodes % SEED_NODES_PER_READ == 0 {
+                crate::profile::checkpoint();
+            }
         }
         for &(c, want) in &fresh {
             if let State::Unit(j) = self.state(self.clause(c, want), want) {
@@ -1901,6 +1904,9 @@ impl Map {
             }
             self.nodes += 1;
             crate::profile::add("resolve_nodes", 1);
+            if self.nodes % SEED_NODES_PER_READ == 0 {
+                crate::profile::checkpoint();
+            }
             if self.nodes % SEED_NODES_PER_READ == 0 && limits.out_of_time() {
                 return Seed::Stopped;
             }
