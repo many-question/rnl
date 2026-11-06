@@ -1,3 +1,4 @@
+import "./local-key.js"; // (first: on the local program's page, the key goes with every request below; elsewhere it does nothing)
 import { append, m, setAttr, setText } from "../i18n.js";
 // The web shell: the page in a browser, served with the core next to it as core/ (apps/web). It opens
 // files the user chooses or drops, a folder, or a URL; reads only the files a document needs, as
@@ -1050,7 +1051,8 @@ export default {
       solving = own;
       try {
         const response = await fetch(new URL("rnl-solver/solve", location.href), { method: "POST", signal: own.signal,
-          headers: { "Content-Type": "application/json" },
+          // (X-RNL: the local program, which serves the page to one browser, asks for it of every request that does anything)
+          headers: { "Content-Type": "application/json", "X-RNL": "1" },
           body: JSON.stringify({ entry: request.entry, files, pool: request.pool, options: settings?.options || "" }) });
         const answer = await response.json().catch(() => ({ error: `the solver service answered ${response.status}` }));
         if (!response.ok) throw answer.error || `the solver service answered ${response.status}`;
