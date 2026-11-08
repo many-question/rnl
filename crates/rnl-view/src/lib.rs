@@ -19,7 +19,7 @@ mod snapshot;
 mod types;
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use rnl_runtime::diag::Sink;
 use rnl_runtime::host::format::Reading;
@@ -76,6 +76,20 @@ pub fn bundled() -> MemoryProvider {
         }
     }
     p
+}
+
+/// The bundled package files of a draft series, by their paths in [`bundled`], such as
+/// `<bundled>/0.4/rnl-std.rnl`: those written in a language version newer than the tool's default
+/// (16.1), whose standard is not released yet. A frontend that lists the bundled packages, as the
+/// desktop viewer does, leaves them out, as the web viewer's library does; the core reads them all
+/// the same, so a file of that version uses them (16.3).
+pub fn bundled_drafts() -> BTreeSet<String> {
+    let key = rnl_runtime::interp::catalog::version_key;
+    let draft = |text: &str| {
+        let language = rnl_runtime::interp::unit::scan_language_decl(text);
+        language.is_some_and(|l| key(&l) > key(rnl_runtime::interp::unit::DEFAULT_VERSION))
+    };
+    bundled().files.into_iter().filter(|(_, text)| draft(text)).map(|(path, _)| path).collect()
 }
 
 /// How to build a Document, and what to give of each level's drawing.
@@ -791,8 +805,8 @@ R1 p q 1k
 
     #[test]
     fn the_bundled_packages_are_by_version() {
-        // the series 0.2 and the series 0.3, each with its Chinese aliases in its own directory, and
-        // Analog Canvas's package in one of its own
+        // each series of libraries/standard with its Chinese aliases in a directory of its own, by
+        // version: 0.2, 0.3 and the draft 0.4
         let names: Vec<&str> = BUNDLED.iter().map(|(path, _)| *path).collect();
         let series = |v: &str| names.iter().filter(|n| n.starts_with(&format!("{v}/"))).count();
         assert_eq!(
@@ -809,19 +823,51 @@ R1 p q 1k
                 "0.2/rnl-zh.rnl",
             ]
         );
-        // the series 0.3: the packages of 16.3 of the language 0.3, and rnl-zh 0.3
-        assert_eq!(series("0.3"), 16);
-        for name in
-            ["rnl-std", "rnl-std-core", "rnl-std-basic", "rnl-std-spice", "rnl-std-spectre", "rnl-std-full", "rnl-zh"]
-        {
-            assert!(names.contains(&format!("0.3/{name}.rnl").as_str()), "{name}");
+        let mut dirs: Vec<&str> = Vec::new();
+        for name in &names {
+            let dir = name.split('/').next().unwrap();
+            if !dirs.contains(&dir) {
+                dirs.push(dir);
+            }
         }
-        assert!(names.iter().all(|name| name.starts_with("0.2/") || name.starts_with("0.3/")));
-        assert_eq!(names.len(), 9 + 16);
+        assert_eq!(dirs[..3], ["0.2", "0.3", "0.4"]);
+        let key = rnl_runtime::interp::catalog::version_key;
+        assert!(dirs.windows(2).all(|d| key(d[0]) < key(d[1])), "{dirs:?}");
+        // from 0.3 on, each series has the packages of 16.3 of the language 0.3, and its rnl-zh
+        assert_eq!(series("0.3"), 16);
+        for dir in &dirs[1..] {
+            for name in [
+                "rnl-std",
+                "rnl-std-core",
+                "rnl-std-basic",
+                "rnl-std-spice",
+                "rnl-std-spectre",
+                "rnl-std-full",
+                "rnl-zh",
+            ] {
+                assert!(names.contains(&format!("{dir}/{name}.rnl").as_str()), "{dir}/{name}");
+            }
+        }
+        assert_eq!(names.len(), 9 + dirs[1..].iter().map(|d| series(d)).sum::<usize>());
         let p = bundled();
-        let dirs = ["0.2", "0.3"].map(|d| format!("{BUNDLED_DIR}/{d}"));
+        let dirs: Vec<String> = dirs.iter().map(|d| format!("{BUNDLED_DIR}/{d}")).collect();
         assert_eq!(p.package_dirs, dirs);
         assert_eq!(p.package_files().len(), names.len());
+    }
+
+    #[test]
+    fn the_bundled_drafts_are_the_series_newer_than_the_default() {
+        // a series is written in the language version of its directory's name (16.1, 16.3)
+        let key = rnl_runtime::interp::catalog::version_key;
+        let default = key(rnl_runtime::interp::unit::DEFAULT_VERSION);
+        let newer: BTreeSet<String> = BUNDLED
+            .iter()
+            .filter(|(path, _)| key(path.split('/').next().unwrap()) > default)
+            .map(|(path, _)| format!("{BUNDLED_DIR}/{path}"))
+            .collect();
+        assert_eq!(bundled_drafts(), newer);
+        // the files of a draft are still bundled, for the core to read
+        assert!(newer.iter().all(|path| bundled().files.contains_key(path)));
     }
 
     #[test]
@@ -865,8 +911,13 @@ R1 p q 1k
         let r = interpret("untitled-1", None, &files, &Options::default()).unwrap();
         assert!(r.diagnostics().iter().all(|d| d.severity != Severity::Error), "{:?}", r.diagnostics());
         assert_eq!(r.model.levels[0].items.iter().filter(|i| !i.host.is_empty()).count(), 2);
+        let drafts = bundled_drafts();
         for (path, _) in BUNDLED {
-            // Every bundled standard package reads without diagnostics.
+            // Every bundled standard package reads without diagnostics, but those of a draft series,
+            // which the rnl command's conformance tests check against what is not read yet.
+            if drafts.contains(&format!("{BUNDLED_DIR}/{path}")) {
+                continue;
+            }
             let options = Options::default();
             let package = interpret(&format!("{BUNDLED_DIR}/{path}"), None, &MemoryProvider::new(), &options);
             let package = package.unwrap();
