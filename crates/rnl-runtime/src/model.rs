@@ -55,6 +55,8 @@ pub struct SymbolPrim {
     pub order: usize,
     /// Original fixed text, before substituting an instance's parameters.
     pub text: Option<String>,
+    /// Read the name formats of 0.4 in a preview of this text (13.6).
+    pub text_name_formats: bool,
     pub shape: Shape,
     pub points: Vec<Pt>,
     pub params: PrimParams,
@@ -69,6 +71,8 @@ pub struct SymbolPrim {
 pub struct PinView {
     pub pos: Pt,
     pub label: Option<String>,
+    /// Read `\subrest` and `\subdigits` in the label (13.6); false for files before 0.4.
+    pub label_name_formats: bool,
     /// Exit direction in degrees: 0 right, 90 up, 180 left, 270 down.
     pub dir: Option<u16>,
     pub terminals: Vec<String>,
@@ -123,6 +127,8 @@ pub struct SymbolView {
 pub struct SymbolLabel {
     pub key: Option<String>,
     pub text: String,
+    /// The template's source file reads the name formats of 0.4 (13.6).
+    pub text_name_formats: bool,
     pub at: Option<Pt>,
     pub halign: Option<String>,
     pub valign: Option<String>,
