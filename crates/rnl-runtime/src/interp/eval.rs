@@ -705,6 +705,7 @@ impl<'p> Interp<'p> {
             scope_in: rec.is_some_and(|r| self.units[u].scope_places.contains_key(&r)),
             stmt: Some(StmtSpan { rec, start: m.start, end: m.end }),
             segments: Rc::new([]),
+            modifier_input: Default::default(),
         };
         let (r, bound) = self.eval_member(m, &ctx);
         self.in_progress.remove(&skey);
@@ -822,6 +823,8 @@ impl<'p> Interp<'p> {
             return Err(Stop::OwnLevel);
         }
         let kw0 = seg.call.as_ref().map(|c| self.kw(&c.kw, ctx.unit));
+        let keeps_input = kw0.as_ref().is_some_and(|kw| self.modifier_keeps_input(kw, ctx));
+        let mut input_error = None;
         for a in &seg.args {
             if let Some(k) = &kw0 {
                 if matches!(k.as_str(), "DEFINE-SYMBOL" | "DEFINE-STYLE" | "DEFINE" | "USE-PACKAGE") {
@@ -837,7 +840,16 @@ impl<'p> Interp<'p> {
                     continue;
                 }
             }
-            let (obj, sel) = self.eval_obj(&a.obj, ctx)?;
+            let (obj, sel) = match self.eval_obj(&a.obj, ctx) {
+                Ok(value) => value,
+                Err(Stop::Fail(diagnostic)) if keeps_input => {
+                    // Keep evaluating independent inputs once. A failed source or definition
+                    // does not invalidate a modifier's existing target (5.5, 6.6).
+                    input_error.get_or_insert(Stop::Fail(diagnostic));
+                    (self.new_obj(ObjData::Failed(diagnostic)), false)
+                }
+                Err(error) => return Err(error),
+            };
             args.push(ArgV {
                 obj,
                 role: a.role.clone(),
@@ -857,9 +869,22 @@ impl<'p> Interp<'p> {
             return Ok((NOTHING, false));
         };
         let kw = self.kw(&call.kw, ctx.unit);
+        self.check_segment_keyword(&kw, call, ctx)?;
+        if kw == "USE-PACKAGE" {
+            return Ok((NOTHING, false));
+        }
+        if keeps_input {
+            self.keyword_with_recovery(&kw, args, seg, ctx, member, input_error)
+        } else {
+            self.keyword(&kw, args, seg, ctx, member)
+        }
+    }
+
+    // Keep diagnostic formatting out of the recursive evaluation frame.
+    fn check_segment_keyword(&mut self, kw: &str, call: &crate::syntax::Call, ctx: &Ctx) -> R<()> {
         // a keyword is one of the version of the file it is written in (16.1)
         let version = self.version_of(Some(self.source_unit(ctx)));
-        if !words().is_keyword_in(&kw, &version) {
+        if !words().is_keyword_in(kw, &version) {
             let written = call.kw.clone();
             let fu = self.file_unit(ctx.unit);
             let mut known: Vec<String> = words().keywords_in(&version).map(|k| k.name.clone()).collect();
@@ -876,7 +901,7 @@ impl<'p> Interp<'p> {
                 }
             }
             // a keyword that a later version adds
-            if let Some(since) = words().keyword(&kw).and_then(|k| k.since.clone()) {
+            if let Some(since) = words().keyword(kw).and_then(|k| k.since.clone()) {
                 if crate::interp::unit::version_key(&since) > crate::interp::unit::version_key(&version) {
                     let msg = format!("unknown keyword @{written}: the language {since} adds it, and this file is of {version} (16.1)");
                     return self.fail(ctx, codes::KEYWORD_UNKNOWN, msg, call.start);
@@ -895,9 +920,9 @@ impl<'p> Interp<'p> {
                     call.start,
                 );
             }
-            let close = closest(&kw, words().keywords_in(&version).map(|k| k.name.as_str()));
+            let close = closest(kw, words().keywords_in(&version).map(|k| k.name.as_str()));
             let mut msg = format!("unknown keyword @{written}");
-            if let Some(r) = words().removed_in(&kw, &version).next() {
+            if let Some(r) = words().removed_in(kw, &version).next() {
                 let msg = format!("unknown keyword @{written}: a file of {version} no longer has it, the last version with it is {} ({})", r.until, r.see);
                 return self.fail(ctx, codes::KEYWORD_UNKNOWN, msg, call.start);
             }
@@ -910,9 +935,9 @@ impl<'p> Interp<'p> {
             msg.push_str(" (16.4)");
             return self.fail(ctx, codes::KEYWORD_UNKNOWN, msg, call.start);
         }
-        if matches!(kw.as_str(), "VERSION" | "PACKAGE" | "ALIAS" | "DEVICE" | "USE-ALIASES" | "USE-PACKAGE") {
+        if matches!(kw, "VERSION" | "PACKAGE" | "ALIAS" | "DEVICE" | "USE-ALIASES" | "USE-PACKAGE") {
             if kw == "USE-PACKAGE" {
-                return Ok((NOTHING, false)); // handled when reading (16.2)
+                return Ok(()); // handled when reading (16.2)
             }
             return self.fail(
                 ctx,
@@ -921,7 +946,7 @@ impl<'p> Interp<'p> {
                 call.start,
             );
         }
-        self.keyword(&kw, args, seg, ctx, member)
+        Ok(())
     }
 
     // ------------------------------------------------------------------ objects (5.1, 6.x)
@@ -1629,6 +1654,19 @@ impl<'p> Interp<'p> {
 
     /// Map written objects to signature positions: position name -> argument.
     pub(crate) fn map_args(
+        &mut self,
+        kw: &str,
+        args: &[ArgV],
+        seg: &Segment,
+        ctx: &Ctx,
+        positions: &[crate::words::PositionSpec],
+    ) -> R<HashMap<String, ArgV>> {
+        let mapped = self.map_args_inner(kw, args, seg, ctx, positions)?;
+        self.remember_modifier_input(kw, &mapped, ctx);
+        Ok(mapped)
+    }
+
+    fn map_args_inner(
         &mut self,
         kw: &str,
         args: &[ArgV],

@@ -1,6 +1,6 @@
 //! The context a statement is evaluated in, and the frame of a definition body being expanded.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -118,6 +118,8 @@ pub struct Ctx {
     pub stmt: Option<StmtSpan>,
     /// The segments of the pipes being evaluated, for the order of resolution (8.5).
     pub segments: Segments,
+    /// The input retained by this segment, once its signature slots are matched (5.5).
+    pub modifier_input: Cell<Option<(ObjId, bool)>>,
 }
 
 impl Ctx {
@@ -155,6 +157,7 @@ impl Ctx {
     pub fn in_segment(&self, k: usize) -> Ctx {
         let mut c = self.clone();
         c.segments = self.segments.iter().copied().chain([(self.pos.len(), k)]).collect();
+        c.modifier_input = Cell::default();
         c
     }
 
