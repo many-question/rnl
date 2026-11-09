@@ -16,6 +16,7 @@ pub mod eval;
 mod export;
 mod islands;
 pub mod kw;
+mod modifier_handles;
 mod numbers;
 pub mod obj;
 mod output;

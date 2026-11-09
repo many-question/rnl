@@ -58,7 +58,15 @@ fn explicit_and_unnamed_references_separate_0_4_from_older_languages() {
                 } else {
                     assert_eq!(e.iter().filter(|(c, _)| *c == codes::PACKAGE_LANGUAGE_MISMATCH).count(), 1, "{e:?}");
                     assert!(e.iter().any(|(_, m)| m.contains("MARK") && m.contains("cannot be found")), "{e:?}");
-                    assert!(r.model.levels[0].items.is_empty());
+                    assert!(labels(&r, "t.sp").is_empty());
+                    if reader == "0.4" {
+                        // SET-SYMBOL fails, but still passes R1 to the independent PLACE (5.5).
+                        assert_eq!(r.model.levels[0].items.len(), 1);
+                        assert_eq!(r.model.levels[0].items[0].id, "#R1");
+                        assert_eq!(r.model.levels[0].items[0].at, (0.0, 0.0));
+                    } else {
+                        assert!(r.model.levels[0].items.is_empty());
+                    }
                 }
             }
         }
