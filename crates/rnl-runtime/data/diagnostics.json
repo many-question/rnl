@@ -2450,6 +2450,16 @@
    ]
   },
   {
+   "number": "RNL3416",
+   "name": "define-body-block-symbol",
+   "severity": "error",
+   "message": "a definition body cannot set the block symbol of its level (6.9, 9.2.6)",
+   "sections": [
+    "6.9",
+    "9.2.6"
+   ]
+  },
+  {
    "number": "RNL3500",
    "name": "role-labels-mixed",
    "severity": "error",

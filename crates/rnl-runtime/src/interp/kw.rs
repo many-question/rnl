@@ -201,7 +201,7 @@ impl Interp<'_> {
                 }
                 let Some(s) = ctx.scene else {
                     if self.is_lazy(obj) {
-                        self.rules.insert(ctx.member_key.clone());
+                        self.note_rule(ctx);
                         return Ok((obj, true));
                     }
                     return self.scene_only(ctx, seg.start);
@@ -718,6 +718,9 @@ impl Interp<'_> {
                 }
                 names.push(b.name.clone());
             }
+            if self.follows_0_4(self.source_unit(ctx)) {
+                self.check_body_level_symbols(m, ctx);
+            }
             let mut refs = Vec::new();
             crate::syntax::walk_refs(m, &mut refs);
             for r in refs {
@@ -734,7 +737,9 @@ impl Interp<'_> {
                             self.body_errors.insert(super::eval::ptr(r), diag);
                             self.note_failed_at(ctx.rec, r.start, false);
                         }
-                        if r.prefix == '#' || r.prefix == '&' {
+                        if (r.prefix == '#' || r.prefix == '&')
+                            && !(self.follows_0_4(self.source_unit(ctx)) && r.is_bare_level())
+                        {
                             self.err(ctx, codes::DEFINE_BODY_HOST_REF, "the body of an ordinary definition cannot reference host objects; they come in through roles (6.9)", r.start);
                             self.note_failed_at(ctx.rec, r.start, false);
                         }
@@ -1070,7 +1075,7 @@ impl Interp<'_> {
                 }
             };
             if ctx.scene.is_none() {
-                self.rules.insert(ctx.member_key.clone());
+                self.note_rule(ctx);
                 return Ok((gen, true));
             }
             let lazy = rname.as_ref().map(|role| app.filled.iter().find(|(n, _)| n == role).unwrap().1.obj);
@@ -1353,7 +1358,10 @@ impl Interp<'_> {
     pub(crate) fn definition_member(&mut self, m: &Rc<Member>, k: usize, ctx: &Ctx) -> R<ObjId> {
         let fr = ctx.frame.clone().unwrap();
         let usage = fr.borrow().usage.unwrap();
-        let key = (super::eval::ptr(&**m), usage);
+        let definition = fr.borrow().definition.unwrap();
+        let data = self.def(definition);
+        let modern = self.follows_0_4(data.rec.map_or(data.def_unit, |rec| self.rec_unit[rec]));
+        let key = (super::eval::ptr(&**m), usage, if modern { ctx.scene } else { None });
         if let Some(v) = self.tm_memo.get(&key) {
             return Ok(*v);
         }
@@ -1371,6 +1379,7 @@ impl Interp<'_> {
         sub.stmt = Some(StmtSpan { rec: d.rec, start: m.start, end: m.end });
         sub.recursive_selection = false;
         sub.written_selection = false;
+        sub.body_scene = self.usage(usage).site.as_ref().and_then(|site| site.scene);
         sub.pos = pos_plus(&ctx.pos, "b", k as i64);
         sub.origin = if origin.is_empty() { ctx.origin.clone() } else { origin };
         sub.nested = None;
@@ -1378,9 +1387,21 @@ impl Interp<'_> {
         sub.def_unit = Some(d.def_unit);
         let (r, bound) = self.eval_member(m, &sub);
         self.tm_in_progress.remove(&key);
+        self.remember_body_rule(m, k, ctx);
         let val = match r {
             Ok(v) => v,
             Err(Stop::Fail(dg)) => self.new_obj(ObjData::Failed(dg)),
+            Err(Stop::LocalRef) if modern && sub.body_scene != ctx.scene => {
+                if self.generation_rule(m, sub.unit) {
+                    self.warn(
+                        &sub,
+                        codes::RULE_USES_OWN_LEVEL_OBJECTS,
+                        "this rule uses objects of the level it is written in, so it takes effect only there (10.5)",
+                        m.text_start(),
+                    );
+                }
+                return Err(Stop::LocalRef);
+            }
             Err(Stop::LocalRef) | Err(Stop::OwnLevel) => self.new_obj(ObjData::Failed(None)),
             Err(Stop::NoCircuit) => return Err(Stop::NoCircuit),
         };
@@ -1392,6 +1413,9 @@ impl Interp<'_> {
             fr.borrow_mut().set_local(&b.name, v);
             if let Some((_, _, dependencies)) = binding {
                 fr.borrow_mut().local_dependencies.insert(b.name.clone(), dependencies.clone());
+            }
+            if modern && sub.body_scene != ctx.scene {
+                continue;
             }
             let u = self.usage_mut(usage);
             if let Some(e) = u.locals.iter_mut().find(|(n, _)| *n == b.name) {
@@ -1471,6 +1495,7 @@ impl Interp<'_> {
             selected: false,
             recursive_selection: false,
             written_selection: false,
+            body_scene: None,
             defining: Some(defining),
             def_unit: Some(ctx.def_unit.unwrap_or(ctx.unit)),
             scope_in: false,
@@ -1921,7 +1946,7 @@ impl Interp<'_> {
         }
         if self.is_lazy(att.obj) {
             if ctx.scene.is_none() {
-                self.rules.insert(ctx.member_key.clone());
+                self.note_rule(ctx);
                 return Ok((NOTHING, true));
             }
             let c = Rc::new(ctx.clone());
@@ -2046,7 +2071,7 @@ impl Interp<'_> {
             matches!(op, TargetOp::Symbol { .. }) && self.is_set(a.obj) && self.follows_0_4(self.source_unit(ctx));
         if self.is_lazy(a.obj) || symbol_set {
             if ctx.scene.is_none() {
-                self.rules.insert(ctx.member_key.clone());
+                self.note_rule(ctx);
                 return Ok((a.obj, true));
             }
             let c = Rc::new(ctx.clone());
@@ -2273,6 +2298,23 @@ impl Interp<'_> {
         seg: &Segment,
         ctx: &Ctx,
     ) -> R<ObjId> {
+        if self.follows_0_4(self.source_unit(ctx)) && ctx.frame_kind() == Some(FrameKind::Definition) {
+            let call = seg.call.as_ref().unwrap();
+            let diagnostic = match self.body_errors.get(&super::eval::ptr(call)) {
+                Some(diagnostic) => *diagnostic,
+                None => {
+                    let diagnostic = self.err(
+                        ctx,
+                        codes::DEFINE_BODY_BLOCK_SYMBOL,
+                        "a definition body cannot set the block symbol of its level (6.9, 9.2.6)",
+                        call.start,
+                    );
+                    self.body_errors.insert(super::eval::ptr(call), diagnostic);
+                    diagnostic
+                }
+            };
+            return Err(Stop::Fail(Some(diagnostic)));
+        }
         let u = ctx.unit;
         let level = self.units[u].level.filter(|_| self.units[u].kind == super::unit::UnitKind::Level);
         match level {
@@ -2337,7 +2379,7 @@ impl Interp<'_> {
         // a set from a package, edited level by level, is evaluated per level like a selection (10.3)
         let per_level = self.is_lazy(items) || (self.is_set(items) && !self.scene_bound(items));
         if per_level {
-            self.rules.insert(ctx.member_key.clone());
+            self.note_rule(ctx);
         }
         if ctx.scene.is_none() && !per_level {
             return self.scene_only(ctx, seg.start);
@@ -2415,7 +2457,7 @@ impl Interp<'_> {
             );
         }
         // a rule even where it fails for closing a cycle of sets (5.2.2), which it may not do below
-        self.rules.insert(ctx.member_key.clone());
+        self.note_rule(ctx);
         self.check_closing(ctx, seg.start)?;
         let key = ("sel", ptr_seg(seg), self.frame_key(ctx), if scope == LEVEL { 0 } else { scope.0 as usize + 1 });
         if let Some(&s) = self.node_memo.get(&key) {
@@ -2455,7 +2497,7 @@ impl Interp<'_> {
         let pts_a = mapped["points"].clone();
         let Some(s) = ctx.scene else {
             if self.is_lazy(nets_a.obj) || self.is_lazy(pts_a.obj) {
-                self.rules.insert(ctx.member_key.clone());
+                self.note_rule(ctx);
                 return Ok((NOTHING, true));
             }
             return self.scene_only(ctx, seg.start);
@@ -2698,7 +2740,7 @@ impl Interp<'_> {
         let lazy = arglist.iter().any(|a| self.is_lazy(*a));
         let Some(s) = ctx.scene else {
             if lazy {
-                self.rules.insert(ctx.member_key.clone());
+                self.note_rule(ctx);
                 return Ok((NOTHING, true));
             }
             return self.scene_only(ctx, seg.start);
@@ -2731,7 +2773,7 @@ impl Interp<'_> {
         let id = self.new_obj(ObjData::Constraint(Box::new(c)));
         self.scene_add_constraint(s, id, ctx.pos.clone(), ctx);
         if lazy {
-            self.rules.insert(ctx.member_key.clone());
+            self.note_rule(ctx);
         }
         Ok((id, false))
     }

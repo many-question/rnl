@@ -739,6 +739,7 @@ impl<'p> Interp<'p> {
             selected: false,
             recursive_selection: false,
             written_selection: false,
+            body_scene: None,
             defining: None,
             def_unit: None,
             scope_in: rec.is_some_and(|r| self.units[u].scope_places.contains_key(&r)),
@@ -813,6 +814,18 @@ impl<'p> Interp<'p> {
                         val = self.new_obj(ObjData::Failed(d));
                         sel = false;
                     }
+                }
+                Err(Stop::LocalRef)
+                    if self.follows_0_4(self.source_unit(ctx))
+                        && ctx.body_scene.is_some()
+                        && (seg.call.as_ref().or_else(|| {
+                            m.segments.get(k + 1).filter(|next| next.piped).and_then(|next| next.call.as_ref())
+                        }))
+                        .is_some_and(|call| self.kw(&call.kw, ctx.unit).starts_with("SELECT-")) =>
+                {
+                    // A role of this usage can be a selection scope too. It is empty in
+                    // another level, rather than a foreign role of a generation (10.3).
+                    return (Err(Stop::OwnLevel), bound);
                 }
                 Err(other) => return (Err(other), bound),
             }
@@ -1156,6 +1169,9 @@ impl<'p> Interp<'p> {
                     let (obj, _sel) = match self.eval_obj(&a.obj, &arg_ctx) {
                         Ok(v) => v,
                         Err(Stop::Fail(d)) => (self.new_obj(ObjData::Failed(d)), false),
+                        Err(Stop::LocalRef) if self.follows_0_4(self.source_unit(ctx)) && ctx.body_scene.is_some() => {
+                            continue
+                        }
                         Err(o) => return Err(o),
                     };
                     lazy = lazy || self.is_lazy(obj);
@@ -1167,6 +1183,7 @@ impl<'p> Interp<'p> {
             let obj = match self.nested_member(m, &sub, &nested) {
                 Ok(v) => v,
                 Err(Stop::Fail(d)) => self.new_obj(ObjData::Failed(d)),
+                Err(Stop::OwnLevel) if self.follows_0_4(self.source_unit(ctx)) && ctx.body_scene.is_some() => continue,
                 Err(o) => return Err(o),
             };
             lazy = lazy || self.is_lazy(obj);
@@ -1292,6 +1309,9 @@ impl<'p> Interp<'p> {
             }
             sel = self.is_lazy(obj);
         }
+        if self.foreign_body_object(obj, ctx) {
+            return Err(Stop::LocalRef);
+        }
         if let Some(places) = &e.places {
             obj = self.member_places(obj, places, e.start, ctx)?;
             sel = false;
@@ -1360,6 +1380,12 @@ impl<'p> Interp<'p> {
     }
 
     fn resolve_host(&mut self, e: &Ref, ctx: &Ctx) -> R<ObjId> {
+        if self.follows_0_4(self.source_unit(ctx))
+            && ctx.frame_kind() == Some(FrameKind::Definition)
+            && e.is_bare_level()
+        {
+            return Ok(LEVEL);
+        }
         if matches!(ctx.frame_kind(), Some(FrameKind::Definition) | Some(FrameKind::Symbol)) {
             return self.fail(
                 ctx,
@@ -2391,7 +2417,7 @@ impl<'p> Interp<'p> {
 
     /// A statement whose input is a selection: evaluated at its phase (8.2, 10.4).
     pub(crate) fn defer(&mut self, ctx: &Ctx, phase: usize, task: super::scene::Task) -> R<()> {
-        self.rules.insert(ctx.member_key.clone());
+        self.note_rule(ctx);
         if ctx.frame_generated() {
             return self.fail(
                 ctx,

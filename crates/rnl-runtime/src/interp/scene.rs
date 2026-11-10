@@ -1279,6 +1279,9 @@ impl Interp<'_> {
             return vec![InputMember::plain(self.scenes[s].levelobj)];
         }
         if !self.is_set(obj) {
+            if ctx.is_some_and(|ctx| self.foreign_body_object(obj, ctx)) {
+                return Vec::new();
+            }
             return vec![InputMember::plain(obj)];
         }
         if self.set(obj).reach_site.as_ref().is_some_and(|site| self.follows_0_4(self.source_unit(site))) {
@@ -1289,7 +1292,11 @@ impl Interp<'_> {
         }
         let key = (obj, phase);
         if let Some(v) = self.scenes[s].items_cache.get(&key) {
-            return v.clone();
+            return v
+                .iter()
+                .filter(|member| !ctx.is_some_and(|ctx| self.foreign_body_object(member.object, ctx)))
+                .cloned()
+                .collect();
         }
         if self.scenes[s].busy.contains(&key) {
             // the statement that would close a cycle of sets in a level fails (5.2.2), so a set
@@ -1372,13 +1379,16 @@ impl Interp<'_> {
                 base.retain(|x| !ids.contains(&self.written_input(x.object)));
             }
         }
-        let base: Vec<InputMember> = base.into_iter().filter(|x| self.belongs(s, x.object)).collect();
+        let base: Vec<InputMember> = base
+            .into_iter()
+            .filter(|x| self.belongs(s, x.object) && !ctx.is_some_and(|ctx| self.foreign_body_object(x.object, ctx)))
+            .collect();
         self.scenes[s].busy.remove(&key);
         self.scenes[s].items_cache.insert(key, base.clone());
         base
     }
 
-    fn belongs(&self, s: SceneId, x: ObjId) -> bool {
+    pub(super) fn belongs(&self, s: SceneId, x: ObjId) -> bool {
         match self.o(x) {
             ObjData::Inst { scene, .. } | ObjData::Net { scene, .. } => *scene == s,
             ObjData::Term { owner, .. } => match self.o(*owner) {

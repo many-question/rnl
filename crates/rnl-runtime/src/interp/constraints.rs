@@ -172,7 +172,7 @@ impl Interp<'_> {
             }
             self.pending_constraints
                 .insert(result, Pending { template, args: args.to_vec(), segment: segment.clone(), scene: s, key });
-            self.rules.insert(ctx.member_key.clone());
+            self.note_rule(ctx);
             return Ok((result, false));
         }
         let expansion = self.expand_constraint_call(&template, args, segment, ctx, 3)?;
