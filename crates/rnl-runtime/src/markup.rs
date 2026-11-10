@@ -201,6 +201,24 @@ impl P<'_> {
                             continue;
                         }
                     }
+                    if self.name_formats && cmd == "frac" {
+                        if let Some([num, den]) = fraction_groups(t, j) {
+                            self.emit(&mut buf, style);
+                            let group = |(start, end)| {
+                                let mut inner =
+                                    P { t: &t[start + 1..end], lines: vec![Vec::new()], name_formats: true };
+                                inner.parse(0, style, false);
+                                inner.lines.into_iter().flatten().collect()
+                            };
+                            self.lines.last_mut().unwrap().push(Run::Frac { num: group(num), den: group(den), style });
+                            i = den.1 + 1;
+                        } else {
+                            let end = fraction_literal_end(t, j);
+                            buf.extend(t[i..end].iter().copied().filter(|c| *c != LITERAL));
+                            i = end;
+                        }
+                        continue;
+                    }
                     if cmd == "frac" && t.get(j) == Some(&'{') {
                         // \frac{numerator}{denominator}: one run holding both parts
                         self.emit(&mut buf, style);
@@ -279,6 +297,24 @@ fn name_group(t: &[char], mut i: usize) -> Option<(usize, usize)> {
         i += 1;
     }
     None
+}
+
+fn fraction_groups(t: &[char], after_name: usize) -> Option<[(usize, usize); 2]> {
+    let first = name_group(t, after_name)?;
+    let second = name_group(t, first.1 + 1)?;
+    Some([first, second])
+}
+
+/// Keep the malformed command and any argument it did receive literal. An unfinished
+/// argument consumes the remaining text, as an unbalanced formula does.
+fn fraction_literal_end(t: &[char], after_name: usize) -> usize {
+    let end = name_group(t, after_name).map_or(after_name, |(_, end)| end + 1);
+    let next = (end..t.len()).find(|&i| !matches!(t[i], ' ' | '\t')).unwrap_or(end);
+    if t.get(next) == Some(&'{') {
+        t.len()
+    } else {
+        end
+    }
 }
 
 /// Split the displayed characters, retaining every other style and never reparsing literal text.
@@ -443,6 +479,14 @@ pub fn problems_with_name_formats(text: &str, name_formats: bool) -> Vec<(Code, 
                 if !known(&cmd, name_formats) || (name_formats && name_format(&cmd) && name_group(&t, j).is_none()) {
                     out.push((codes::MARKUP_UNKNOWN_COMMAND, format!("unknown markup \\{cmd} is shown as written")));
                 } else if cmd == "frac" {
+                    if name_formats && fraction_groups(&t, j).is_none() {
+                        out.push((
+                            codes::MARKUP_FRAC_BRACES,
+                            "\\frac needs two complete groups in braces; it is shown as written".into(),
+                        ));
+                        i = fraction_literal_end(&t, j);
+                        continue;
+                    }
                     let mut k = j;
                     while k < t.len() && t[k].is_whitespace() {
                         k += 1;

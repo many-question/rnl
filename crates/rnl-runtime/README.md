@@ -209,3 +209,23 @@ boundaries until file versions are known, so includes inherit the right version 
 when an include precedes its parent's header. Two readings of one physical file may
 use different inherited versions. Released versions retain their original boundaries
 and diagnostics. Packages apply the same rule using their own declared version.
+
+Draft 0.4 validates every entry in a role's kind list as a string (9.4).
+A number, truth value or nested array makes that definition fail instead of being
+silently dropped; the diagnostic names the role and the list position. Other
+definitions and record members continue. The definition's source file determines
+the rule, including across mixed-version includes; released versions keep their behavior.
+
+Draft 0.4 checks repeated bindings in packages and included files without a circuit,
+as well as in drawing levels (6.6). A repeated binding to the same object is allowed;
+a failed value does not add a duplicate-name error. Definition-scoped aliases are
+checked against already evaluated definitions even if those definitions are never
+applied (16.5), including imported and shadowing definitions. This check does not
+evaluate missing definitions or validate unused original names, and aliases remain
+local to the declaring file. Released versions keep their original diagnostics.
+
+Draft 0.4 text fractions require two complete braced groups (13.6). A missing
+group produces a warning and keeps the malformed command visible as written;
+other text remains valid. Complete groups accept whitespace after the command,
+nested fractions and opaque attribute values. Formula-mode validation remains
+separate, and released text keeps its original rendering and diagnostics.

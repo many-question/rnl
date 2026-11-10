@@ -603,7 +603,23 @@ impl Interp<'_> {
                     Lit::Str(s) => (s.as_str().to_string(), None),
                     Lit::Arr(v) if v.len() == 2 && matches!(v[0], Lit::Str(_)) => {
                         let kinds: Vec<String> = match &v[1] {
-                            Lit::Arr(ks) => ks.iter().filter_map(|k| k.str().map(String::from)).collect(),
+                            Lit::Arr(ks) => {
+                                if self.follows_0_4(self.source_unit(ctx)) {
+                                    if let Some(index) = ks.iter().position(|k| k.str().is_none()) {
+                                        return self.fail(
+                                            ctx,
+                                            codes::DEFINE_ROLE_MALFORMED,
+                                            format!(
+                                                "role {} kind list item {} is not a string (9.4)",
+                                                v[0].str().unwrap(),
+                                                index + 1
+                                            ),
+                                            at,
+                                        );
+                                    }
+                                }
+                                ks.iter().filter_map(|k| k.str().map(String::from)).collect()
+                            }
                             Lit::Str(k) => vec![k.as_str().to_string()],
                             _ => {
                                 return self.fail(
