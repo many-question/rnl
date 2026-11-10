@@ -452,6 +452,57 @@ fn a_symbol_binding_a_converted_point_role_is_not_drawn_in_the_selection_snapsho
     "#
         ),
     );
-    assert!(r.diagnostics().iter().any(|d| d.message.contains("symbol assignment fails")), "{:?}", r.diagnostics());
+    assert!(
+        r.diagnostics()
+            .iter()
+            .any(|d| d.message.contains("filled with the position of") && d.message.contains("(point)")),
+        "{:?}",
+        r.diagnostics()
+    );
     assert_eq!(count(&r), 0);
+}
+
+#[test]
+fn a_role_member_does_not_take_the_scope_step_of_a_later_direct_occurrence() {
+    for (filler, keyword, expected) in [
+        ("#R1", "SELECT-TERMINAL", vec![1, 1, 0, 0]),
+        ("#R1:1", "SELECT-INSTANCE", vec![1, 0]),
+        ("#R1", "SELECT-PIN", vec![1, 1, 1, 1, 0, 0, 0, 0]),
+    ] {
+        let r = selected(
+            &format!("{SYMBOL}; #R2 @SET-SYMBOL $S; $D = @DEFINE(roles=[\"x\"]) {{}}; %u = {filler} @AS $D"),
+            &format!("{{%u #R2 #R1}} @{keyword}"),
+        );
+        let owners: Vec<_> = r.problems[0]
+            .usages
+            .iter()
+            .filter(|u| u.definition == "$PROBE")
+            .map(|u| match u.roles[0].members[0] {
+                Filler::Object(object) | Filler::Terminal { object, .. } | Filler::Pin { object, .. } => object,
+                ref other => panic!("unexpected member: {other:?}"),
+            })
+            .collect();
+        assert_eq!(owners, expected, "{keyword}");
+    }
+}
+
+#[test]
+fn a_late_pin_conversion_failure_keeps_the_usage_in_the_generation_snapshot() {
+    let r = read(
+        "0.4",
+        r#"$S = @DEFINE-SYMBOL { (0,0) (1,1) @LINE }; #R1 @SET-SYMBOL $S;
+        $D = @DEFINE(roles=[["x","pin"]]) {};
+        $U = @DEFINE-SYMBOL { (0,0) @PIN(terminal="x") };
+        %u = #R1:1 @AS $D => @SET-SYMBOL $U;
+        $WITNESS = @DEFINE(roles=["x"]) { (0,0) @CIRCLE(radius="bad") };
+        # @SELECT-USAGE(drawn=true) $D => @AS $WITNESS"#,
+    );
+    assert!(r.diagnostics().iter().any(|d| d.message.contains("cannot convert")), "{:?}", r.diagnostics());
+    // The generated body was evaluated before the missing-pin check. Its own error is
+    // retained even though the invalid role later makes both usages fail (8.2).
+    assert!(
+        r.diagnostics().iter().any(|d| d.severity == Severity::Error && d.origin.contains("$WITNESS")),
+        "{:?}",
+        r.diagnostics()
+    );
 }

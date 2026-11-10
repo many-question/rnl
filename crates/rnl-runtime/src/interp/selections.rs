@@ -204,11 +204,9 @@ impl Interp<'_> {
         writer: UnitId,
         phase: usize,
         ctx: Option<&Ctx>,
-        own_pins: bool,
-    ) -> (Vec<ObjId>, HashSet<ObjId>) {
+        keyword: &str,
+    ) -> Vec<ObjId> {
         let mut out = Vec::new();
-        let mut direct = HashSet::new();
-        let mut member = HashSet::new();
         let mut seen = HashSet::new();
         let mut stack: Vec<_> = pool.iter().rev().map(|object| (*object, true)).collect();
         let unit = match role {
@@ -226,10 +224,9 @@ impl Interp<'_> {
                 continue;
             }
             if let ObjData::Usage(usage) = self.o(object).clone() {
-                if top && own_pins && role.is_none() && self.object_drawn(scene, object) {
+                if top && keyword == "SELECT-PIN" && role.is_none() && self.object_drawn(scene, object) {
                     for pin in self.owner_pins(scene, object) {
                         out.push(pin);
-                        direct.insert(pin);
                     }
                     continue;
                 }
@@ -263,16 +260,24 @@ impl Interp<'_> {
                     }
                 }
                 stack.extend(children.into_iter().rev());
-            } else {
-                out.push(object);
-                if top {
-                    direct.insert(object);
-                } else {
-                    member.insert(object);
+            } else if top
+                || match keyword {
+                    "SELECT-INSTANCE" => self.obj_kind(object) == Some("instance"),
+                    "SELECT-TERMINAL" => matches!(self.o(object), ObjData::Term { .. }),
+                    "SELECT-NET" => matches!(self.o(object), ObjData::Net { .. }),
+                    "SELECT-PIN" => self.obj_kind(object) == Some("pin"),
+                    "SELECT-WIRE" => self.obj_kind(object) == Some("wire"),
+                    "SELECT-LABEL" => self.obj_kind(object) == Some("label"),
+                    "SELECT-ANNOTATION" => self.obj_kind(object) == Some("annotation"),
+                    _ => false,
                 }
+            {
+                // Decide for this occurrence: the same object can occur later as a direct
+                // scope, without making this role member take an extra step (10.1, 10.3).
+                out.push(object);
             }
         }
-        (out, member.difference(&direct).copied().collect())
+        out
     }
 
     pub(super) fn selected_pin_terminals(&mut self, scene: SceneId, owner: ObjId, index: usize) -> Vec<ObjId> {

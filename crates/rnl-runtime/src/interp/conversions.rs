@@ -67,6 +67,13 @@ impl Interp<'_> {
             .cloned()
     }
 
+    /// Recognize a point role without performing the checks deferred until after step 7.
+    pub(super) fn role_input_converts_to_point(&self, object: ObjId) -> bool {
+        self.role_inputs.get(&object).is_some_and(|input| {
+            self.conversion_kind(self.scene_value(input.source), &input.kinds).as_deref() == Some("point")
+        })
+    }
+
     pub(crate) fn role_input(
         &mut self,
         object: ObjId,

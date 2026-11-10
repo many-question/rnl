@@ -1451,7 +1451,7 @@ impl Interp<'_> {
         let (pool, via) = match pool {
             Some(p) => {
                 let (p, v) = if self.follows_0_4(writer) {
-                    self.walk_selection_usages(s, &p, role.as_ref(), writer, phase, ctx, keyword == "SELECT-PIN")
+                    (self.walk_selection_usages(s, &p, role.as_ref(), writer, phase, ctx, &keyword), HashSet::new())
                 } else {
                     self.walk_usages(&p, role.as_ref(), writer)
                 };
