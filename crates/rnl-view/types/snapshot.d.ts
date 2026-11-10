@@ -423,6 +423,14 @@ export type Slot<T> = { value: T | null, source: string | null };
 
 export type ObjectView = {
   /**
+   * The owner id of a 0.4 usage's pin attachment; absent without a unique structural host.
+   */
+  pin_of?: string,
+  /**
+   * The enclosing 0.4 usage's id. Follow this chain for inherited pin attachment.
+   */
+  parent?: string,
+  /**
    * Unique in the level: `#M1`, `%gnd1`, or `@file:line:col` where the statement that made an
    * object without a name of its own is, with `#n` after it when it made several.
    */

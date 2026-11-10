@@ -351,6 +351,14 @@ impl<T> Slot<T> {
 #[derive(Serialize, Debug)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ObjectView {
+    /// The owner id of a 0.4 usage's pin attachment; absent without a unique structural host.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub pin_of: Option<String>,
+    /// The enclosing 0.4 usage's id. Follow this chain for inherited pin attachment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub parent: Option<String>,
     /// Unique in the level: `#M1`, `%gnd1`, or `@file:line:col` where the statement that made an
     /// object without a name of its own is, with `#n` after it when it made several.
     pub id: String,
@@ -859,6 +867,8 @@ fn level_model(
         .objects
         .iter()
         .map(|o| ObjectView {
+            pin_of: o.pin_of.clone(),
+            parent: o.own_point.then_some(o.parent.clone()).flatten(),
             id: o.id.clone(),
             kind: o.kind.to_string(),
             host: o.host.clone(),

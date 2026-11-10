@@ -12,6 +12,8 @@ pub mod hints;
 mod library;
 pub mod overlays;
 mod params;
+#[cfg(test)]
+mod pin_attachments;
 mod primitive;
 pub use overlays::{CurrentArrow, OverlayOptions, OverlayStyle, UsageFrame, UsageMode};
 mod snapshot;

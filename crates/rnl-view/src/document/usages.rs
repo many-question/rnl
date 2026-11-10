@@ -13,6 +13,15 @@ pub struct Usage {
     /// Shared frame and label anchors in SVG pixels; absent when no member is drawn.
     pub frame: Option<crate::UsageFrame>,
     pub object: usize,
+    /// For a 0.4 usage attached to pins of one owner: that owner's Document object index.
+    /// Absent without a unique host; independent of the usage's symbol, coordinates and constraints.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub pin_of: Option<usize>,
+    /// The enclosing 0.4 usage's Document object index. Follow this chain for inherited pin attachment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub parent: Option<usize>,
     /// "usage", or "group" for a set marked with GROUP (11.5), whose one role, `members`, holds
     /// its members.
     pub kind: &'static str,
@@ -77,6 +86,8 @@ pub(super) fn inspect_all(r: &Interpretation, levels: &mut [Level], ix: &mut Ind
 /// A group (11.5) as a usage of kind "group", with one role, `members`.
 fn group_object(g: &GroupInfo) -> ObjectInfo {
     ObjectInfo {
+        own_point: false,
+        pin_of: None,
         usage_has_drawing: false,
         source: g.source.clone(),
         id: g.id.clone(),
@@ -126,6 +137,17 @@ fn inspect(
     }
     for o in &listed {
         references.insert(o.id.clone(), vec![ix.usage_of_kind(lv.level, &o.id, o.kind)]);
+    }
+    // A bundle's focus geometry uses all its host instances. Its attachment identity is the
+    // bundle itself, not one of those instances, even when the bundle has just one member.
+    let bundles: HashSet<&str> = lv.objects.iter().filter(|o| o.kind == "bundle").map(|o| o.id.as_str()).collect();
+    let mut pin_owners = HashMap::new();
+    for id in listed.iter().filter_map(|o| o.pin_of.as_ref()) {
+        if bundles.contains(id.as_str()) {
+            pin_owners.insert(id.clone(), ix.usage_of_kind(lv.level, id, "bundle"));
+        } else if let Some([owner]) = references.get(id).map(Vec::as_slice) {
+            pin_owners.insert(id.clone(), *owner);
+        }
     }
     // Nets may not have appeared on a drawing yet, but must still be inspectable as roles.
     for o in &listed {
@@ -270,6 +292,13 @@ fn inspect(
                 });
             let (state, reason) = super::member_of::state(r, o);
             Usage {
+                pin_of: o.pin_of.as_ref().and_then(|id| pin_owners.get(id)).copied(),
+                parent: o
+                    .own_point
+                    .then_some(o.parent.as_ref())
+                    .flatten()
+                    .and_then(|id| references.get(id))
+                    .and_then(|v| v.first().copied()),
                 frame: crate::overlays::usage_frame(
                     object,
                     local,

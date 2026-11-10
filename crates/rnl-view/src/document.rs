@@ -426,7 +426,7 @@ pub struct SourceFile {
 #[derive(Serialize, Debug)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Object {
-    /// "instance", "net", "usage" or "group", a set marked with GROUP (11.5).
+    /// "instance", "net", "usage", "group" (a set marked with GROUP), or "bundle" for a 0.4 pin host.
     pub kind: &'static str,
     /// An instance or net's name, or a usage's or group's editor identity (`%gnd1` when named).
     pub name: String,

@@ -233,6 +233,50 @@ impl Interp<'_> {
         }
     }
 
+    /// The host of a pin attachment is structural, independent of coordinates and constraints.
+    fn usage_pin_owner(&mut self, s: SceneId, usage: ObjId) -> Option<ObjId> {
+        if self.is_failed(usage) {
+            return None;
+        }
+        let roles = self.usage(usage).roles.clone();
+        let mut owner = None;
+        let mut positioned = Vec::new();
+        for (_, role) in roles {
+            for member in self.scene_input_members(s, role, None) {
+                if self.is_failed(member.object) || member.dependencies.iter().any(|d| self.is_failed(*d)) {
+                    return None;
+                }
+                let value = self.scene_value(member.object);
+                let pin_owner = match *self.o(value) {
+                    ObjData::ScenePin { owner, .. } if self.object_drawn(s, owner) => Some(owner),
+                    ObjData::Term { owner, .. } if self.object_drawn(s, owner) => {
+                        self.pin_for(s, owner, value).map(|_| owner)
+                    }
+                    ObjData::Inst { .. }
+                    | ObjData::Bundle { .. }
+                    | ObjData::Usage(_)
+                    | ObjData::Point { .. }
+                    | ObjData::Pos { .. }
+                    | ObjData::Text { .. }
+                    | ObjData::KeyText { .. }
+                    | ObjData::SymLabel { .. } => {
+                        positioned.push(value);
+                        None
+                    }
+                    ObjData::Failed(_) | ObjData::NamedSubobject { .. } => return None,
+                    _ => None,
+                };
+                if let Some(candidate) = pin_owner {
+                    if owner.is_some_and(|o| o != candidate) {
+                        return None;
+                    }
+                    owner = Some(candidate);
+                }
+            }
+        }
+        owner.filter(|o| positioned.iter().all(|p| p == o))
+    }
+
     /// The instances, bundles and usages of a scene, drawn or not, and its named points.
     fn objects_of(
         &mut self,
@@ -328,7 +372,12 @@ impl Interp<'_> {
                 }
             }
             let (origin, parent, disabled) = self.usage_origin(s, o, ids);
+            let own_point = kind == "usage" && self.usage_own_point(o);
+            let pin_of =
+                if own_point { self.usage_pin_owner(s, o).map(|owner| self.ref_id(s, owner, ids)) } else { None };
             out.push(ObjectInfo {
+                own_point,
+                pin_of,
                 origin,
                 parent,
                 disabled,
