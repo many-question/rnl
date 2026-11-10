@@ -32,6 +32,10 @@ pub(crate) fn check(kind: &FactKind, at: At, ori: Ori, tol: &Q, equal: &Q) -> Op
             near(at(&PointRef::Origin(*text), *axis)? - at(from, *axis)?, from_f64(*value)?)
         }
         FactKind::Orient { object, code } => ori(*object)? == *code,
+        FactKind::PinOrient { pin, codes } => pin.faces(ori(pin.object)?, codes),
+        FactKind::PinOrientRelation { from, to, relations } => {
+            from.relates(ori(from.object)?, *to, ori(to.object)?, relations)
+        }
         FactKind::OrientRelation { relation, from, to } => {
             let side = |ks: &[usize]| -> Option<Vec<Orient>> { ks.iter().map(|k| ori(*k)).collect() };
             let (a, b) = (side(from)?, side(to)?);
@@ -121,7 +125,9 @@ pub fn fact_holds(
 fn drawn_value(p: &LevelProblem, drawn: &[Drawn], r: &PointRef, axis: Axis) -> Option<Q> {
     match r {
         PointRef::Origin(k) => from_f64(drawn.get(*k)?.at[ax(axis)]?),
-        PointRef::Pin { object, pin, .. } | PointRef::SymbolPin { object, pin, .. } => {
+        PointRef::Pin { object, pin, .. }
+        | PointRef::SymbolPin { object, pin, .. }
+        | PointRef::PinPosition { object, pin, .. } => {
             let pos = p.symbols.get(p.objects.get(*object)?.symbol?)?.pins.get(*pin)?.pos;
             let local = (from_f64(pos.0)?, from_f64(pos.1)?);
             let o = drawn.get(*object)?;

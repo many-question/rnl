@@ -168,7 +168,9 @@ impl Placed<'_> {
     fn at(&self, r: &PointRef) -> Pt {
         match r {
             PointRef::Origin(k) => self.origin(*k),
-            PointRef::Pin { object, pin, .. } | PointRef::SymbolPin { object, pin, .. } => {
+            PointRef::Pin { object, pin, .. }
+            | PointRef::SymbolPin { object, pin, .. }
+            | PointRef::PinPosition { object, pin, .. } => {
                 let (x, y) = self.origin(*object);
                 let symbol = &self.p.symbols[self.p.objects[*object].symbol.unwrap()];
                 let (dx, dy) = self.orient(*object).apply(symbol.pins[*pin].pos);
@@ -222,15 +224,18 @@ fn check_facts(run: &SolveRun, what: &str) {
 fn reaches(f: &FactKind, objects: &[usize]) -> bool {
     fn point(r: &PointRef, objects: &[usize]) -> bool {
         match r {
-            PointRef::Origin(k) | PointRef::Pin { object: k, .. } | PointRef::SymbolPin { object: k, .. } => {
-                objects.contains(k)
-            }
+            PointRef::Origin(k)
+            | PointRef::Pin { object: k, .. }
+            | PointRef::SymbolPin { object: k, .. }
+            | PointRef::PinPosition { object: k, .. } => objects.contains(k),
             PointRef::Centre(rs) => rs.iter().any(|r| point(r, objects)),
         }
     }
     match f {
         FactKind::Place { at, .. } => point(at, objects),
         FactKind::PointCoordinate { point: k, .. } | FactKind::Orient { object: k, .. } => objects.contains(k),
+        FactKind::PinOrient { pin, .. } => objects.contains(&pin.object),
+        FactKind::PinOrientRelation { from, to, .. } => objects.contains(&from.object) || objects.contains(&to.object),
         FactKind::Offset { text, from, .. } => objects.contains(text) || point(from, objects),
         FactKind::Align { members, .. } | FactKind::Order { members, .. } | FactKind::Distribute { members, .. } => {
             members.iter().any(|m| point(m, objects))

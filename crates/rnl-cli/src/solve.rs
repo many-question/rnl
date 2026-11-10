@@ -826,7 +826,11 @@ pub(crate) fn fact_what(p: &LevelProblem, k: usize) -> String {
     // orientation says what the fact says, so the fact is described once
     let own = matches!(
         f.kind,
-        FactKind::Place { .. } | FactKind::PointCoordinate { .. } | FactKind::Offset { .. } | FactKind::Orient { .. }
+        FactKind::Place { .. }
+            | FactKind::PointCoordinate { .. }
+            | FactKind::Offset { .. }
+            | FactKind::Orient { .. }
+            | FactKind::PinOrient { .. }
     );
     let named = if own || f.label == f.kind.name() || f.label == what { what } else { format!("{} = {what}", f.label) };
     format!("[{k}] {named}")

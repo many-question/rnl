@@ -28,7 +28,7 @@ impl Interp<'_> {
         off: usize,
     ) -> bool {
         let old = ctx.nested.as_ref().and_then(|n| n.borrow().get(key).cloned());
-        if let Some(Nested::Val(old)) = old {
+        if let Some(Nested::Val(old, _)) = old {
             if !self.is_failed(old) && self.is_failed(object) {
                 return false;
             }
@@ -64,7 +64,7 @@ impl Interp<'_> {
         for pin in &other.pins {
             for name in &pin.names {
                 let old = nested.borrow().get(&('%', name.clone())).cloned();
-                if matches!(old, Some(Nested::Val(o)) if !self.is_failed(o)) {
+                if matches!(old, Some(Nested::Val(o, _)) if !self.is_failed(o)) {
                     self.err(
                         ctx,
                         codes::PIN_NAME_TWICE_INCLUDED,
@@ -83,7 +83,7 @@ impl Interp<'_> {
             let object = self.new_obj(ObjData::SymbolPin { symbol, index: start + index });
             self.objs[object.0 as usize].name = pin.names[0].clone();
             for name in &pin.names {
-                nested.borrow_mut().insert(('%', name.clone()), Nested::Val(object));
+                nested.borrow_mut().insert(('%', name.clone()), Nested::Val(object, Vec::new()));
             }
         }
         true

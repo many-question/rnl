@@ -74,8 +74,12 @@ impl Interp<'_> {
                 if matches!(self.o(o), ObjData::Bundle { .. }) { ObjectKind::Bundle } else { ObjectKind::Instance };
             objs.push((o, kind));
         }
-        let mut usages: Vec<ObjId> =
-            self.scenes[s].usages.iter().copied().filter(|a| !self.usage(*a).in_symbol).collect();
+        let mut usages: Vec<ObjId> = self.scenes[s]
+            .usages
+            .iter()
+            .copied()
+            .filter(|a| !self.usage(*a).in_symbol && !self.is_failed(*a))
+            .collect();
         usages.sort();
         usages.dedup();
         for &a in &usages {
@@ -84,6 +88,7 @@ impl Interp<'_> {
             }
         }
         let mut points = self.scenes[s].points.clone();
+        points.retain(|p| !self.is_failed(*p));
         points.sort();
         points.dedup();
         objs.extend(points.into_iter().map(|p| (p, ObjectKind::Point)));
@@ -321,6 +326,12 @@ impl Interp<'_> {
                 let mut pins = Vec::new();
                 let mut seen: HashSet<(ObjId, u32)> = HashSet::new();
                 for &(ow, t, i) in terms.get(&net).into_iter().flatten() {
+                    if matches!(self.o(t), ObjData::ScenePin { .. }) {
+                        if let Some(pin) = self.point_ref(s, &ix, t) {
+                            pins.push(pin);
+                        }
+                        continue;
+                    }
                     if self.scenes[s].symbol.get(&ow).is_some_and(|sym| self.symbol(*sym).independent_pins) {
                         for pin in self.pins_for(s, ow, t) {
                             if let Some(p) = self.symbol_pin_ref(s, &ix, ow, pin) {
@@ -406,10 +417,11 @@ impl Interp<'_> {
                     }
                 }
                 ObjectKind::Text => {
-                    let att = self.text_attach(o);
+                    let att = self.scene_value(self.text_attach(o));
                     on = match self.o(att).clone() {
                         ObjData::Net { .. } => vec![att],
                         ObjData::Term { .. } => self.term_nets(s, att),
+                        ObjData::ScenePin { owner, index } => self.scene_pin_nets(s, owner, index),
                         ObjData::Wire { nets, .. } => nets,
                         _ => Vec::new(),
                     };
@@ -448,12 +460,12 @@ impl Interp<'_> {
             // objects of the statement that writes it out, numbered after those of its body (5.9)
             let mut role_points = 0;
             for (role, filler) in &u.roles {
-                let members = if self.is_set(*filler) { self.flatten(s, *filler, 7, None) } else { vec![*filler] };
+                let members = self.scene_input_members(s, *filler, None);
                 let written = self.written_filler(s, &ix, *filler);
                 role_points += written.as_ref().map_or(0, |(_, n)| *n);
                 roles.push(RoleFill {
                     role: role.clone(),
-                    members: members.iter().map(|m| self.filler(s, &ix, *m)).collect(),
+                    members: members.iter().map(|m| self.filler(s, &ix, m.object)).collect(),
                     written: written.map(|(w, _)| w),
                 });
             }
@@ -697,6 +709,7 @@ impl Interp<'_> {
     /// What any object of the scene is referred to by: host objects by their host names, the
     /// rest as `Index::refs` has them.
     fn reference_of(&mut self, s: SceneId, ix: &Index, o: ObjId) -> Reference {
+        let o = self.input_value(o);
         match self.o(o).clone() {
             ObjData::Inst { .. } => Reference::Name(format!("#{}", written_name(&self.inst_of(o).name))),
             ObjData::LevelObj { .. } => Reference::Name("#".into()),
@@ -710,6 +723,9 @@ impl Interp<'_> {
                 }
             }
             ObjData::Pos { parent } => self.reference_of(s, ix, parent).then("::position"),
+            ObjData::NamedSubobject { parent, name, .. } => {
+                self.reference_of(s, ix, parent).then(&format!("::{}", written_name(&name)))
+            }
             ObjData::KeyText { .. } => self.text_reference(s, o, ix),
             _ => ix.refs.get(&o).cloned().unwrap_or(Reference::Anonymous),
         }
@@ -719,6 +735,7 @@ impl Interp<'_> {
     /// coordinates written, or a set of them in `{…}`, with how many points it writes as
     /// coordinates. None when a part cannot be referred to by a name the level writes.
     fn written_filler(&mut self, s: SceneId, ix: &Index, o: ObjId) -> Option<(String, usize)> {
+        let o = self.written_input(o);
         if let ObjData::Set(_) = self.o(o) {
             let items = self.items_of(s, o, 7, None);
             let (mut out, mut points) = (Vec::new(), 0);
@@ -742,10 +759,14 @@ impl Interp<'_> {
 
     /// What fills a role, or what a text is attached to, as the problem refers to it.
     fn filler(&mut self, s: SceneId, ix: &Index, o: ObjId) -> Filler {
+        let o = self.scene_value(o);
         if let Some(&k) = ix.objects.get(&o) {
             return Filler::Object(k);
         }
         match self.o(o).clone() {
+            ObjData::ScenePin { owner, index } if ix.objects.contains_key(&owner) => {
+                Filler::Pin { object: ix.objects[&owner], pin: index }
+            }
             ObjData::Inst { bundle: Some(b), .. } if ix.objects.contains_key(&b) => Filler::Object(ix.objects[&b]),
             ObjData::Term { owner, index, name } => {
                 let owner = self.bundle_field(owner).unwrap_or(owner);
@@ -768,7 +789,21 @@ impl Interp<'_> {
     /// The point an object counts by (14.1): an origin, the pin of a terminal, or the centre of
     /// a set. None for what has no point, or is not in the problem.
     fn point_ref(&mut self, s: SceneId, ix: &Index, o: ObjId) -> Option<PointRef> {
+        let o = self.input_value(o);
         match self.o(o).clone() {
+            ObjData::NamedSubobject { resolved, .. } => {
+                let value = resolved?;
+                if let ObjData::ScenePin { owner, index } = *self.o(value) {
+                    Some(PointRef::SymbolPin {
+                        object: *ix.objects.get(&owner)?,
+                        pin: index,
+                        reference: self.reference_of(s, ix, o),
+                    })
+                } else {
+                    self.point_ref(s, ix, value)
+                }
+            }
+            ObjData::ScenePin { owner, index } => self.symbol_pin_ref(s, ix, owner, index),
             ObjData::Inst { bundle: Some(b), .. } => Some(PointRef::Origin(*ix.objects.get(&b)?)),
             ObjData::Inst { .. }
             | ObjData::Bundle { .. }
@@ -783,7 +818,28 @@ impl Interp<'_> {
                 let pin = self.pin_for(s, owner, t)?;
                 Some(PointRef::Pin { object, pin, terminal: name.unwrap_or_else(|| index.to_string()) })
             }
-            ObjData::Pos { parent } => self.point_ref(s, ix, parent),
+            ObjData::Pos { parent } => {
+                let point = self.point_ref(s, ix, parent)?;
+                match point {
+                    PointRef::SymbolPin { object, pin, reference } => {
+                        Some(PointRef::PinPosition { object, pin, reference: reference.then("::position") })
+                    }
+                    PointRef::Pin { object, pin, terminal }
+                        if matches!(self.o(parent), ObjData::ScenePin { .. })
+                            || matches!(self.o(parent), ObjData::Term { owner, .. }
+                                if self.scenes[s].symbol.get(owner).is_some_and(|s| self.symbol(*s).independent_pins)) =>
+                    {
+                        let reference = match *self.o(parent) {
+                            ObjData::ScenePin { owner, .. } => {
+                                self.reference_of(s, ix, owner).then(&format!(":{}", written_name(&terminal)))
+                            }
+                            _ => self.reference_of(s, ix, parent),
+                        };
+                        Some(PointRef::PinPosition { object, pin, reference: reference.then("::position") })
+                    }
+                    point => Some(point),
+                }
+            }
             ObjData::Set(_) => {
                 let leaves = self.flatten(s, o, 7, None);
                 let mut points = Vec::new();
@@ -800,6 +856,16 @@ impl Interp<'_> {
     /// binding, but an earlier pin must never borrow the reference of a later one (5.2.4).
     fn symbol_pin_ref(&mut self, s: SceneId, ix: &Index, owner: ObjId, pin: usize) -> Option<PointRef> {
         let object = *ix.objects.get(&owner)?;
+        let name = self.scenes[s]
+            .symbol
+            .get(&owner)
+            .and_then(|symbol| self.symbol(*symbol).pins.get(pin))
+            .and_then(|pin| pin.names.first())
+            .cloned();
+        if let Some(name) = name {
+            let reference = self.reference_of(s, ix, owner).then(&format!("::{}", written_name(&name)));
+            return Some(PointRef::SymbolPin { object, pin, reference });
+        }
         for t in self.terms_of(s, owner) {
             if self.pin_for(s, owner, t) == Some(pin) {
                 return self.point_ref(s, ix, t);
@@ -999,15 +1065,21 @@ impl Interp<'_> {
                 continue;
             }
             let FactData::Orient(code) = f.data else { continue };
-            let Some(&object) = ix.objects.get(&f.target) else { continue };
             let source = f.ctx.as_ref().and_then(|c| self.rec_loc(c.rec, f.off));
-            if let Some(codes) = self.scenes[s].orient_codes.get(&k) {
-                lists.insert(ranked.len(), codes.clone());
-            }
+            let kind = if let Some(pin) = self.export_directed_pin(s, ix, f.target) {
+                let codes = self.scenes[s].orient_codes.get(&k).cloned().unwrap_or_else(|| vec![code]);
+                FactKind::PinOrient { pin, codes }
+            } else {
+                let Some(&object) = ix.objects.get(&f.target) else { continue };
+                if let Some(codes) = self.scenes[s].orient_codes.get(&k) {
+                    lists.insert(ranked.len(), codes.clone());
+                }
+                FactKind::Orient { object, code }
+            };
             ranked.push(Ranked {
                 key: (rank(p), f.order(), 2, 0, ranked.len()),
                 fact: ProblemFact {
-                    kind: FactKind::Orient { object, code },
+                    kind,
                     priority: p,
                     label: format!("the orientation {} of {}", code.as_str(), self.label(f.target)),
                     reference: None,
@@ -1037,7 +1109,7 @@ impl Interp<'_> {
             if let Some(site) = &cd.site {
                 pos = order_pos(&pos, &site.segments);
             }
-            if !cd.params.relations.is_empty() {
+            if matches!(kind, FactKind::OrientRelation { .. }) && !cd.params.relations.is_empty() {
                 lists.insert(ranked.len(), cd.params.relations.clone());
             }
             ranked.push(Ranked {
@@ -1067,6 +1139,11 @@ impl Interp<'_> {
             })
             .collect();
         (facts, orient_lists)
+    }
+
+    fn export_directed_pin(&mut self, s: SceneId, ix: &Index, object: ObjId) -> Option<DirectedPin> {
+        let (owner, pin, direction) = self.direction_pin(s, object)?;
+        Some(DirectedPin { object: *ix.objects.get(&owner)?, pin, direction: direction? })
     }
 
     fn text_off(&self, t: ObjId) -> usize {
@@ -1106,6 +1183,13 @@ impl Interp<'_> {
                 to: self.extent_points(s, ix, cd.args[1])?,
             },
             ConstraintKind::OrientRelation => {
+                if cd.args.len() == 2 && self.is_pin_direction_input(cd.args[0]) {
+                    return Some(FactKind::PinOrientRelation {
+                        from: self.export_directed_pin(s, ix, cd.args[0])?,
+                        to: self.export_directed_pin(s, ix, cd.args[1])?,
+                        relations: cd.params.relations(),
+                    });
+                }
                 let mut sides = Vec::new();
                 for a in &cd.args[..2] {
                     let ms = if self.is_set(*a) { self.flatten(s, *a, 7, None) } else { vec![*a] };

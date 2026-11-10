@@ -223,6 +223,12 @@ pub struct WireView {
 pub enum Vertex {
     /// `#M1:1`, `#:inp`.
     Terminal(String),
+    /// A named pin, with both its exact symbol index and its written reference (6.5).
+    Pin {
+        owner: String,
+        pin: usize,
+        reference: String,
+    },
     /// `%j1`.
     Point(String),
     /// `%gnd1:p`: the usage's id and the role.

@@ -243,7 +243,7 @@ impl Geometry {
         match p {
             PointId::Origin(k) => self.origin[k][axis].clone(),
             PointId::Text(t) if model.points[&p].free == Some(axis) => self.origin[t][axis].clone(),
-            PointId::Pin(..) | PointId::Text(_) => {
+            PointId::Pin(..) | PointId::PinPosition(..) | PointId::Text(_) => {
                 let info = &model.points[&p];
                 let Some(k) = info.object else { return Q::zero() };
                 let base = match model.origin_point[k] {
@@ -380,6 +380,7 @@ struct Saved {
     touched: [BTreeSet<PointId>; 2],
     centres_on: [BTreeSet<usize>; 2],
     choices: usize,
+    pin_units: usize,
     nogoods: usize,
     held: BTreeMap<Held, u32>,
     kept: usize,
@@ -399,6 +400,8 @@ pub(crate) struct Resolver<'a> {
     centres_on: [BTreeSet<usize>; 2],
     /// The choices of the units kept, by unit and index.
     choices: Vec<(usize, usize)>,
+    /// Direction predicates of pins; ordinary orientation classes still relate whole objects.
+    pin_units: Vec<usize>,
     nogoods: Vec<Nogood>,
     /// The units kept, in order.
     kept: Vec<usize>,
@@ -443,6 +446,7 @@ impl<'a> Resolver<'a> {
             touched: [BTreeSet::new(), BTreeSet::new()],
             centres_on: [BTreeSet::new(), BTreeSet::new()],
             choices: Vec::new(),
+            pin_units: Vec::new(),
             nogoods: Vec::new(),
             kept: Vec::new(),
             held: BTreeMap::new(),
@@ -517,6 +521,7 @@ impl<'a> Resolver<'a> {
         let ori = &self.geometry.orient;
         let oriented = match &unit.orient {
             OrientEffect::None => true,
+            OrientEffect::Pins { .. } => unit.orient.pins_hold(|object| ori[object]),
             OrientEffect::Fix { object, code } => ori.get(*object) == Some(code),
             OrientEffect::Relate { relation, from, to } => relation_holds(ori, *relation, from, to),
         };
@@ -532,6 +537,7 @@ impl<'a> Resolver<'a> {
             touched: self.touched.clone(),
             centres_on: self.centres_on.clone(),
             choices: self.choices.len(),
+            pin_units: self.pin_units.len(),
             nogoods: self.nogoods.len(),
             held: self.held.clone(),
             kept: self.kept.len(),
@@ -547,6 +553,7 @@ impl<'a> Resolver<'a> {
         self.touched = saved.touched;
         self.centres_on = saved.centres_on;
         self.choices.truncate(saved.choices);
+        self.pin_units.truncate(saved.pin_units);
         self.nogoods.truncate(saved.nogoods);
         self.held = saved.held;
         self.kept.truncate(saved.kept);
@@ -706,6 +713,10 @@ impl<'a> Resolver<'a> {
         let n = self.geometry.orient.len();
         match &self.model.units[u].orient {
             OrientEffect::None => Ok(()),
+            OrientEffect::Pins { .. } => {
+                self.pin_units.push(u);
+                Ok(())
+            }
             OrientEffect::Fix { object, code } if *object < n => self.classes.fix(*object, *code, u),
             OrientEffect::Fix { .. } => Ok(()),
             OrientEffect::Relate { relation, from, to } => {
@@ -890,6 +901,13 @@ impl<'a> Resolver<'a> {
         };
         let mut ordered: Vec<u32> = domain.iter().copied().filter(|&v| v == lit.default).collect();
         ordered.extend(domain.iter().copied().filter(|&v| v != lit.default));
+        // Coordinate-equivalent values can have different pin directions. Keep each value
+        // when a direction predicate reaches this class, even if it has no coordinate links.
+        if self.pin_units.iter().any(|unit| {
+            self.model.units[*unit].orient.pin_objects().iter().any(|object| self.classes.find(*object).0 == *root)
+        }) {
+            return ordered;
+        }
         let mut values = Vec::new();
         let mut seen: Vec<Vec<Q>> = Vec::new();
         for v in ordered {
@@ -940,6 +958,11 @@ impl<'a> Resolver<'a> {
     fn links(&self) -> BTreeMap<usize, Vec<ClassLink>> {
         let model = self.model;
         let mut out: BTreeMap<usize, Vec<ClassLink>> = BTreeMap::new();
+        for &unit in &self.pin_units {
+            for object in self.model.units[unit].orient.pin_objects() {
+                out.entry(self.classes.find(object).0).or_default();
+            }
+        }
         for k in 0..model.oriented.len() {
             for axis in 0..2 {
                 let points = self.object_links(k, axis);
@@ -1027,8 +1050,11 @@ impl<'a> Resolver<'a> {
         crate::profile::add("resolve_nodes", 1);
         crate::profile::checkpoint();
         let cp = self.checkpoint();
-        let mut conflict = None;
+        let mut conflict = self.pin_conflict(lits, decided);
         'assert: for (i, lit) in lits.iter().enumerate() {
+            if conflict.is_some() {
+                break;
+            }
             if decided.iter().any(|(j, _)| *j == i) {
                 continue;
             }
@@ -1114,6 +1140,33 @@ impl<'a> Resolver<'a> {
         let union: Vec<Tag> = union.into_iter().collect();
         self.learn(&union);
         Node::Conflict(union)
+    }
+
+    /// Rejects an orientation assignment when a directed-pin fact does not hold.
+    fn pin_conflict(&self, lits: &[Lit], decided: &[(usize, u32)]) -> Option<Vec<Tag>> {
+        let orientation = |object: usize| {
+            let (root, label) = self.classes.find(object);
+            let value = lits
+                .iter()
+                .enumerate()
+                .find_map(|(i, lit)| {
+                    matches!(lit.body, LitBody::Class { root: r, .. } if r == root).then(|| {
+                        from_index(decided.iter().find(|(j, _)| *j == i).map_or(lit.default, |(_, v)| *v) as u8)
+                    })
+                })
+                .or_else(|| self.classes.fixed(root).map(|fixed| fixed.value))
+                .unwrap_or(self.geometry.orient[root]);
+            value.then(label)
+        };
+        for &unit in &self.pin_units {
+            let effect = &self.model.units[unit].orient;
+            if !effect.pins_hold(orientation) {
+                let mut tags = vec![Tag::Fact(unit)];
+                tags.extend(effect.pin_objects().iter().map(|object| Tag::Ori(*object, index(orientation(*object)))));
+                return Some(tags);
+            }
+        }
+        None
     }
 
     /// Checks both axes; when the resolution has a time limit, a check stops once it is out.
@@ -1388,7 +1441,9 @@ pub(crate) fn point_value(problem: &LevelProblem, g: &Geometry, r: &PointRef, ax
     };
     match r {
         PointRef::Origin(k) => origin(*k),
-        PointRef::Pin { object, pin, .. } | PointRef::SymbolPin { object, pin, .. } => {
+        PointRef::Pin { object, pin, .. }
+        | PointRef::SymbolPin { object, pin, .. }
+        | PointRef::PinPosition { object, pin, .. } => {
             let o = problem.objects.get(*object)?;
             let pos = problem.symbols.get(o.symbol?)?.pins.get(*pin)?.pos;
             let local = (from_f64(pos.0)?, from_f64(pos.1)?);

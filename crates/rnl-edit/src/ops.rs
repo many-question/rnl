@@ -133,6 +133,8 @@ pub enum Attach {
 pub enum Vertex {
     /// A pin: `#M1:1`.
     Terminal(String),
+    /// An exact named pin; the reference is what the edited statement writes.
+    Pin { owner: String, pin: usize, reference: String },
     /// A named point: `%j1`.
     Point(String),
     /// A role of a usage: `%gnd1:p`.
@@ -461,7 +463,7 @@ impl Reader<'_> {
                 vertex(v).ok_or_else(|| {
                     self.fail(
                         "via",
-                        &format!("vertex {n} is not one of {{terminal}}, {{point}}, {{usage, role}}, {{at}}"),
+                        &format!("vertex {n} is not one of {{terminal}}, {{owner, pin, reference}}, {{point}}, {{usage, role}}, {{at}}"),
                     )
                 })
             })
@@ -615,6 +617,13 @@ fn vertex(v: &Value) -> Option<Vertex> {
     let s = |k: &str| o.get(k)?.as_str().map(String::from);
     if only(&["terminal"]) {
         return s("terminal").map(Vertex::Terminal);
+    }
+    if only(&["owner", "pin", "reference"]) {
+        return Some(Vertex::Pin {
+            owner: s("owner")?,
+            pin: usize::try_from(o.get("pin")?.as_u64()?).ok()?,
+            reference: s("reference")?,
+        });
     }
     if only(&["point"]) {
         return s("point").map(Vertex::Point);

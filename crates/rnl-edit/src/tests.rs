@@ -24,6 +24,16 @@ fn styled(text: &str, level: i32, bold: bool, italic: bool) -> Value {
 const RC: &str = "\n.subckt rc_lowpass VSS\nC1 out VSS 10n\nR1 in out 10k\n.ends rc_lowpass\n";
 
 #[test]
+fn a_named_pin_vertex_writes_its_reference_without_turning_it_into_a_terminal() {
+    let source = format!("* @RNL(type=\"header\") {{ @VERSION(\"0.4\") }}\n{RC}");
+    let ops = json!([{"level": "subckt:rc_lowpass", "op": "add-wire", "nets": ["&in"], "mode": "straight",
+        "via": [{"owner": "#R1", "pin": 0, "reference": "#R1::p"}, {"at": [4, 0]}]}]);
+    let written = write(&request("spice", &source, ops)).unwrap();
+    assert!(written.contains("#R1::p"), "{written}");
+    assert!(!written.contains("#R1:p"), "{written}");
+}
+
+#[test]
 fn every_op_into_a_spice_subcircuit() {
     let level = "subckt:rc_lowpass";
     let ops = json!([
@@ -250,7 +260,7 @@ fn refusals_name_the_op() {
         refused(
             json!([{"level": "subckt:rc_lowpass", "op": "add-wire", "nets": ["&in"], "via": [{"terminal": "#R1:1"}, {"pin": "#R1:2"}]}])
         ),
-        "op 0 (add-wire): `via` vertex 1 is not one of {terminal}, {point}, {usage, role}, {at}"
+        "op 0 (add-wire): `via` vertex 1 is not one of {terminal}, {owner, pin, reference}, {point}, {usage, role}, {at}"
     );
     assert_eq!(
         refused(json!([{"level": "subckt:rc_lowpass", "op": "add-text", "markup": "x"}])),

@@ -24,6 +24,9 @@ fn point(r: &PointRef) -> Value {
         PointRef::SymbolPin { object, pin, reference: r } => {
             json!({"object": object, "pin": pin, "reference": reference(r, true)})
         }
+        PointRef::PinPosition { object, pin, reference: r } => {
+            json!({"object": object, "pin_position": pin, "reference": reference(r, true)})
+        }
         PointRef::Centre(points) => json!({"centre": points.iter().map(point).collect::<Vec<_>>()}),
     }
 }
@@ -57,6 +60,7 @@ fn filler(f: &Filler) -> Value {
     match f {
         Filler::Object(k) => json!({"object": k}),
         Filler::Terminal { object, terminal, pin } => json!({"object": object, "terminal": terminal, "pin": pin}),
+        Filler::Pin { object, pin } => json!({"object": object, "pin": pin}),
         Filler::Usage(k) => json!({"usage": k}),
         Filler::Net(n) => json!({"net": n}),
         Filler::Wire(k) => json!({"wire": k}),

@@ -157,6 +157,7 @@ fn left_to_viewer(p: &LevelProblem, k: usize) -> bool {
             matches!(a.kind, ObjectKind::Point | ObjectKind::Instance | ObjectKind::Usage | ObjectKind::Bundle)
         }),
         Filler::Terminal { pin, .. } => pin.is_some(),
+        Filler::Pin { .. } => true,
         Filler::Usage(_) | Filler::Net(_) | Filler::Wire(_) | Filler::Other(_) => false,
     };
     !point && !p.facts.iter().any(|f| reaches(&f.kind, k))
@@ -167,7 +168,9 @@ fn reaches(f: &FactKind, k: usize) -> bool {
     fn on(r: &PointRef, k: usize) -> bool {
         match r {
             PointRef::Origin(j) => *j == k,
-            PointRef::Pin { object, .. } | PointRef::SymbolPin { object, .. } => *object == k,
+            PointRef::Pin { object, .. }
+            | PointRef::SymbolPin { object, .. }
+            | PointRef::PinPosition { object, .. } => *object == k,
             PointRef::Centre(members) => members.iter().any(|m| on(m, k)),
         }
     }
@@ -179,7 +182,10 @@ fn reaches(f: &FactKind, k: usize) -> bool {
             members.iter().any(|m| on(m, k))
         }
         FactKind::Distance { from, to, .. } => from.iter().chain(to).any(|m| on(m, k)),
-        FactKind::Orient { .. } | FactKind::OrientRelation { .. } => false,
+        FactKind::Orient { .. }
+        | FactKind::OrientRelation { .. }
+        | FactKind::PinOrient { .. }
+        | FactKind::PinOrientRelation { .. } => false,
     }
 }
 

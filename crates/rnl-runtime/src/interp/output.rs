@@ -35,27 +35,9 @@ fn from_package(p: &Pos) -> bool {
     matches!(p.first(), Some(PosElem::Int(0))) || p.contains(&PosElem::Tag("pkg"))
 }
 
-/// The unit vector of an exit direction in degrees, for the four directions pins have.
-fn dir_vector(d: u16) -> Option<(f64, f64)> {
-    match d {
-        0 => Some((1.0, 0.0)),
-        90 => Some((0.0, 1.0)),
-        180 => Some((-1.0, 0.0)),
-        270 => Some((0.0, -1.0)),
-        _ => None,
-    }
-}
-
 /// An exit direction turned with an object's orientation.
 fn turned(d: Option<u16>, o: Orient) -> Option<u16> {
-    let (x, y) = o.apply(dir_vector(d?)?);
-    match (x.round() as i32, y.round() as i32) {
-        (1, 0) => Some(0),
-        (0, 1) => Some(90),
-        (-1, 0) => Some(180),
-        (0, -1) => Some(270),
-        _ => None,
-    }
+    o.direction(d?)
 }
 
 impl Interp<'_> {
@@ -115,7 +97,7 @@ impl Interp<'_> {
                 || self
                     .bound_memo
                     .get(&k)
-                    .is_some_and(|bound| bound.iter().any(|((p, n), v)| *p == '%' && n == name && *v == o))
+                    .is_some_and(|bound| bound.iter().any(|((p, n), v, _)| *p == '%' && n == name && *v == o))
         })
     }
 
@@ -190,6 +172,9 @@ impl Interp<'_> {
                 }
             }
             ObjData::KeyText { attach, key, .. } => format!("{}::{key}", self.ref_id(s, *attach, ids)),
+            ObjData::NamedSubobject { parent, name, .. } => {
+                format!("{}::{}", self.ref_id(s, *parent, ids), quoted(name))
+            }
             _ => self.base_id(s, o),
         }
     }
@@ -215,6 +200,13 @@ impl Interp<'_> {
 
     /// A vertex of a wire as the statement gives it.
     fn vertex(&mut self, s: SceneId, v: ObjId, ids: &HashMap<ObjId, String>) -> Option<Vertex> {
+        if let ObjData::ScenePin { owner, index } = *self.o(self.scene_value(v)) {
+            return Some(Vertex::Pin {
+                owner: self.ref_id(s, owner, ids),
+                pin: index,
+                reference: self.ref_id(s, v, ids),
+            });
+        }
         match self.o(v).clone() {
             ObjData::Term { owner, index, name } if matches!(self.o(owner), ObjData::Usage(_)) => Some(Vertex::Usage {
                 usage: self.ref_id(s, owner, ids),
@@ -800,9 +792,13 @@ impl Interp<'_> {
     /// in the level of those, the wires, the texts and the primitives.
     fn level_ids(&mut self, s: SceneId) -> (Vec<ObjId>, Vec<ObjId>, HashMap<ObjId, String>) {
         let mut objs: Vec<ObjId> = self.inst_like(s).into_iter().filter(|o| !self.bundle_empty(*o)).collect();
-        objs.extend(self.scenes[s].usages.iter().copied().filter(|a| !self.usage(*a).in_symbol));
-        let named_points: Vec<ObjId> =
-            self.scenes[s].points.iter().copied().filter(|p| !self.objs[p.0 as usize].name.is_empty()).collect();
+        objs.extend(self.scenes[s].usages.iter().copied().filter(|a| !self.usage(*a).in_symbol && !self.is_failed(*a)));
+        let named_points: Vec<ObjId> = self.scenes[s]
+            .points
+            .iter()
+            .copied()
+            .filter(|p| !self.is_failed(*p) && !self.objs[p.0 as usize].name.is_empty())
+            .collect();
         let wire_objs: Vec<ObjId> = self.scenes[s].wires.iter().copied().filter(|w| !self.is_obj_failed(*w)).collect();
         let all: Vec<ObjId> = objs.iter().chain(&named_points).chain(&wire_objs).copied().collect();
         let mut ids = self.unique_ids(s, &all, &HashMap::new());
@@ -847,7 +843,7 @@ impl Interp<'_> {
         let mut drawn: Vec<ObjId> = self.inst_like(s).into_iter().filter(|o| !self.bundle_empty(*o)).collect();
         for &a in &self.scenes[s].usages {
             let u = self.usage(a);
-            if !u.in_symbol && self.scenes[s].symbol.contains_key(&a) {
+            if !u.in_symbol && !self.is_failed(a) && self.scenes[s].symbol.contains_key(&a) {
                 drawn.push(a);
             }
         }
@@ -932,6 +928,9 @@ impl Interp<'_> {
         }
         let mut shapes = Vec::new();
         for p in self.scenes[s].prims.clone() {
+            if self.is_obj_failed(p) {
+                continue;
+            }
             let ObjData::Prim { shape, points, params, .. } = self.o(p).clone() else { continue };
             let mut pts = Vec::new();
             let mut ok = true;
@@ -975,13 +974,14 @@ impl Interp<'_> {
             if drawable_att && layer == Layer::Middle {
                 layer = self.layer_of(s, att);
             }
-            let target = match self.o(att).clone() {
+            let target = match self.o(self.scene_value(att)).clone() {
                 ObjData::Net { .. } => Some(TextTarget::Net(self.net_display(att))),
                 // a terminal stands for the pin of the item it is drawn at, as a click on the pin does
                 ObjData::Term { owner, .. } => item_of
                     .get(&owner)
                     .copied()
                     .and_then(|i| self.pin_for(s, owner, att).map(|k| TextTarget::Pin(i, k))),
+                ObjData::ScenePin { owner, index } => item_of.get(&owner).map(|&item| TextTarget::Pin(item, index)),
                 _ => item_of
                     .get(&att)
                     .map(|&i| TextTarget::Item(i))

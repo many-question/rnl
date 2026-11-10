@@ -103,5 +103,8 @@ impl Interp<'_> {
                 *failed = layers.is_empty();
             }
         }
+        self.scenes[s].pin_text_sources = sources.into_iter().filter(|source| {
+            matches!(self.o(source.text), ObjData::KeyText { layers, .. } if layers.iter().any(|(order, _, _)| *order == source.order))
+        }).collect();
     }
 }

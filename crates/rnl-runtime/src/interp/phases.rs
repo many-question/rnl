@@ -82,17 +82,33 @@ impl Interp<'_> {
         self.resolve_bundles(s);
         self.scenes[s].phase = 4;
         self.resolve_symbols(s, false);
+        self.resolve_scene_subobjects(s);
+        if self.check_scene_pin_bindings(s) {
+            self.resolve_scene_subobjects(s);
+        }
         self.scenes[s].phase = 5;
         self.run_tasks(s, 5);
         self.scenes[s].phase = 6;
         self.run_tasks(s, 6);
         self.resolve_symbols(s, true);
+        self.resolve_scene_subobjects(s);
+        self.check_scene_pin_bindings(s);
         self.note_overridden_symbols(s);
         self.symbol_labels(s);
         self.check_scene_pin_text_names(s);
+        self.finish_scene_subobjects(s);
+        if self.check_scene_pin_bindings(s) {
+            self.finish_scene_subobjects(s);
+        }
         self.scenes[s].phase = 7;
+        self.resolve_role_inputs(s);
+        if self.check_scene_pin_bindings(s) {
+            self.finish_scene_subobjects(s);
+        }
+        self.check_scene_pin_roles(s);
         self.materialize_constraints(s);
         self.run_tasks(s, 7);
+        self.check_scene_pin_roles(s);
         self.resolve_geometry(s);
         self.scenes[s].phase = 8;
         self.run_tasks(s, 8);
@@ -512,6 +528,7 @@ impl Interp<'_> {
                 sym.pins.push(Pin {
                     names: Vec::new(),
                     terms: vec![TermKey::Num(*idx)],
+                    bus: false,
                     pos: (x0, y),
                     label: name.clone(),
                     label_name_formats: false,
@@ -786,6 +803,10 @@ impl Interp<'_> {
         let mut ob: HashMap<ObjId, (Priority, Pos, usize)> = HashMap::new();
         for k in live_or {
             let f = &orient[k];
+            // A pin direction is a solver fact, not the owner's unsolved preview orientation.
+            if self.is_pin_direction_input(f.target) {
+                continue;
+            }
             let p = self.fact_priority(s, f);
             if p == Priority::Disabled {
                 continue;
@@ -859,10 +880,11 @@ impl Interp<'_> {
                 continue;
             }
             for q in &points {
-                if !matches!(self.o(*q), ObjData::Term { .. }) {
-                    continue;
-                }
-                let tn = self.term_nets(s, *q);
+                let (tn, kind) = match self.o(self.scene_value(*q)).clone() {
+                    ObjData::Term { .. } => (self.term_nets(s, *q), "terminal"),
+                    ObjData::ScenePin { owner, index } => (self.scene_pin_nets(s, owner, index), "pin"),
+                    _ => continue,
+                };
                 if !tn.is_empty() && !tn.iter().any(|n| nets.contains(n)) {
                     let wn: Vec<String> = nets.iter().map(|n| self.net_display(*n)).collect();
                     let names: Vec<String> = tn.iter().map(|n| self.net_display(*n)).collect();
@@ -873,7 +895,7 @@ impl Interp<'_> {
                         &site,
                         off,
                         format!(
-                            "the wire is marked on net {}, but the terminal {ql} it reaches is on {} (13.1)",
+                            "the wire is marked on net {}, but the {kind} {ql} it reaches is on {} (13.1)",
                             wn.join(","),
                             names.join(",")
                         ),
@@ -1039,6 +1061,9 @@ impl Interp<'_> {
     }
 
     pub(crate) fn is_obj_failed(&self, o: ObjId) -> bool {
+        if self.is_failed(o) {
+            return true;
+        }
         match self.o(o) {
             ObjData::Wire { failed, .. } | ObjData::Text { failed, .. } | ObjData::KeyText { failed, .. } => *failed,
             ObjData::Constraint(c) => c.failed,
@@ -1047,7 +1072,7 @@ impl Interp<'_> {
     }
 
     pub(crate) fn net_display(&self, n: ObjId) -> String {
-        match self.o(n) {
+        match self.o(self.scene_value(n)) {
             ObjData::Net { display, .. } => display.clone(),
             _ => self.label(n),
         }
@@ -1123,10 +1148,42 @@ impl Interp<'_> {
     }
 
     fn geom_target_ok(&mut self, s: SceneId, list: char, k: usize, f: &Fact, what: &str) -> bool {
+        if self.is_obj_failed(f.target) || f.ctx.as_ref().is_some_and(|ctx| self.failed_body(ctx)) {
+            return false;
+        }
         if f.ctx.is_none() {
             return true;
         }
         let obj = f.target;
+        if what == "ORIENT"
+            && f.ctx.as_ref().is_some_and(|ctx| self.follows_0_4(self.source_unit(ctx)))
+            && self.is_pin_direction_input(obj)
+        {
+            return match self.direction_pin(s, obj) {
+                Some((_, _, Some(_))) => true,
+                Some((_, _, None)) => {
+                    self.diag_fact(
+                        Severity::Error,
+                        codes::PIN_DIRECTION_MISSING,
+                        f,
+                        format!(
+                            "{} has no written pin direction: this {what} fails (9.2.4, 11.2, 14.9)",
+                            self.label(obj)
+                        ),
+                    );
+                    false
+                }
+                None => {
+                    self.diag_fact(
+                        Severity::Error,
+                        codes::PLACE_ORIENT_NOT_TAKEN,
+                        f,
+                        format!("{} has no usable pin in its symbol: ORIENT fails (5.2.4, 11.2)", self.label(obj)),
+                    );
+                    false
+                }
+            };
+        }
         match self.o(obj).clone() {
             ObjData::Inst { bundle: Some(_), .. } => {
                 self.member_draw_error(s, list, k, f, obj);
@@ -1314,7 +1371,10 @@ impl Interp<'_> {
             let wire = self.label(w);
             for k in 0..self.scenes[s].rewrites[&w].len() {
                 let points = self.scenes[s].rewrites[&w][k].points.clone();
-                let fault = points.iter().find_map(|q| self.term_fault(s, *q)).map(|f| f.for_rewrite(&wire));
+                let site = self.scenes[s].rewrites[&w][k].site.clone();
+                let fault = self
+                    .wire_rewrite_error(&site, &points)
+                    .or_else(|| points.iter().find_map(|q| self.term_fault(s, *q)).map(|f| f.for_rewrite(&wire)));
                 let Some(r) = self.scenes[s].rewrites.get_mut(&w).map(|r| &mut r[k]) else { continue };
                 let style = r.style.filter(|_| fault.is_some());
                 r.fault = fault;
@@ -1340,7 +1400,18 @@ impl Interp<'_> {
 
     /// The coordinate point of a locatable object (14.1), or None when it is free.
     pub(crate) fn point_of(&mut self, s: SceneId, o: ObjId) -> Option<Pt> {
+        if self.is_failed(o) {
+            return None;
+        }
         match self.o(o).clone() {
+            ObjData::NamedSubobject { resolved, .. } => self.point_of(s, resolved?),
+            ObjData::ScenePin { owner, index } => {
+                let symbol = *self.scenes[s].symbol.get(&owner)?;
+                let local = self.symbol(symbol).pins.get(index)?.pos;
+                let base = self.xy(s, owner)?;
+                let delta = self.orientation(s, owner).apply(local);
+                Some((base.0 + delta.0, base.1 + delta.1))
+            }
             ObjData::Point { .. } => self.xy(s, o),
             ObjData::Pos { parent } => {
                 if self.is_set(parent) {
@@ -1435,6 +1506,8 @@ impl Interp<'_> {
             ObjData::Point { .. }
             | ObjData::Pos { .. }
             | ObjData::Term { .. }
+            | ObjData::ScenePin { .. }
+            | ObjData::NamedSubobject { .. }
             | ObjData::Inst { .. }
             | ObjData::Usage(_)
             | ObjData::Bundle { .. } => self.point_of(s, att),
@@ -1489,6 +1562,7 @@ impl Interp<'_> {
     /// on the point it is attached to, beside the object, on the first wire of the net, or above the
     /// middle of the wire (13.3).
     fn text_default_place(&mut self, s: SceneId, att: ObjId, base: Option<Pt>) -> Option<Pt> {
+        let att = self.scene_value(att);
         if matches!(self.o(att), ObjData::Point { .. } | ObjData::Pos { .. }) {
             return base;
         }
@@ -1541,6 +1615,7 @@ impl Interp<'_> {
     /// that is drawn (13.3: next to one of its wires or terminals); beside the first point of a
     /// graphic, as beside the origin of an object. None when nothing of it is drawn.
     fn drawn_default_place(&mut self, s: SceneId, att: ObjId) -> Option<Pt> {
+        let att = self.scene_value(att);
         match self.o(att).clone() {
             ObjData::Wire { .. } => {
                 let pts = self.wire_path(s, att);
@@ -1614,6 +1689,9 @@ impl Interp<'_> {
     pub(crate) fn route_terms(&mut self, s: SceneId) -> HashMap<ObjId, Vec<(ObjId, ObjId, u32)>> {
         let mut out: HashMap<ObjId, Vec<(ObjId, ObjId, u32)>> = HashMap::new();
         for ow in self.inst_like(s) {
+            if self.add_independent_route_pins(s, ow, &mut out) {
+                continue;
+            }
             for t in self.terms_of(s, ow) {
                 let ObjData::Term { index: i, .. } = *self.o(t) else { continue };
                 let nets = self.tnets(s, t);
@@ -1628,6 +1706,9 @@ impl Interp<'_> {
             if self.usage(a).in_symbol || !self.scenes[s].symbol.contains_key(&a) {
                 continue;
             }
+            if self.add_independent_route_pins(s, a, &mut out) {
+                continue;
+            }
             for t in self.terms_of(s, a) {
                 let ObjData::Term { index: i, name, .. } = self.o(t).clone() else { continue };
                 if let Some(role) = name.as_ref().and_then(|n| self.usage(a).role(n)) {
@@ -1636,6 +1717,31 @@ impl Interp<'_> {
             }
         }
         out
+    }
+
+    fn add_independent_route_pins(
+        &mut self,
+        scene: SceneId,
+        owner: ObjId,
+        out: &mut HashMap<ObjId, Vec<(ObjId, ObjId, u32)>>,
+    ) -> bool {
+        let Some(&symbol) = self.scenes[scene].symbol.get(&owner) else { return false };
+        if !self.symbol(symbol).independent_pins {
+            return false;
+        }
+        if self.is_failed(owner) {
+            return true;
+        }
+        for index in 0..self.symbol(symbol).pins.len() {
+            let object = self.scene_pin_object(scene, owner, index);
+            let mut seen = HashSet::new();
+            for net in self.scene_pin_nets(scene, owner, index) {
+                if seen.insert(net) {
+                    out.entry(net).or_default().push((owner, object, index as u32));
+                }
+            }
+        }
+        true
     }
 
     /// The vertices of a wire after its routing mode (13.1), as it is drawn: rewritten, by the
@@ -1693,6 +1799,10 @@ impl Interp<'_> {
             kept.entry(o).or_default().extend(proof);
         }
         for c in self.scenes[s].constraints.clone() {
+            if self.is_failed(c) {
+                self.constraint_mut(c).status = Some("failed");
+                continue;
+            }
             let ObjData::Constraint(cd) = self.o(c).clone() else { continue };
             let site = cd.site.clone();
             let p = self.eff_priority(s, cd.priority_param, &cd.chain, Some(c));
@@ -1726,10 +1836,51 @@ impl Interp<'_> {
                 vec![cd.args[0]]
             };
             let leaves = self.leaves(s, &members);
+            if relation && site.as_ref().is_some_and(|ctx| self.follows_0_4(self.source_unit(ctx))) {
+                let pin_count = leaves.iter().filter(|m| self.is_pin_direction_input(**m)).count();
+                if pin_count > 0 && pin_count < leaves.len() {
+                    self.diag_site(
+                        Severity::Error,
+                        codes::CONSTRAINT_ORIENT_RELATION_MIXED_KINDS,
+                        &site,
+                        cd.off,
+                        "ORIENT-RELATION relates two pins or two oriented objects, not a pin to an object (14.9)"
+                            .into(),
+                    );
+                    self.constraint_mut(c).failed = true;
+                    continue;
+                }
+                let mut no_direction = false;
+                for &member in &leaves {
+                    if matches!(self.direction_pin(s, member), Some((_, _, None))) {
+                        self.diag_site(
+                            Severity::Error,
+                            codes::PIN_DIRECTION_MISSING,
+                            &site,
+                            cd.off,
+                            format!(
+                                "{} has no written pin direction: this ORIENT-RELATION fails (9.2.4, 11.2, 14.9)",
+                                self.label(member)
+                            ),
+                        );
+                        no_direction = true;
+                    }
+                }
+                if no_direction {
+                    self.constraint_mut(c).failed = true;
+                    continue;
+                }
+            }
             let mut bad = None;
             for &m in &leaves {
                 let why = if relation {
-                    self.orientable(s, m)
+                    if site.as_ref().is_some_and(|ctx| self.follows_0_4(self.source_unit(ctx)))
+                        && self.direction_pin(s, m).is_some_and(|(_, _, dir)| dir.is_some())
+                    {
+                        None
+                    } else {
+                        self.orientable(s, m)
+                    }
                 } else if site.as_ref().is_some_and(|c| self.follows_0_4(self.source_unit(c)))
                     && matches!(
                         self.o(m),
@@ -1959,6 +2110,16 @@ impl Interp<'_> {
         let ObjData::Constraint(cd) = self.o(c).clone() else { return Some(true) };
         let tol = self.tol;
         if cd.kind == ConstraintKind::OrientRelation {
+            if cd.site.as_ref().is_some_and(|ctx| self.follows_0_4(self.source_unit(ctx)))
+                && cd.args.len() == 2
+                && self.is_pin_direction_input(cd.args[0])
+            {
+                let (a, _, ad) = self.direction_pin(s, cd.args[0])?;
+                let (b, _, bd) = self.direction_pin(s, cd.args[1])?;
+                let from = self.scenes[s].ori.get(&a)?.direction(ad?)?;
+                let to = self.scenes[s].ori.get(&b)?.direction(bd?)?;
+                return Some(cd.params.relations().iter().any(|rel| rel.direction(from) == Some(to)));
+            }
             // each side shares one orientation; `to` is `from` turned by the relation in the drawing's frame (14.9)
             let mut sides = Vec::new();
             for a in &cd.args {
@@ -2044,6 +2205,9 @@ impl Interp<'_> {
         // in `done` stay valid until its end
         let mut idx = StyleIndex::default();
         for (k, f) in self.scenes[s].styles.iter().enumerate() {
+            if self.is_obj_failed(f.target) || f.ctx.as_ref().is_some_and(|ctx| self.failed_body(ctx)) {
+                continue;
+            }
             match &f.data {
                 FactData::OwnStyle(m) => idx.own.entry(f.target).or_default().push((f.order(), m.clone())),
                 FactData::Style(sty) if matches!(self.o(*sty), ObjData::Style(_)) => {
@@ -2074,6 +2238,7 @@ impl Interp<'_> {
         idx: &StyleIndex,
         done: &'a mut HashMap<ObjId, BTreeMap<String, (Lit, Pos)>>,
     ) -> &'a BTreeMap<String, (Lit, Pos)> {
+        let o = self.scene_value(o);
         if done.contains_key(&o) {
             return &done[&o];
         }
@@ -2131,18 +2296,20 @@ impl Interp<'_> {
         let src = match self.o(o) {
             ObjData::Text { attach, .. } | ObjData::KeyText { attach, .. } => {
                 if matches!(
-                    self.o(*attach),
+                    self.o(self.scene_value(*attach)),
                     ObjData::Inst { .. }
                         | ObjData::Usage(_)
                         | ObjData::Bundle { .. }
                         | ObjData::Wire { .. }
                         | ObjData::Prim { .. }
+                        | ObjData::ScenePin { .. }
                 ) {
                     Some(*attach)
                 } else {
                     None
                 }
             }
+            ObjData::ScenePin { owner, .. } => Some(*owner),
             _ => None,
         };
         if let Some(src) = src {
@@ -2166,6 +2333,9 @@ impl Interp<'_> {
     fn resolve_layers(&mut self, s: SceneId) {
         let layers = self.scenes[s].layers.clone();
         for (k, f) in layers.iter().enumerate() {
+            if self.is_obj_failed(f.target) || f.ctx.as_ref().is_some_and(|ctx| self.failed_body(ctx)) {
+                continue;
+            }
             let o = f.target;
             match self.o(o) {
                 ObjData::Point { .. } | ObjData::Net { .. } | ObjData::Constraint(_) => {

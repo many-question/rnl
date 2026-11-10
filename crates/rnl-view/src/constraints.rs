@@ -13,7 +13,7 @@ use rnl_runtime::geom::Pt;
 use rnl_runtime::model::{quoted, ItemView, LevelView};
 use rnl_runtime::previous::document_ids;
 use rnl_runtime::problem::{
-    fact_statement, input_digest, FactKind, LevelProblem, PointRef, ProblemFact, Reference, RouteIntent,
+    fact_statement, input_digest, DirectedPin, FactKind, LevelProblem, PointRef, ProblemFact, Reference, RouteIntent,
 };
 use rnl_runtime::Interpretation;
 use serde::Serialize;
@@ -112,6 +112,10 @@ pub enum ConstraintKind {
     TextDy { text: usize, from: ConstraintPoint, value: f64 },
     #[serde(rename = "ORIENT")]
     Orient { object: usize, code: &'static str },
+    #[serde(rename = "PIN-ORIENT")]
+    PinOrient { pin: ConstraintDirectedPin, codes: Vec<&'static str> },
+    #[serde(rename = "PIN-ORIENT-RELATION")]
+    PinOrientRelation { from: ConstraintDirectedPin, to: ConstraintDirectedPin, relations: Vec<&'static str> },
     #[serde(rename = "ALIGN")]
     Align { axis: &'static str, members: Vec<ConstraintPoint> },
     #[serde(rename = "ORDER")]
@@ -129,6 +133,21 @@ pub enum ConstraintKind {
     },
     #[serde(rename = "ORIENT-RELATION")]
     OrientRelation { relation: &'static str, from: Vec<usize>, to: Vec<usize> },
+}
+
+/// A pin with its local direction, transformed by its owner's orientation.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct ConstraintDirectedPin {
+    pub object: usize,
+    pub pin: usize,
+    pub direction: u16,
+}
+
+impl From<DirectedPin> for ConstraintDirectedPin {
+    fn from(pin: DirectedPin) -> Self {
+        Self { object: pin.object, pin: pin.pin, direction: pin.direction }
+    }
 }
 
 /// A constraint after expansion, as `rnl problem` prints it in `facts`, with `what`.
@@ -223,7 +242,8 @@ fn point(r: &PointRef) -> ConstraintPoint {
         PointRef::Pin { object, pin, terminal } => {
             ConstraintPoint::Pin { object: *object, pin: *pin, terminal: terminal.clone() }
         }
-        PointRef::SymbolPin { object, pin, reference: r } => {
+        // Constraints use the coordinate of either kind; their reference retains ::position.
+        PointRef::SymbolPin { object, pin, reference: r } | PointRef::PinPosition { object, pin, reference: r } => {
             ConstraintPoint::SymbolPin { object: *object, pin: *pin, reference: reference(r, true) }
         }
         PointRef::Centre(points) => ConstraintPoint::Centre { centre: points_of(points) },
@@ -248,6 +268,14 @@ fn kind(f: &ProblemFact) -> ConstraintKind {
             ConstraintKind::TextDy { text: *text, from: point(from), value: *value }
         }
         FactKind::Orient { object, code } => ConstraintKind::Orient { object: *object, code: code.as_str() },
+        FactKind::PinOrient { pin, codes } => {
+            ConstraintKind::PinOrient { pin: (*pin).into(), codes: codes.iter().map(|code| code.as_str()).collect() }
+        }
+        FactKind::PinOrientRelation { from, to, relations } => ConstraintKind::PinOrientRelation {
+            from: (*from).into(),
+            to: (*to).into(),
+            relations: relations.iter().map(|code| code.as_str()).collect(),
+        },
         FactKind::Align { axis, members } => ConstraintKind::Align { axis: axis.as_str(), members: points_of(members) },
         FactKind::Order { axis, sense, members } => {
             ConstraintKind::Order { axis: axis.as_str(), sense: sense.as_str(), members: points_of(members) }

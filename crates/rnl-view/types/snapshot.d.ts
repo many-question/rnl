@@ -532,6 +532,7 @@ export type WireView = {
  */
 export type Vertex =
   | { terminal: string }
+  | { owner: string, pin: number, reference: string }
   | { point: string }
   | { usage: string, role: string }
   | { at: [number, number] };

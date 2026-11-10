@@ -4,8 +4,8 @@
 //! types give; run it with `RNL_BLESS=1` to write the files after a change that is meant.
 
 use crate::{
-    Constraint, ConstraintGroup, ConstraintKind, ConstraintObject, ConstraintPoint, ConstraintReference,
-    ConstraintRoute, ConstraintSource, ConstraintUsage, LevelConstraints,
+    Constraint, ConstraintDirectedPin, ConstraintGroup, ConstraintKind, ConstraintObject, ConstraintPoint,
+    ConstraintReference, ConstraintRoute, ConstraintSource, ConstraintUsage, LevelConstraints,
 };
 use crate::{CurrentArrow, UsageFrame};
 use crate::{FormatInfo, InspectedLabel, InspectedPin, InspectedSymbol, SourceInclude, Usage, UsageRole};
@@ -144,6 +144,7 @@ fn all() -> Vec<(String, String)> {
         one::<ConstraintObject>(&cfg),
         one::<ConstraintReference>(&cfg),
         one::<ConstraintPoint>(&cfg),
+        one::<ConstraintDirectedPin>(&cfg),
         one::<ConstraintKind>(&cfg),
         one::<Constraint>(&cfg),
         one::<ConstraintSource>(&cfg),

@@ -223,6 +223,7 @@ pub fn statements(op: &Op, style: Option<&str>) -> Vec<String> {
                 .iter()
                 .map(|v| match v {
                     Vertex::Terminal(t) => t.clone(),
+                    Vertex::Pin { reference, .. } => reference.clone(),
                     Vertex::Point(p) => p.clone(),
                     Vertex::Usage { usage, role } => format!("{usage}:{role}"),
                     Vertex::At(p) => point(*p),

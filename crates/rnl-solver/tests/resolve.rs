@@ -86,6 +86,10 @@ fn holds(p: &LevelProblem, r: &Resolved, kind: &FactKind, tol: f64) -> bool {
             (at(&PointRef::Origin(*text), *axis) - at(from, *axis) - value).abs() <= tol
         }
         FactKind::Orient { object, code } => ori(*object) == *code,
+        FactKind::PinOrient { pin, codes } => pin.faces(ori(pin.object), codes),
+        FactKind::PinOrientRelation { from, to, relations } => {
+            from.relates(ori(from.object), *to, ori(to.object), relations)
+        }
         FactKind::OrientRelation { relation, from, to } => {
             let (Some(a), Some(b)) = (from.first(), to.first()) else { return true };
             from.iter().all(|k| ori(*k) == ori(*a))

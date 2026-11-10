@@ -68,7 +68,9 @@ fn point(p: &LevelProblem, s: &Solution, q: &PointRef) -> Pt {
     let at = |object| s.placements.iter().find(|pl| pl.object == object).unwrap().at().unwrap();
     match q {
         PointRef::Origin(object) => at(*object),
-        PointRef::Pin { object, pin, .. } | PointRef::SymbolPin { object, pin, .. } => {
+        PointRef::Pin { object, pin, .. }
+        | PointRef::SymbolPin { object, pin, .. }
+        | PointRef::PinPosition { object, pin, .. } => {
             let a = at(*object);
             let b = p.symbols[p.objects[*object].symbol.unwrap()].pins[*pin].pos;
             (a.0 + b.0, a.1 + b.1)

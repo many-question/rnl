@@ -1946,7 +1946,7 @@ fn grounded(problem: &LevelProblem, s: &Structure, c: &Candidate, ori: &[Orient]
     };
     let held = n;
     let object_of = |p: &PointId| match p {
-        PointId::Origin(k) | PointId::Pin(k, _) | PointId::Text(k) => Some(*k),
+        PointId::Origin(k) | PointId::Pin(k, _) | PointId::PinPosition(k, _) | PointId::Text(k) => Some(*k),
         PointId::Centre(_) => None,
     };
     // the elements, in the rows of the candidate

@@ -109,6 +109,9 @@ pub enum PointRef {
     /// Geometry uses `object` and `pin`; writeback must use this exact reference, and must leave
     /// an anonymous endpoint unsolved rather than connect another pin of the same terminal.
     SymbolPin { object: usize, pin: usize, reference: Reference },
+    /// The coordinate point of a pin, with no electrical connection to that pin (5.2.4).
+    /// `reference` reaches the point itself, including `::position`, for lossless wire writeback.
+    PinPosition { object: usize, pin: usize, reference: Reference },
     /// The centre of a set, the middle of the extent of its points, nested sets followed down
     /// to the innermost objects (6.5, 14.1).
     Centre(Vec<PointRef>),
@@ -244,6 +247,8 @@ pub enum Filler {
     Object(usize),
     /// A terminal of an object of the problem, with the pin that draws it when there is one.
     Terminal { object: usize, terminal: String, pin: Option<usize> },
+    /// One exact pin of an object's assigned symbol, including an unbound pin (9.2.4).
+    Pin { object: usize, pin: usize },
     /// A usage without a symbol, by its index in [`LevelProblem::usages`].
     Usage(usize),
     /// A net, by its name.
@@ -326,6 +331,33 @@ pub struct ProblemSymbol {
     pub pins: Vec<PinView>,
 }
 
+/// A physical pin with its written local direction; the owner supplies its orientation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DirectedPin {
+    pub object: usize,
+    pub pin: usize,
+    /// Degrees from right in the symbol: 0, 90, 180 or 270 (9.2.4).
+    pub direction: u16,
+}
+
+impl DirectedPin {
+    pub fn drawn_direction(self, orientation: Orient) -> Option<u16> {
+        orientation.direction(self.direction)
+    }
+
+    pub fn faces(self, orientation: Orient, codes: &[Orient]) -> bool {
+        self.drawn_direction(orientation)
+            .is_some_and(|direction| codes.iter().any(|code| code.direction(180) == Some(direction)))
+    }
+
+    pub fn relates(self, orientation: Orient, to: DirectedPin, to_orientation: Orient, codes: &[Orient]) -> bool {
+        match (self.drawn_direction(orientation), to.drawn_direction(to_orientation)) {
+            (Some(from), Some(to)) => codes.iter().any(|code| code.direction(from) == Some(to)),
+            _ => false,
+        }
+    }
+}
+
 /// A geometric fact (8.5) and what it relates.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FactKind {
@@ -340,6 +372,11 @@ pub enum FactKind {
     Offset { text: usize, from: PointRef, axis: Axis, value: f64 },
     /// ORIENT (11.2).
     Orient { object: usize, code: Orient },
+    /// ORIENT on a pin (11.2): the code turns left into the requested direction.
+    /// Each listed direction allows two owner orientations; this remains one fact.
+    PinOrient { pin: DirectedPin, codes: Vec<Orient> },
+    /// ORIENT-RELATION of two pins relates their drawn directions (14.9).
+    PinOrientRelation { from: DirectedPin, to: DirectedPin, relations: Vec<Orient> },
     /// ALIGN (14.2): the members, a set by its centre, are equal on the axis.
     Align { axis: Axis, members: Vec<PointRef> },
     /// ORDER (14.3): strictly monotonic, neighbours at least one unit apart.
@@ -367,6 +404,8 @@ impl FactKind {
             FactKind::Offset { axis: Axis::X, .. } => "TEXT-dx",
             FactKind::Offset { axis: Axis::Y, .. } => "TEXT-dy",
             FactKind::Orient { .. } => "ORIENT",
+            FactKind::PinOrient { .. } => "PIN-ORIENT",
+            FactKind::PinOrientRelation { .. } => "PIN-ORIENT-RELATION",
             FactKind::Align { .. } => "ALIGN",
             FactKind::Order { .. } => "ORDER",
             FactKind::Distribute { .. } => "DISTRIBUTE",
@@ -563,6 +602,10 @@ pub fn point_name(p: &LevelProblem, r: &PointRef) -> String {
             Reference::Name(n) => n.clone(),
             _ => format!("pin {} of {}", pin + 1, label(*object)),
         },
+        PointRef::PinPosition { object, pin, reference } => match reference {
+            Reference::Name(n) => n.clone(),
+            _ => format!("position of pin {} of {}", pin + 1, label(*object)),
+        },
         PointRef::Centre(points) => {
             format!("{{{}}}", points.iter().map(|q| point_name(p, q)).collect::<Vec<_>>().join(" "))
         }
@@ -593,6 +636,20 @@ pub fn fact_statement(p: &LevelProblem, k: usize) -> String {
         FactKind::Orient { object, code } => {
             format!("the orientation {} of {}", code.as_str(), point_name(p, &PointRef::Origin(*object)))
         }
+        FactKind::PinOrient { pin, codes } => format!(
+            "ORIENT [{}] pin {} of {}",
+            codes.iter().map(|code| code.as_str()).collect::<Vec<_>>().join(", "),
+            pin.pin + 1,
+            point_name(p, &PointRef::Origin(pin.object))
+        ),
+        FactKind::PinOrientRelation { from, to, relations } => format!(
+            "ORIENT-RELATION [{}] pin {} of {} to pin {} of {}",
+            relations.iter().map(|code| code.as_str()).collect::<Vec<_>>().join(", "),
+            from.pin + 1,
+            point_name(p, &PointRef::Origin(from.object)),
+            to.pin + 1,
+            point_name(p, &PointRef::Origin(to.object))
+        ),
         FactKind::Align { axis, members } => format!("ALIGN {} {}", axis.as_str(), list(members)),
         FactKind::Distribute { axis, sense: Sense::Either, members } => {
             format!("DISTRIBUTE {} {}", axis.as_str(), list(members))
@@ -864,6 +921,24 @@ pub fn canonical_sig1(p: &LevelProblem) -> String {
                 c.index(*object);
                 c.word(code.as_str());
             }
+            FactKind::PinOrient { pin, codes } => {
+                c.index(pin.object);
+                c.index(pin.pin);
+                c.index(usize::from(pin.direction));
+                for code in codes {
+                    c.word(code.as_str());
+                }
+            }
+            FactKind::PinOrientRelation { from, to, relations } => {
+                for pin in [from, to] {
+                    c.index(pin.object);
+                    c.index(pin.pin);
+                    c.index(usize::from(pin.direction));
+                }
+                for relation in relations {
+                    c.word(relation.as_str());
+                }
+            }
             // without a sense, as a file of 0.3 writes it, as it was, so that the digest stays
             FactKind::Align { axis, members } | FactKind::Distribute { axis, sense: Sense::Either, members } => {
                 c.word(axis.as_str());
@@ -1073,6 +1148,12 @@ impl Canon {
                 self.index(*pin);
                 self.reference(reference);
             }
+            PointRef::PinPosition { object, pin, reference } => {
+                self.word("pin-position");
+                self.index(*object);
+                self.index(*pin);
+                self.reference(reference);
+            }
             PointRef::Centre(points) => {
                 self.word("centre");
                 self.points(points);
@@ -1119,6 +1200,11 @@ impl Canon {
                 self.index(*object);
                 self.str(terminal);
                 self.opt_index(*pin);
+            }
+            Filler::Pin { object, pin } => {
+                self.word("pin");
+                self.index(*object);
+                self.index(*pin);
             }
             Filler::Usage(k) => {
                 self.word("usage");

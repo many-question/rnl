@@ -46,6 +46,7 @@ struct Piece {
     points: Vec<Pt>,
     segments: Vec<(Pt, Pt)>,
     pin: Option<Pt>,
+    handles: Vec<ObjId>,
 }
 
 fn square(a: Pt, b: Pt) -> f64 {
@@ -119,13 +120,21 @@ impl Interp<'_> {
         net: ObjId,
         terms: &HashMap<ObjId, Vec<(ObjId, ObjId, u32)>>,
     ) -> Vec<Island> {
+        let by_handle = self.follows_0_4(self.level_unit[self.scenes[s].level]);
         let mut pieces = Vec::new();
         for w in self.scenes[s].wires_by_net.get(&net).cloned().unwrap_or_default() {
             if !matches!(self.o(w), ObjData::Wire { failed: false, .. }) {
                 continue;
             }
             let Some((runs, mode)) = self.wire_runs(s, w) else { continue };
-            let mut piece = Piece { points: Vec::new(), segments: Vec::new(), pin: None };
+            let handles = if by_handle {
+                self.wire_shape(s, w)
+                    .map(|shape| shape.points.into_iter().map(|point| self.wire_point_handle(s, point)).collect())
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            let mut piece = Piece { points: Vec::new(), segments: Vec::new(), pin: None, handles };
             for run in runs {
                 let drawn = if run.len() >= 2 { route(&run, &mode) } else { run };
                 piece.segments.extend(drawn.windows(2).map(|pair| (pair[0], pair[1])));
@@ -141,15 +150,22 @@ impl Interp<'_> {
                 continue;
             }
             if let Some(p) = self.point_of(s, t) {
-                pieces.push(Piece { points: vec![p], segments: Vec::new(), pin: Some(p) });
+                let handles = if by_handle { vec![self.wire_point_handle(s, t)] } else { Vec::new() };
+                pieces.push(Piece { points: vec![p], segments: Vec::new(), pin: Some(p), handles });
             }
         }
-        // the pieces that share a point as drawn
+        // In 0.4 only shared objects connect. Equal coordinates, including bends inserted by
+        // a drawing mode, make no connection (13.1). Keep the released drawing of older files.
         let mut parent: Vec<usize> = (0..pieces.len()).collect();
         let mut at: HashMap<(i64, i64), usize> = HashMap::new();
+        let mut connected = HashMap::new();
         for (i, piece) in pieces.iter().enumerate() {
-            for p in &piece.points {
-                let first = *at.entry(key(*p)).or_insert(i);
+            let shared: Vec<usize> = if by_handle {
+                piece.handles.iter().map(|handle| *connected.entry(*handle).or_insert(i)).collect()
+            } else {
+                piece.points.iter().map(|point| *at.entry(key(*point)).or_insert(i)).collect()
+            };
+            for first in shared {
                 let (a, b) = (find(&mut parent, first), find(&mut parent, i));
                 parent[a.max(b)] = a.min(b);
             }

@@ -80,6 +80,8 @@ pub(crate) enum PointId {
     Origin(usize),
     /// A pin of an object, by object and by the index of the pin in its symbol (9.2.4).
     Pin(usize, usize),
+    /// A pin's coordinate point, which does not connect a wire to that pin (5.2.4).
+    PinPosition(usize, usize),
     /// A text placed by its owner's symbol (13.3), by object: a point of the owner, on the axes
     /// that the scene does not replace ([`PointInfo::free`]).
     Text(usize),
@@ -222,6 +224,12 @@ pub(crate) enum ChoiceKind {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum OrientEffect {
     None,
+    /// Direction facts constrain pins without fixing the owner's mirror choice.
+    Pins {
+        from: rnl_runtime::problem::DirectedPin,
+        to: Option<rnl_runtime::problem::DirectedPin>,
+        codes: Vec<Orient>,
+    },
     /// ORIENT: the object has this orientation.
     Fix {
         object: usize,
@@ -234,6 +242,25 @@ pub(crate) enum OrientEffect {
         from: Vec<usize>,
         to: Vec<usize>,
     },
+}
+
+impl OrientEffect {
+    pub(crate) fn pin_objects(&self) -> Vec<usize> {
+        match self {
+            Self::Pins { from, to, .. } => std::iter::once(from.object).chain(to.map(|pin| pin.object)).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    pub(crate) fn pins_hold(&self, orientation: impl Fn(usize) -> Orient) -> bool {
+        match self {
+            Self::Pins { from, to: Some(to), codes } => {
+                from.relates(orientation(from.object), *to, orientation(to.object), codes)
+            }
+            Self::Pins { from, to: None, codes } => from.faces(orientation(from.object), codes),
+            _ => true,
+        }
+    }
 }
 
 /// One unit of 8.5: a fact, as bounds and choices.
@@ -404,12 +431,19 @@ impl Model {
                     Some(id)
                 }
             },
-            PointRef::Pin { object, pin, .. } | PointRef::SymbolPin { object, pin, .. } => {
+            PointRef::Pin { object, pin, .. }
+            | PointRef::SymbolPin { object, pin, .. }
+            | PointRef::PinPosition { object, pin, .. } => {
                 let o = problem.objects.get(*object)?;
                 let pos = o.symbol.and_then(|s| problem.symbols.get(s)).and_then(|s| s.pins.get(*pin)).map(|p| p.pos);
                 let (x, y) = pos.unwrap_or((0.0, 0.0));
                 let local = (from_f64(x).unwrap_or_default(), from_f64(y).unwrap_or_default());
-                Some(self.add_point(PointId::Pin(*object, *pin), Some(*object), Some(local)))
+                let id = if matches!(r, PointRef::PinPosition { .. }) {
+                    PointId::PinPosition(*object, *pin)
+                } else {
+                    PointId::Pin(*object, *pin)
+                };
+                Some(self.add_point(id, Some(*object), Some(local)))
             }
             PointRef::Centre(members) => {
                 let mut points = Vec::new();
@@ -590,6 +624,12 @@ impl Model {
                 }
             }
             FactKind::Orient { object, code } => orient = OrientEffect::Fix { object: *object, code: *code },
+            FactKind::PinOrient { pin, codes } => {
+                orient = OrientEffect::Pins { from: *pin, to: None, codes: codes.clone() }
+            }
+            FactKind::PinOrientRelation { from, to, relations } => {
+                orient = OrientEffect::Pins { from: *from, to: Some(*to), codes: relations.clone() }
+            }
             FactKind::OrientRelation { relation, from, to } => {
                 orient = OrientEffect::Relate { relation: *relation, from: from.clone(), to: to.clone() }
             }
@@ -730,6 +770,24 @@ mod tests {
 
     fn tol() -> Q {
         frac(1, 1_000_000)
+    }
+
+    #[test]
+    fn pin_coordinates_have_separate_identity_with_the_same_geometry() {
+        let p = problem_of(vec![instance()], vec![]);
+        let mut model = Model::new(&p, tol());
+        let pin = PointRef::Pin { object: 0, pin: 0, terminal: "g".into() };
+        let position = PointRef::PinPosition {
+            object: 0,
+            pin: 0,
+            reference: rnl_runtime::problem::Reference::Name("#M1:g::position".into()),
+        };
+        let a = model.point(&p, &pin, 0).unwrap();
+        let b = model.point(&p, &position, 0).unwrap();
+        assert_ne!(a, b);
+        assert_ne!(model.points[&a].var, model.points[&b].var);
+        assert_eq!(model.points[&a].object, model.points[&b].object);
+        assert_eq!(model.points[&a].local, model.points[&b].local);
     }
 
     #[test]

@@ -207,6 +207,8 @@ pub struct Pin {
     pub names: Vec<String>,
     /// Terminals: numbers or names; several for a bus pin.
     pub terms: Vec<TermKey>,
+    /// An array binding in 0.4 stays a bus even when it has just one element.
+    pub bus: bool,
     pub pos: (f64, f64),
     pub label: Option<String>,
     /// The label was written in a file that reads the name formats of 0.4 (13.6).
@@ -531,10 +533,32 @@ pub enum SetKind {
     },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InputMember {
+    pub object: ObjId,
+    /// Failure dependencies of this occurrence, not of the shared object it names.
+    pub dependencies: Vec<ObjId>,
+}
+
+impl InputMember {
+    pub fn plain(object: ObjId) -> Self {
+        Self { object, dependencies: Vec::new() }
+    }
+
+    pub fn depend_on(&mut self, dependencies: &[ObjId]) {
+        for &dependency in dependencies {
+            if !self.dependencies.contains(&dependency) {
+                self.dependencies.push(dependency);
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SetData {
     /// Members with "spread": a reference to a set is spread one level (5.2).
     pub items: Vec<(ObjId, bool)>,
+    pub item_dependencies: Vec<Vec<ObjId>>,
     /// A written `{…}` stays a member inside another set.
     pub explicit: bool,
     pub mods: Vec<SetMod>,
@@ -559,6 +583,7 @@ impl SetData {
     pub fn plain(items: Vec<(ObjId, bool)>, explicit: bool) -> SetData {
         SetData {
             items,
+            item_dependencies: Vec::new(),
             explicit,
             mods: Vec::new(),
             mods_by_scene: HashMap::new(),
@@ -627,6 +652,19 @@ pub enum ObjData {
     /// A PIN result inside a symbol body, distinct from its input point (9.2.4).
     SymbolPin {
         symbol: ObjId,
+        index: usize,
+    },
+    /// The written handle stays (parent, name), independently of its resolved value (6.5).
+    NamedSubobject {
+        parent: ObjId,
+        name: String,
+        resolved: Option<ObjId>,
+        site: Rc<Ctx>,
+        off: usize,
+    },
+    /// A physical pin of an assigned scene symbol, shared by all names for that pin.
+    ScenePin {
+        owner: ObjId,
         index: usize,
     },
     /// `X::position` (6.5).

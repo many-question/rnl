@@ -457,6 +457,7 @@ pub struct WireView {
 #[serde(untagged)]
 pub enum Vertex {
     Terminal { terminal: String },
+    Pin { owner: String, pin: usize, reference: String },
     Point { point: String },
     Usage { usage: String, role: String },
     At { at: [f64; 2] },
@@ -897,6 +898,9 @@ fn level_model(
                 .iter()
                 .map(|v| match v {
                     model::Vertex::Terminal(t) => Vertex::Terminal { terminal: t.clone() },
+                    model::Vertex::Pin { owner, pin, reference } => {
+                        Vertex::Pin { owner: owner.clone(), pin: *pin, reference: reference.clone() }
+                    }
                     model::Vertex::Point(p) => Vertex::Point { point: p.clone() },
                     model::Vertex::Usage { usage, role } => Vertex::Usage { usage: usage.clone(), role: role.clone() },
                     model::Vertex::At(p) => Vertex::At { at: xy(*p) },
