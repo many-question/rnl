@@ -432,6 +432,18 @@ impl Interp<'_> {
                     if names.len() == 1 { "s" } else { "" }
                 )),
             };
+            let modern = self.follows_0_4(self.level_unit[self.scenes[s].level])
+                || self.scenes[s].creation_sites.values().any(|ctx| self.follows_0_4(self.source_unit(ctx)))
+                || self.scenes[s]
+                    .at
+                    .iter()
+                    .chain(&self.scenes[s].orient)
+                    .any(|fact| self.ignores_drawing_fact(s, fact));
+            let message = if modern {
+                format!("{message}; in language 0.4, drawing positions, orientations and texts on these instances or their terminals, and constraints and wires containing them, have no effect and do not fail (9.2.8)")
+            } else {
+                message
+            };
             self.sink.warning(code, message, Some(Loc::line(first.file.clone(), first.line.max(1))));
         }
     }
@@ -762,12 +774,17 @@ impl Interp<'_> {
     }
 
     pub(crate) fn fact_priority(&self, s: SceneId, f: &Fact) -> Priority {
+        if self.ignores_drawing_fact(s, f) {
+            return Priority::Disabled;
+        }
         self.eff_priority(s, f.priority, &f.chain, None)
     }
 
     // ---- geometry (8.5, 11.x, 12.1, 14.x)
 
     fn resolve_geometry(&mut self, s: SceneId) {
+        self.ignore_undrawn_rewrites(s);
+        self.ignore_undrawn_text_layers(s);
         // 1. check what PLACE, ORIENT and constraints reach (7.1, 12.1, 11.8)
         let at = self.scenes[s].at.clone();
         let mut live_at = Vec::new();
@@ -919,7 +936,7 @@ impl Interp<'_> {
         for w in self.scenes[s].wires.clone() {
             let ObjData::Wire { nets, .. } = self.o(w).clone() else { continue };
             let Some(WireShape { points, generated, site, off, .. }) = self.wire_shape(s, w) else { continue };
-            if site.is_none() || generated {
+            if site.is_none() || generated || self.drawing_ignored(s, w) {
                 continue;
             }
             for q in &points {
@@ -954,7 +971,7 @@ impl Interp<'_> {
                     self.diag_site(Severity::Error, *code, &Some(r.site.clone()), r.off, msg.clone());
                 }
             }
-            if rewrites.iter().any(|r| r.fault.is_none()) {
+            if self.drawing_ignored(s, w) || rewrites.iter().any(|r| r.fault.is_none() && !r.ignored) {
                 continue; // drawn by a rewrite that holds
             }
             let Some(WireShape { points, site, off, .. }) = self.wire_shape(s, w) else { continue };
@@ -968,7 +985,7 @@ impl Interp<'_> {
             }
         }
         for t in self.scenes[s].texts.clone() {
-            if self.is_obj_failed(t) {
+            if self.is_obj_failed(t) || self.drawing_ignored(s, t) {
                 continue;
             }
             // `by_rule`: only rules gave the text, a TEXT for what a selection reached (10.4); one
@@ -1192,6 +1209,9 @@ impl Interp<'_> {
 
     fn geom_target_ok(&mut self, s: SceneId, list: char, k: usize, f: &Fact, what: &str) -> bool {
         if self.is_obj_failed(f.target) || f.ctx.as_ref().is_some_and(|ctx| self.failed_body(ctx)) {
+            return false;
+        }
+        if self.ignores_drawing_fact(s, f) {
             return false;
         }
         if f.ctx.is_none() {
@@ -1418,12 +1438,17 @@ impl Interp<'_> {
             for k in 0..self.scenes[s].rewrites[&w].len() {
                 let points = self.scenes[s].rewrites[&w][k].points.clone();
                 let site = self.scenes[s].rewrites[&w][k].site.clone();
-                let fault = self
-                    .wire_rewrite_error(&site, &points)
-                    .or_else(|| points.iter().find_map(|q| self.term_fault(s, *q)).map(|f| f.for_rewrite(&wire)));
+                let ignored = self.ignores_drawing_inputs(s, Some(&site), &points);
+                let fault = if ignored {
+                    None
+                } else {
+                    self.wire_rewrite_error(&site, &points)
+                        .or_else(|| points.iter().find_map(|q| self.term_fault(s, *q)).map(|f| f.for_rewrite(&wire)))
+                };
                 let Some(r) = self.scenes[s].rewrites.get_mut(&w).map(|r| &mut r[k]) else { continue };
-                let style = r.style.filter(|_| fault.is_some());
+                let style = r.style.filter(|_| fault.is_some() || ignored);
                 r.fault = fault;
+                r.ignored = ignored;
                 if let Some(f) = style.and_then(|j| self.scenes[s].styles.get_mut(j)) {
                     f.data = FactData::OwnStyle(StyleMap::new());
                 }
@@ -1793,6 +1818,9 @@ impl Interp<'_> {
     /// The vertices of a wire after its routing mode (13.1), as it is drawn: rewritten, by the
     /// rewrite that takes effect (the draft 0.3). None while one of its points has no position.
     pub(crate) fn wire_points(&mut self, s: SceneId, w: ObjId) -> Option<Vec<Pt>> {
+        if self.drawing_ignored(s, w) {
+            return None;
+        }
         let WireShape { points, mode, .. } = self.wire_shape(s, w)?;
         let mut pts = Vec::new();
         for q in points {
@@ -1808,6 +1836,9 @@ impl Interp<'_> {
     /// the points that have none. Each run is its points as written, and the mode is the wire's;
     /// a wire whose points all have a position is one run.
     pub(crate) fn wire_runs(&mut self, s: SceneId, w: ObjId) -> Option<(Vec<Vec<Pt>>, String)> {
+        if self.drawing_ignored(s, w) {
+            return None;
+        }
         let WireShape { points, mode, .. } = self.wire_shape(s, w)?;
         let mut runs: Vec<Vec<Pt>> = Vec::new();
         let mut gap = true;
@@ -1882,6 +1913,10 @@ impl Interp<'_> {
                 vec![cd.args[0]]
             };
             let leaves = self.leaves(s, &members);
+            if self.ignores_drawing_inputs(s, site.as_deref(), &leaves) {
+                self.constraint_mut(c).status = Some("ignored");
+                continue;
+            }
             if relation && site.as_ref().is_some_and(|ctx| self.follows_0_4(self.source_unit(ctx))) {
                 let pin_count = leaves.iter().filter(|m| self.is_pin_direction_input(**m)).count();
                 if pin_count > 0 && pin_count < leaves.len() {

@@ -2876,7 +2876,7 @@
    "number": "RNL4000",
    "name": "symbol-model-card-missing",
    "severity": "warning",
-   "message": "the model card `{model}` is not found, so the polarity of {instances}[ and {n} more] is not known and {it|they} {is|are} not drawn (a `.model` card or an include may be missing)",
+   "message": "the model card `{model}` is not found, so the polarity of {instances}[ and {n} more] is not known and {it|they} {is|are} not drawn (a `.model` card or an include may be missing) [in language 0.4: drawing positions, orientations and texts on these instances or their terminals, and constraints and wires containing them, have no effect and do not fail (9.2.8)]",
    "sections": [
     "9.2.8"
    ]
@@ -2885,7 +2885,7 @@
    "number": "RNL4001",
    "name": "symbol-no-model",
    "severity": "warning",
-   "message": "{instances}[ and {n} more] name{s} no model, so the polarity is not known and {it|they} {is|are} not drawn",
+   "message": "{instances}[ and {n} more] name{s} no model, so the polarity is not known and {it|they} {is|are} not drawn [in language 0.4: drawing positions, orientations and texts on these instances or their terminals, and constraints and wires containing them, have no effect and do not fail (9.2.8)]",
    "sections": [
     "9.2.8"
    ]

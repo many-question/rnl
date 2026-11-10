@@ -187,3 +187,15 @@ Draft 0.4 graphic rules accept selections: sized rectangles, circles and ellipse
 Draft 0.4 records can use `language="spice"` or `language="spectre"` to restrict object statements to host sections (2.8). Ownership follows instances, ports, shared nets and usage roles, independently of coordinates; collection roles use their final members. Cross-section statements and dependents take no effect, while definitions retain their nominal visibility. Qualified headers contain USE-PACKAGE and DEVICE, and their masks intersect along effective package references. Records with no reachable section are not checked; package body checks wait for their effective scope. Unknown values make records inactive with a warning, and generated records reject and ignore the qualifier. Released versions retain their existing header behavior.
 
 Draft 0.4 text and pin labels read formulas inside `\(…\)` (13.6), including single-character scripts, roman groups, fractions and square roots. Variables are italic; digits, symbols and attribute values remain upright even in italic text. `Run::Sqrt` carries its radicand, and `RunStyle::upright` forces that face. The renderer uses the same geometry for drawn formulas and text bounds. Canonical solver input includes the new structure and face only when present; released versions keep their previous markup and digests.
+
+
+In draft 0.4, when the renderer leaves an instance without a symbol undrawn,
+its warning explains that drawing statements involving it have no effect (9.2.8).
+Positions, orientations and attached text do not reach the drawing or solver;
+constraints and wires containing it or its terminals are omitted as a whole.
+Such constraints retain their handles and report `status: "ignored"`, rather than
+failing. A wire rewrite with such an input leaves the previous effective points,
+mode and style in place. Creation-phase selection snapshots are unchanged.
+The source statement's language version controls this exception, including in
+mixed-version includes; independent text layers from released languages survive.
+An explicitly assigned symbol that lacks a required pin still produces an error.

@@ -92,7 +92,12 @@ impl Interp<'_> {
         points.sort();
         points.dedup();
         objs.extend(points.into_iter().map(|p| (p, ObjectKind::Point)));
-        let mut texts: Vec<ObjId> = self.scenes[s].texts.iter().copied().filter(|t| !self.is_obj_failed(*t)).collect();
+        let mut texts: Vec<ObjId> = self.scenes[s]
+            .texts
+            .iter()
+            .copied()
+            .filter(|t| !self.is_obj_failed(*t) && !self.drawing_ignored(s, *t))
+            .collect();
         texts.sort();
         texts.dedup();
         objs.extend(texts.into_iter().map(|t| (t, ObjectKind::Text)));
@@ -104,7 +109,7 @@ impl Interp<'_> {
         }
         let mut wires = Vec::new();
         for w in self.scenes[s].wires.clone() {
-            if !self.is_obj_failed(w) && !ix.wires.contains_key(&w) {
+            if !self.is_obj_failed(w) && !self.drawing_ignored(s, w) && !ix.wires.contains_key(&w) {
                 ix.wires.insert(w, wires.len());
                 wires.push(w);
             }
@@ -1097,7 +1102,7 @@ impl Interp<'_> {
         // the atomic constraints and ORIENT-RELATION (14)
         for c in self.scenes[s].constraints.clone() {
             let ObjData::Constraint(cd) = self.o(c).clone() else { continue };
-            if cd.failed {
+            if cd.failed || cd.status == Some("ignored") {
                 continue;
             }
             let p = cd.eff.unwrap_or_else(|| self.eff_priority(s, cd.priority_param, &cd.chain, Some(c)));
