@@ -1257,6 +1257,25 @@ impl Interp<'_> {
     }
 
     pub(super) fn input_items(&mut self, s: SceneId, obj: ObjId, phase: usize, ctx: Option<&Ctx>) -> Vec<InputMember> {
+        if let Some(view) =
+            self.role_inputs.get(&obj).cloned().filter(|view| view.collection && view.resolved.is_none())
+        {
+            if let Some(cached) = self.scenes[s].items_cache.get(&(obj, phase)) {
+                return cached.clone();
+            }
+            let mut members = self.input_items(s, view.source, phase, ctx);
+            for member in &mut members {
+                let collection = self.is_set(member.object);
+                member.object = self
+                    .role_input(member.object, &Some(view.kinds.clone()), &view.role, collection, &view.site, view.off)
+                    .expect("pre-symbol input view");
+                if let Some(child) = self.role_inputs.get_mut(&member.object) {
+                    child.allow_set = true;
+                }
+            }
+            self.scenes[s].items_cache.insert((obj, phase), members.clone());
+            return members;
+        }
         self.materialize_constraint(obj);
         if obj == LEVEL {
             return vec![InputMember::plain(self.scenes[s].levelobj)];
@@ -1308,7 +1327,7 @@ impl Interp<'_> {
                         vec![m]
                     };
                     for x in xs {
-                        if seen.insert(x.object) {
+                        if seen.insert(self.written_input(x.object)) {
                             out.push(x);
                         }
                     }
@@ -1318,7 +1337,7 @@ impl Interp<'_> {
             SetKind::Plain => {
                 let mut out = Vec::new();
                 for (index, (o, spread)) in self.set(obj).items.clone().into_iter().enumerate() {
-                    if self.is_failed(o) {
+                    if self.is_failed(o) && !self.late_input(o) {
                         continue;
                     }
                     let dependencies = self.set(obj).item_dependencies.get(index).cloned().unwrap_or_default();
@@ -1345,8 +1364,8 @@ impl Interp<'_> {
             if add {
                 base.extend(srcm);
             } else {
-                let ids: HashSet<ObjId> = srcm.into_iter().map(|member| member.object).collect();
-                base.retain(|x| !ids.contains(&x.object));
+                let ids: HashSet<ObjId> = srcm.into_iter().map(|member| self.written_input(member.object)).collect();
+                base.retain(|x| !ids.contains(&self.written_input(x.object)));
             }
         }
         let base: Vec<InputMember> = base.into_iter().filter(|x| self.belongs(s, x.object)).collect();

@@ -10,6 +10,7 @@ pub mod attrs;
 pub mod catalog;
 mod conflicts;
 mod constraints;
+mod conversions;
 pub mod ctx;
 pub mod cycles;
 pub mod eval;
@@ -178,6 +179,8 @@ pub struct Interp<'p> {
     pub(crate) objs: Vec<Obj>,
     /// Late failures retain object data needed by earlier phases (7.2, 8.2).
     pub(crate) late_failures: HashMap<ObjId, DiagId>,
+    /// Per-input views for typed roles; original objects and written set handles are unchanged.
+    pub(crate) role_inputs: HashMap<ObjId, conversions::RoleInput>,
     pub(crate) units: Vec<Unit>,
     pub(crate) level_unit: Vec<UnitId>,
     pub(crate) level_scene: Vec<Option<SceneId>>,
@@ -321,6 +324,7 @@ impl<'p> Interp<'p> {
             sink,
             objs: Vec::new(),
             late_failures: HashMap::new(),
+            role_inputs: HashMap::new(),
             units: Vec::new(),
             level_unit: vec![0; nlevels],
             level_scene: vec![None; nlevels],

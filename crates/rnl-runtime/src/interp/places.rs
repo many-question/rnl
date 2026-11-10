@@ -306,7 +306,11 @@ impl Interp<'_> {
             return vec![InputMember::plain(scene.map_or(LEVEL, |s| self.scenes[s].levelobj))];
         }
         if !self.is_set(obj) {
-            return if self.is_failed(obj) { Vec::new() } else { vec![InputMember::plain(obj)] };
+            return if self.is_failed(obj) && !self.late_input(obj) {
+                Vec::new()
+            } else {
+                vec![InputMember::plain(obj)]
+            };
         }
         if !busy.insert(obj) {
             return Vec::new();
@@ -316,12 +320,15 @@ impl Interp<'_> {
             SetKind::Constraints { ref members, .. } => members.iter().copied().map(InputMember::plain).collect(),
             SetKind::Union { source } => {
                 let mut unique = HashSet::new();
-                self.written_inputs(source, scene, busy).into_iter().filter(|m| unique.insert(m.object)).collect()
+                self.written_inputs(source, scene, busy)
+                    .into_iter()
+                    .filter(|m| unique.insert(self.written_input(m.object)))
+                    .collect()
             }
             _ => {
                 let mut out = Vec::new();
                 for (index, &(o, spread)) in set.items.iter().enumerate() {
-                    if self.is_failed(o) {
+                    if self.is_failed(o) && !self.late_input(o) {
                         continue;
                     }
                     let dependencies = set.item_dependencies.get(index).cloned().unwrap_or_default();
@@ -351,8 +358,8 @@ impl Interp<'_> {
             if edit.add {
                 out.extend(members);
             } else {
-                let removed: HashSet<_> = members.into_iter().map(|member| member.object).collect();
-                out.retain(|member| !removed.contains(&member.object));
+                let removed: HashSet<_> = members.into_iter().map(|member| self.written_input(member.object)).collect();
+                out.retain(|member| !removed.contains(&self.written_input(member.object)));
             }
         }
         busy.remove(&obj);

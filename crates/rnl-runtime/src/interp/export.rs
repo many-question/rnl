@@ -709,6 +709,7 @@ impl Interp<'_> {
     /// What any object of the scene is referred to by: host objects by their host names, the
     /// rest as `Index::refs` has them.
     fn reference_of(&mut self, s: SceneId, ix: &Index, o: ObjId) -> Reference {
+        let o = self.input_value(o);
         match self.o(o).clone() {
             ObjData::Inst { .. } => Reference::Name(format!("#{}", written_name(&self.inst_of(o).name))),
             ObjData::LevelObj { .. } => Reference::Name("#".into()),
@@ -734,6 +735,7 @@ impl Interp<'_> {
     /// coordinates written, or a set of them in `{…}`, with how many points it writes as
     /// coordinates. None when a part cannot be referred to by a name the level writes.
     fn written_filler(&mut self, s: SceneId, ix: &Index, o: ObjId) -> Option<(String, usize)> {
+        let o = self.written_input(o);
         if let ObjData::Set(_) = self.o(o) {
             let items = self.items_of(s, o, 7, None);
             let (mut out, mut points) = (Vec::new(), 0);

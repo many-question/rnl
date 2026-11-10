@@ -119,7 +119,7 @@ impl Interp<'_> {
         }
     }
 
-    fn scene_pin_is_bus(&self, scene: SceneId, owner: ObjId, index: usize) -> bool {
+    pub(crate) fn scene_pin_is_bus(&self, scene: SceneId, owner: ObjId, index: usize) -> bool {
         let Some(symbol) = self.scenes[scene].symbol.get(&owner) else { return false };
         let Some(pin) = self.symbol(*symbol).pins.get(index) else { return false };
         pin.bus
@@ -321,7 +321,9 @@ impl Interp<'_> {
     fn resolve_scene_wire_nets(&mut self, scene: SceneId, wire: ObjId) {
         let ObjData::Wire { nets, bus, site: Some(site), off, .. } = self.o(wire).clone() else { return };
         if !self.follows_0_4(self.source_unit(&site))
-            || !nets.iter().any(|net| matches!(self.o(*net), ObjData::NamedSubobject { .. }))
+            || !nets
+                .iter()
+                .any(|net| matches!(self.o(*net), ObjData::NamedSubobject { .. }) || self.role_inputs.contains_key(net))
         {
             return;
         }
@@ -383,6 +385,7 @@ impl Interp<'_> {
 
     /// Symbol-dependent checks do not rewind creation or the symbol queue (8.2).
     pub(crate) fn check_scene_pin_roles(&mut self, scene: SceneId) {
+        self.resolve_role_inputs(scene);
         loop {
             let before = self.late_failures.len();
             self.check_scene_pin_wires(scene);
@@ -500,15 +503,24 @@ impl Interp<'_> {
             };
             let Some(site) = site else { continue };
             for input in inputs {
-                if !matches!(self.o(input), ObjData::NamedSubobject { .. }) {
+                if !matches!(self.o(input), ObjData::NamedSubobject { .. }) && !self.role_inputs.contains_key(&input) {
                     continue;
                 }
                 let value = self.scene_value(input);
                 let valid = match self.o(object) {
                     ObjData::Text { .. } | ObjData::KeyText { .. } => {
-                        matches!(self.o(value), ObjData::ScenePin { .. } | ObjData::Net { .. })
+                        matches!(
+                            self.o(value),
+                            ObjData::ScenePin { .. }
+                                | ObjData::Net { .. }
+                                | ObjData::Term { .. }
+                                | ObjData::Point { .. }
+                                | ObjData::Pos { .. }
+                        )
                     }
-                    _ => matches!(self.o(value), ObjData::ScenePin { .. }),
+                    _ => {
+                        matches!(self.o(value), ObjData::ScenePin { .. } | ObjData::Point { .. } | ObjData::Pos { .. })
+                    }
                 };
                 if self.is_failed(input) || !valid {
                     let diagnostic = self.err_cause(
@@ -586,6 +598,7 @@ impl Interp<'_> {
 
     /// The value used by a later operation, without changing a set's written handle.
     pub(crate) fn scene_value(&self, object: ObjId) -> ObjId {
+        let object = self.input_value(object);
         match self.o(object) {
             ObjData::NamedSubobject { resolved: Some(value), .. } => *value,
             _ => object,

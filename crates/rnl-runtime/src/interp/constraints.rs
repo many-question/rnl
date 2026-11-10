@@ -87,7 +87,10 @@ impl Interp<'_> {
             SetKind::Constraints { ref members, .. } => members.iter().copied().map(InputMember::plain).collect(),
             SetKind::Union { source } => {
                 let mut unique = HashSet::new();
-                self.constraint_inputs(s, source, phase, ctx).into_iter().filter(|m| unique.insert(m.object)).collect()
+                self.constraint_inputs(s, source, phase, ctx)
+                    .into_iter()
+                    .filter(|m| unique.insert(self.written_input(m.object)))
+                    .collect()
             }
         };
         let mut mods = sd.mods_by_scene.get(&Some(s)).cloned().unwrap_or_default();
@@ -103,8 +106,11 @@ impl Interp<'_> {
                     dependencies: edit.ctx.reference_dependencies.borrow().clone(),
                 });
             } else {
-                let removed: HashSet<_> =
-                    self.constraint_members(s, edit.source, phase, &edit.ctx).into_iter().collect();
+                let removed: HashSet<_> = self
+                    .constraint_members(s, edit.source, phase, &edit.ctx)
+                    .into_iter()
+                    .map(|object| self.written_input(object))
+                    .collect();
                 items = items
                     .into_iter()
                     .filter_map(|item| self.constraint_item_without(s, item, phase, ctx, &removed))
@@ -122,7 +128,7 @@ impl Interp<'_> {
         ctx: &Ctx,
         removed: &HashSet<ObjId>,
     ) -> Option<InputMember> {
-        if removed.contains(&item.object) {
+        if removed.contains(&self.written_input(item.object)) {
             return None;
         }
         if !self.is_set(item.object) {

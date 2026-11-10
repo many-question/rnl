@@ -86,10 +86,12 @@ impl<'p> Interp<'p> {
     }
 
     pub(crate) fn o(&self, id: ObjId) -> &ObjData {
+        let id = self.input_value(id);
         &self.objs[id.0 as usize].data
     }
 
     pub(crate) fn om(&mut self, id: ObjId) -> &mut ObjData {
+        let id = self.input_value(id);
         &mut self.objs[id.0 as usize].data
     }
 

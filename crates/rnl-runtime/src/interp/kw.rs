@@ -1177,11 +1177,13 @@ impl Interp<'_> {
                 if !self.is_set(obj) {
                     obj = self.new_obj(ObjData::Set(Box::new(SetData::plain(vec![(obj, true)], true))));
                 }
+                obj = self.role_input(obj, &r.kinds, &r.name, true, ctx, app.seg_start)?;
                 let members = if self.is_lazy(obj) { Vec::new() } else { self.flatten(s, obj, 3, Some(ctx)) };
                 for m in members {
                     self.check_kind(dfn, &r.name, &r.kinds, m, ctx, app.seg_start)?;
                 }
             } else {
+                obj = self.role_input(obj, &r.kinds, &r.name, false, ctx, app.seg_start)?;
                 self.check_kind(dfn, &r.name, &r.kinds, obj, ctx, app.seg_start)?;
             }
             rmap.push((r.name.clone(), obj));
@@ -1247,6 +1249,9 @@ impl Interp<'_> {
         off: usize,
     ) -> R<()> {
         let Some(kinds) = kinds else { return Ok(()) };
+        if self.role_inputs.get(&obj).is_some_and(|view| view.resolved.is_none()) {
+            return Ok(());
+        }
         if self.follows_0_4(self.source_unit(ctx))
             && matches!(self.o(obj), ObjData::NamedSubobject { .. })
             && ctx.scene.is_some_and(|s| self.scenes[s].phase < 7)
@@ -1260,7 +1265,12 @@ impl Interp<'_> {
             _ => any,
         };
         // "instance" also takes bundles, and "terminal" their terminals, which are terminals (11.8)
-        if !kinds.iter().any(|x| x == k || x == any || (x == "instance" && k == "bundle")) {
+        if !kinds.iter().any(|x| {
+            x == k
+                || x == any
+                || (x == "instance" && k == "bundle")
+                || (self.follows_0_4(self.source_unit(ctx)) && x == "point" && k == "position")
+        }) {
             let dl = self.label(dfn);
             let ol = self.label(obj);
             return self.fail(
@@ -2407,8 +2417,8 @@ impl Interp<'_> {
                 );
                 return Err(Stop::Fail(Some(id)));
             }
-            let deferred_net =
-                self.follows_0_4(self.source_unit(ctx)) && matches!(self.o(*n), ObjData::NamedSubobject { .. });
+            let deferred_net = self.follows_0_4(self.source_unit(ctx))
+                && (matches!(self.o(*n), ObjData::NamedSubobject { .. }) || self.role_inputs.contains_key(n));
             if !deferred_net && !matches!(self.o(*n), ObjData::Net { .. }) {
                 let l = self.label(*n);
                 return self.fail(
