@@ -1281,6 +1281,12 @@ impl Interp<'_> {
         if !self.is_set(obj) {
             return vec![InputMember::plain(obj)];
         }
+        if self.set(obj).reach_site.as_ref().is_some_and(|site| self.follows_0_4(self.source_unit(site))) {
+            let reach = self.set_reach(s, obj, &mut HashSet::new());
+            if reach.selected && !reach.reaches {
+                return Vec::new();
+            }
+        }
         let key = (obj, phase);
         if let Some(v) = self.scenes[s].items_cache.get(&key) {
             return v.clone();
@@ -1398,13 +1404,8 @@ impl Interp<'_> {
         else {
             unreachable!()
         };
-        if params.get("recursive").and_then(Lit::boolean) == Some(false)
-            && !(self.follows_0_4(writer) && site.as_ref().is_some_and(|site| site.recursive_selection))
-        {
-            let w = &self.units[writer];
-            if w.kind == UnitKind::Level && w.level != Some(self.scenes[s].level) {
-                return Vec::new();
-            }
+        if !self.selection_reaches(s, sel) {
+            return Vec::new();
         }
         let snapshot = phase <= 5; // generated objects are not seen before step 6 (10.5)
         let pool: Option<Vec<ObjId>> = if scope == LEVEL || matches!(self.o(scope), ObjData::LevelObj { .. }) {

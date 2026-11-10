@@ -581,6 +581,10 @@ pub struct SetData {
     /// The host level unit that wrote it.
     pub writer: Option<UnitId>,
     pub kind: SetKind,
+    /// Where the set was written, for draft rule reach.
+    pub reach_site: Option<Rc<Ctx>>,
+    /// Inputs of a generation rule, retained only for its reach.
+    pub reach_sources: Vec<ObjId>,
 }
 
 impl SetData {
@@ -596,6 +600,8 @@ impl SetData {
             not_lazy: false,
             writer: None,
             kind: SetKind::Plain,
+            reach_site: None,
+            reach_sources: Vec::new(),
         }
     }
 

@@ -41,6 +41,7 @@ pub(super) struct Query {
     rec: Option<RecId>,
     off: usize,
     constraint_arg: Option<usize>,
+    selection_only: bool,
 }
 
 #[derive(Clone, Default)]
@@ -214,7 +215,7 @@ impl Interp<'_> {
                 off,
             );
         }
-        let key = Query { site: Site::of(ctx), rec: ctx.rec, off, constraint_arg: None };
+        let key = Query { site: Site::of(ctx), rec: ctx.rec, off, constraint_arg: None, selection_only: false };
         let plan = self.places.plans.get(&key).cloned().unwrap_or_default();
         let (already, selection) = self.place_dependencies(source, ctx.scene, false);
         if !plan.selection && !selection {
@@ -251,13 +252,25 @@ impl Interp<'_> {
     /// its innermost members (5.2, 14.1). As for member places, later edits are replayed before
     /// making the objects that a name and a subsequent PRIORITY will refer to.
     pub(super) fn constraint_input(&mut self, source: ObjId, off: usize, arg: usize, ctx: &Ctx) -> R<bool> {
-        let key = Query { site: Site::of(ctx), rec: ctx.rec, off, constraint_arg: Some(arg) };
+        self.settled_input(source, off, arg, ctx, false)
+    }
+
+    /// Only selection edits affect whether an ordinary use is a rule. Replaying plain
+    /// edits here could make an application depend on the edit in its own body.
+    pub(super) fn rule_input(&mut self, source: ObjId, off: usize, arg: usize, ctx: &Ctx) -> R<bool> {
+        self.settled_input(source, off, arg, ctx, true)
+    }
+
+    fn settled_input(&mut self, source: ObjId, off: usize, arg: usize, ctx: &Ctx, selection_only: bool) -> R<bool> {
+        let key = Query { site: Site::of(ctx), rec: ctx.rec, off, constraint_arg: Some(arg), selection_only };
         let plan = self.places.plans.get(&key).cloned().unwrap_or_default();
         let (already, _) = self.place_dependencies(source, ctx.scene, true);
         let mut edits: Vec<_> = plan.edits.difference(&already).cloned().collect();
         edits.sort_by(|a, b| (&a.pos, &a.member).cmp(&(&b.pos, &b.member)));
-        for edit in edits {
-            self.place_edit(&edit, ctx, off)?;
+        if !selection_only || plan.selection {
+            for edit in edits {
+                self.place_edit(&edit, ctx, off)?;
+            }
         }
         let (seen, selection) = self.place_dependencies(source, ctx.scene, true);
         self.places.reads.push(Read { key, source, seen, deep: true });
@@ -275,7 +288,7 @@ impl Interp<'_> {
     }
 
     pub(super) fn constraint_result_key(ctx: &Ctx, off: usize) -> Query {
-        Query { site: Site::of(ctx), rec: ctx.rec, off, constraint_arg: Some(usize::MAX) }
+        Query { site: Site::of(ctx), rec: ctx.rec, off, constraint_arg: Some(usize::MAX), selection_only: false }
     }
 
     pub(super) fn planned_constraint_set(&self, key: &Query) -> bool {

@@ -10,6 +10,24 @@ use super::scene::name_match;
 use super::Interp;
 
 impl Interp<'_> {
+    pub(super) fn writes_selection(&self, member: &crate::syntax::Member, ctx: &Ctx) -> bool {
+        member.segments.iter().any(|segment| {
+            if let Some(call) = &segment.call {
+                let keyword = self.kw(&call.kw, ctx.unit);
+                if keyword.starts_with("SELECT-") {
+                    return true;
+                }
+                if matches!(keyword.as_str(), "DEFINE" | "DEFINE-SYMBOL" | "DEFINE-STYLE" | "USE-PACKAGE") {
+                    return false;
+                }
+            }
+            segment.args.iter().any(|arg| match &arg.obj {
+                crate::syntax::ObjExpr::Set(set) => set.members.iter().any(|member| self.writes_selection(member, ctx)),
+                _ => false,
+            })
+        })
+    }
+
     /// A recursive selection written anywhere in a pipe reaches the lower levels for the
     /// whole statement; a later SELECT-PIN must not narrow that reach to its own level (10.1).
     pub(super) fn writes_recursive_selection(&self, member: &crate::syntax::Member, ctx: &Ctx) -> bool {

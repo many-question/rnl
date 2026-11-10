@@ -112,6 +112,8 @@ pub struct Ctx {
     pub selected: bool,
     /// One selection written in this statement explicitly reaches lower levels (10.1).
     pub recursive_selection: bool,
+    /// The statement contains a selection, even when all its flags are false.
+    pub written_selection: bool,
     pub defining: Option<Rc<Defining>>,
     /// The unit whose names a definition body is resolved with (6.9).
     pub def_unit: Option<UnitId>,
