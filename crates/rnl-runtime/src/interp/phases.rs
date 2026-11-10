@@ -86,6 +86,9 @@ impl Interp<'_> {
         if self.check_scene_pin_bindings(s) {
             self.resolve_scene_subobjects(s);
         }
+        if (0..self.units.len()).any(|unit| self.follows_0_4(unit)) {
+            self.symbol_labels(s);
+        }
         self.resolve_currents(s, false);
         self.scenes[s].phase = 5;
         self.run_tasks(s, 5);
@@ -574,9 +577,12 @@ impl Interp<'_> {
     fn symbol_labels(&mut self, s: SceneId) {
         let order = self.symbol_order.get(&s).cloned().unwrap_or_default();
         for owner in order {
+            if !self.scenes[s].symbol_label_owners.insert(owner) {
+                continue;
+            }
             let sym = self.scenes[s].symbol[&owner];
             let labels = self.symbol(sym).labels.clone();
-            for lab in labels {
+            for (label_index, lab) in labels.into_iter().enumerate() {
                 if let Some(key) = &lab.key {
                     if lab.site.as_ref().is_some_and(|ctx| self.follows_0_4(self.source_unit(ctx)))
                         && self.symbol_has_pin_name(sym, key)
@@ -610,7 +616,7 @@ impl Interp<'_> {
                     }
                     if self.scenes[s].listed_keytexts.insert(kt) {
                         self.scenes[s].texts.push(kt);
-                        self.made_with(s, kt, owner);
+                        self.made_with(s, kt, owner, label_index);
                     }
                 } else {
                     let t = self.new_obj(ObjData::Text {
@@ -625,19 +631,22 @@ impl Interp<'_> {
                         off: 0,
                     });
                     self.scenes[s].texts.push(t);
-                    self.made_with(s, t, owner);
+                    self.made_with(s, t, owner, label_index);
                 }
             }
         }
     }
 
     /// A text that a symbol gives is made where its owner is.
-    fn made_with(&mut self, s: SceneId, t: ObjId, owner: ObjId) {
+    fn made_with(&mut self, s: SceneId, t: ObjId, owner: ObjId, label_index: usize) {
+        let phase = if self.is_generated(owner) { 6 } else { 4 };
         let sc = &mut self.scenes[s];
         let c = sc.created.get(&owner).cloned().unwrap_or_else(|| pos(&[0]));
         let o = sc.created_order.get(&owner).cloned().unwrap_or_else(|| c.clone());
         sc.created.insert(t, c);
         sc.created_order.insert(t, o);
+        sc.created_phase.insert(t, phase);
+        sc.symbol_text_order.insert(t, (owner, label_index));
     }
 
     // ---- priorities (14.8)

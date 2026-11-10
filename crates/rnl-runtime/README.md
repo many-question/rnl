@@ -164,6 +164,12 @@ In a file of 0.4 the positional facts write their direction (14.1). ORDER, DISTR
 
 See the [roadmap](../../docs/roadmap.md) for planned work.
 
+Draft 0.4 generation rules can select the labels brought by symbols already assigned before generation. Overriding an existing text key does not create a new label or remove the original handle from that snapshot. Labels of generated usages appear only in later phases. Selections written in released language versions keep their earlier visibility, including in mixed-version includes.
+
+Draft 0.4 generation selections exclude every object made by a generation rule, including graphics inside generated usages. Explicit objects stay in the snapshot, and later geometry and style rules still see the generated objects (10.5).
+
+Draft 0.4 scene selections order objects by creation step and source position (10.3), so forward-reference evaluation does not reorder usages and annotations interleave graphics with text. Symbol text ordering follows the owner and then the symbol's statements. Explicit selection scopes retain their own member order.
+
 In a file of draft 0.4, Spectre `tline` and `transformer` instances have the default terminal names `p1`, `n1`, `p2`, `n2` (6.12). The version is that of the instance's source file, including through includes. Explicit DEVICE terminal names still override these defaults; files of 0.2 and 0.3 retain the adapter's existing names.
 
 Draft 0.4 TEXT accepts `fix_rotate=true`: the anchor still follows the symbol, but the text direction stays in scene axes. Keyed TEXT statements override this item independently, including an explicit `false`. `TextInfo.fix_rotate` carries it to the solver; the canonical input adds a marker only when true, leaving older digests unchanged. Fixed symbol text and label templates carry the same setting to renderers.
