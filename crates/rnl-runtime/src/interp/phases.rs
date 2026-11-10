@@ -251,14 +251,14 @@ impl Interp<'_> {
         // the SET-SYMBOL facts by target, each list in the order of `appear`
         let mut by_target: HashMap<ObjId, Vec<usize>> = HashMap::new();
         for (k, f) in appear.iter().enumerate() {
-            if let FactData::Symbol(_) = f.data {
+            if let FactData::Symbol(..) = f.data {
                 by_target.entry(f.target).or_default().push(k);
             }
         }
         for o in objs {
             // each candidate with the index of its fact in `appear`; a block symbol has none
-            let mut direct: Vec<(Pos, ObjId, Option<usize>)> = Vec::new();
-            let mut other: Vec<(Pos, ObjId, Option<usize>)> = Vec::new();
+            let mut direct: Vec<(Pos, ObjId, Option<usize>, Option<String>)> = Vec::new();
+            let mut other: Vec<(Pos, ObjId, Option<usize>, Option<String>)> = Vec::new();
             let (base, members) = match self.o(o) {
                 ObjData::Bundle { members, .. } => (members[0], members.clone()),
                 _ => (o, Vec::new()),
@@ -273,10 +273,10 @@ impl Interp<'_> {
                             None => self.doc.key(m),
                         };
                         if let Some(blocks) = self.block_symbols.get(&key) {
-                            for (p, sym) in blocks.values() {
+                            for block in blocks.values() {
                                 let mut pp = vec![PosElem::Int(1)];
-                                pp.extend(p.iter().cloned());
-                                other.push((pp, *sym, None));
+                                pp.extend(block.pos.iter().cloned());
+                                other.push((pp, block.symbol, None, block.name.clone()));
                             }
                         }
                     }
@@ -284,12 +284,12 @@ impl Interp<'_> {
             }
             for &k in by_target.get(&o).into_iter().flatten() {
                 let f = &appear[k];
-                let FactData::Symbol(sym) = f.data else { continue };
+                let FactData::Symbol(sym, ref name) = f.data else { continue };
                 self.scenes[s].symbol_weighed.insert(k);
                 if f.direct {
-                    direct.push((f.order(), sym, Some(k)));
+                    direct.push((f.order(), sym, Some(k), name.clone()));
                 } else {
-                    other.push((f.order(), sym, Some(k)));
+                    other.push((f.order(), sym, Some(k), name.clone()));
                 }
             }
             // a symbol given to a member of a bundle fails, in the order of the facts (11.8)
@@ -304,11 +304,14 @@ impl Interp<'_> {
             } else {
                 other.into_iter().max_by(|a, b| a.0.cmp(&b.0))
             };
-            if let Some((_, sym, fact)) = pick {
+            if let Some((_, sym, fact, name)) = pick {
                 if let Some(k) = fact {
                     self.scenes[s].symbol_won.insert(k);
                 }
                 self.set_symbol(s, o, sym);
+                if let Some(name) = name {
+                    self.scenes[s].symbol_names.insert(o, name);
+                }
                 self.warn_pin_bindings(s, o, fact.map(|k| &appear[k]));
             } else if matches!(self.o(o), ObjData::Inst { .. } | ObjData::Bundle { .. }) {
                 if self.inst_of(base).model_missing {
@@ -405,7 +408,7 @@ impl Interp<'_> {
         // by record and place, so that the statements are noted in the same order every time
         let mut won: BTreeMap<(Option<RecId>, usize), bool> = BTreeMap::new();
         for (k, f) in self.scenes[s].appear.iter().enumerate() {
-            if !matches!(f.data, FactData::Symbol(_)) || !self.scenes[s].symbol_weighed.contains(&k) {
+            if !matches!(f.data, FactData::Symbol(..)) || !self.scenes[s].symbol_weighed.contains(&k) {
                 continue;
             }
             let Some(c) = &f.ctx else { continue };

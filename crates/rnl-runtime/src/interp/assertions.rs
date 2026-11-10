@@ -58,7 +58,7 @@ struct Assertion {
 /// The conditions each assertion checks, by keyword, those of its selection keyword (10.1).
 fn conditions(kw: &str) -> &'static [&'static str] {
     match kw {
-        "ASSERT-INSTANCE" => &["name", "model", "type", "terminals"],
+        "ASSERT-INSTANCE" => &["name", "model", "type", "terminals", "symbol", "drawn"],
         "ASSERT-TERMINAL" => &["name", "model", "type", "terminal", "net", "current"],
         _ => &["name", "port", "wired", "global"],
     }
@@ -308,6 +308,19 @@ impl Interp<'_> {
                 })
             }
             "ASSERT-INSTANCE" => {
+                if cond == "drawn" {
+                    let drawn = self.object_drawn(s, m);
+                    return (Some(drawn) != v.boolean())
+                        .then(|| if drawn { "is drawn" } else { "has no assigned symbol" }.into());
+                }
+                if cond == "symbol" {
+                    return (!self.symbol_matches(s, m, v.str().unwrap_or_default())).then(|| {
+                        self.scenes[s].symbol_names.get(&m).map_or_else(
+                            || "has no symbol assigned through a dollar name".into(),
+                            |name| format!("has symbol assigned through {name}"),
+                        )
+                    });
+                }
                 let i = self.asserted_instance(m)?;
                 (cond == "terminals").then_some(())?;
                 let n = self.inst_of(i).nodes.len();
@@ -395,6 +408,8 @@ impl Interp<'_> {
                 format!("be a terminal of a device with {cond} {}", v.show())
             }
             "name" | "model" | "type" => format!("have {cond} {}", v.show()),
+            "symbol" => format!("have a symbol assigned through {}", v.show()),
+            "drawn" => either("be drawn", "not be drawn"),
             "terminals" => format!("have {} terminals", v.show()),
             "terminal" => format!("be terminal {}", v.show()),
             "net" => format!("be on net {}", v.show()),

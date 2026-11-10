@@ -1134,7 +1134,7 @@ impl Interp<'_> {
             return None;
         }
         let key = self.doc.level_key(lv);
-        let sym = self.block_symbols.get(&key)?.values().max_by(|a, b| a.0.cmp(&b.0))?.1;
+        let sym = self.block_symbols.get(&key)?.values().max_by(|a, b| a.pos.cmp(&b.pos))?.symbol;
         let sym = if level.case_sensitive { sym } else { self.fold_symbol_pins(sym) };
         let mut views = Vec::new();
         let k = self.symbol_view(sym, &mut HashMap::new(), &mut views);

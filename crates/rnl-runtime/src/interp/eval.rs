@@ -316,10 +316,12 @@ impl<'p> Interp<'p> {
         }
         let ObjData::Set(set) = self.o(id) else { return false };
         match &set.kind {
-            SetKind::Select { params, writer, scope, .. } => {
+            SetKind::Select { params, writer, scope, site, .. } => {
                 let w = &self.units[*writer];
                 let elsewhere = w.kind == UnitKind::Level && w.level != Some(self.scenes[s].level);
-                (elsewhere && params.get("recursive").and_then(Lit::boolean) == Some(false))
+                (elsewhere
+                    && params.get("recursive").and_then(Lit::boolean) == Some(false)
+                    && !(self.follows_0_4(*writer) && site.as_ref().is_some_and(|site| site.recursive_selection)))
                     || self.own_level_only(*scope, s, seen)
             }
             SetKind::Union { source } => self.own_level_only(*source, s, seen),
@@ -735,6 +737,7 @@ impl<'p> Interp<'p> {
             nested: None,
             member_key: mkey,
             selected: false,
+            recursive_selection: false,
             defining: None,
             def_unit: None,
             scope_in: rec.is_some_and(|r| self.units[u].scope_places.contains_key(&r)),
@@ -775,6 +778,10 @@ impl<'p> Interp<'p> {
     }
 
     fn eval_segments(&mut self, m: &Rc<Member>, ctx: &Ctx) -> (R<ObjId>, Bound) {
+        let mut statement_ctx = ctx.clone();
+        statement_ctx.recursive_selection = self.follows_0_4(self.source_unit(ctx))
+            && (ctx.recursive_selection || self.writes_recursive_selection(m, ctx));
+        let ctx = &statement_ctx;
         let mut val = NOTHING;
         let mut sel = false;
         let mut bound: Bound = Vec::new();

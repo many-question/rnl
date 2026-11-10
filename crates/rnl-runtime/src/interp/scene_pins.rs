@@ -148,17 +148,23 @@ impl Interp<'_> {
                     let TermKey::Name(role) = binding else { continue };
                     let Some(filler) = data.role(&role) else { continue };
                     for member in self.scene_input_members_at(scene, filler, self.scenes[scene].phase, Some(site)) {
+                        // A point role cannot bind a pin, even when written with a terminal.
+                        // Read its target kind without checking whether a terminal has a pin:
+                        // that later failure must not change the generation snapshot (8.2).
+                        let point_role = self.role_input_converts_to_point(member.object);
                         let value = self.scene_value(member.object);
-                        if matches!(
-                            self.o(value),
-                            ObjData::Net { .. }
-                                | ObjData::Term { .. }
-                                | ObjData::ScenePin { .. }
-                                | ObjData::NamedSubobject { resolved: None, .. }
-                        ) {
+                        if !point_role
+                            && matches!(
+                                self.o(value),
+                                ObjData::Net { .. }
+                                    | ObjData::Term { .. }
+                                    | ObjData::ScenePin { .. }
+                                    | ObjData::NamedSubobject { resolved: None, .. }
+                            )
+                        {
                             continue;
                         }
-                        faults.push((index, role, member.object));
+                        faults.push((index, role, member.object, point_role));
                         break 'bindings;
                     }
                 }
@@ -177,10 +183,15 @@ impl Interp<'_> {
                 .and_then(|fact| fact.ctx.as_ref().and_then(|ctx| self.rec_loc(ctx.rec, fact.off)))
                 .map(|loc| format!("; the symbol is given at {}:{}:{}", loc.file, loc.line, loc.col))
                 .unwrap_or_default();
-            for (index, role, member) in faults {
+            for (index, role, member, point_role) in faults {
+                let (label, kind) = if point_role {
+                    (format!("the position of {}", self.label(member)), "point")
+                } else {
+                    (self.label(member), self.kind_of(member))
+                };
                 self.err(site, codes::ROLE_PIN_FILLED_WITH_OTHER_KIND, format!(
                     "pin {} of {} binds role {role}, filled with {} ({}); a bound role takes a net, terminal or pin, so this symbol assignment fails (5.2.4, 12.1){at}",
-                    index + 1, self.label(symbol), self.label(member), self.kind_of(member)), data.off);
+                    index + 1, self.label(symbol), label, kind), data.off);
             }
             if let Some(fact) = assignment {
                 if let Some(ctx) = fact.ctx {

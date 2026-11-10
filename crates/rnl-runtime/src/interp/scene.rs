@@ -18,6 +18,14 @@ use super::Interp;
 /// A statement whose input is a selection, run at its phase (8.2, 10.4).
 pub type Task = Rc<dyn Fn(&mut Interp, SceneId, usize)>;
 
+/// A block symbol assignment, including the name tested by symbol= (9.2.6, 10.1).
+#[derive(Clone, Debug)]
+pub(crate) struct BlockSymbol {
+    pub pos: Pos,
+    pub symbol: ObjId,
+    pub name: Option<String>,
+}
+
 /// What a statement adds to each object of its single-object position. The `spread` of PRIORITY
 /// holds the sets among several objects written for the slot, which are spread into their members
 /// like any other set (5.2.1), a set with GROUP too.
@@ -42,6 +50,7 @@ pub enum TargetOp {
     },
     Symbol {
         symbol: ObjId,
+        name: Option<String>,
         map: Option<Rc<super::terminal_maps::TerminalMap>>,
         off: usize,
     },
@@ -72,7 +81,7 @@ pub enum FactData {
     RelativeCoord(char, f64, ObjId),
     Orient(Orient),
     Layer(String),
-    Symbol(ObjId),
+    Symbol(ObjId, Option<String>),
     Style(ObjId),
     /// Style parameters written on the object itself (8.3).
     OwnStyle(StyleMap),
@@ -192,6 +201,9 @@ pub struct Scene {
     pub items_cache: HashMap<(ObjId, usize), Vec<InputMember>>,
     pub pos_cache: HashMap<ObjId, ObjId>,
     pub symbol: HashMap<ObjId, ObjId>,
+    /// The dollar name written in the winning assignment, after aliases (10.1).
+    pub symbol_names: HashMap<ObjId, String>,
+    pub bad_symbol_selections: HashSet<(Option<RecId>, usize)>,
     pub(crate) pin_text_sources: Vec<super::pin_names::PinTextSource>,
     pub default_symbol: HashSet<ObjId>,
     pub pos: HashMap<ObjId, [Option<f64>; 2]>,
@@ -306,6 +318,8 @@ impl Scene {
             items_cache: HashMap::new(),
             pos_cache: HashMap::new(),
             symbol: HashMap::new(),
+            symbol_names: HashMap::new(),
+            bad_symbol_selections: HashSet::new(),
             pin_text_sources: Vec::new(),
             default_symbol: HashSet::new(),
             pos: HashMap::new(),
@@ -1118,7 +1132,7 @@ impl Interp<'_> {
                     segments: ctx.segments.clone(),
                 });
             }
-            TargetOp::Symbol { symbol, map, off } => {
+            TargetOp::Symbol { symbol, name, map, off } => {
                 self.check_symbol_pin_names(*symbol, Some(obj), ctx, *off)?;
                 let symbol = if let Some(map) = map {
                     let target = self.map_target(s, obj);
@@ -1129,7 +1143,7 @@ impl Interp<'_> {
                 self.scenes[s].appear.push(Fact {
                     pos: at,
                     target: obj,
-                    data: FactData::Symbol(symbol),
+                    data: FactData::Symbol(symbol, name.clone()),
                     priority: None,
                     ctx: site,
                     off: *off,
@@ -1400,7 +1414,9 @@ impl Interp<'_> {
         else {
             unreachable!()
         };
-        if params.get("recursive").and_then(Lit::boolean) == Some(false) {
+        if params.get("recursive").and_then(Lit::boolean) == Some(false)
+            && !(self.follows_0_4(writer) && site.as_ref().is_some_and(|site| site.recursive_selection))
+        {
             let w = &self.units[writer];
             if w.kind == UnitKind::Level && w.level != Some(self.scenes[s].level) {
                 return Vec::new();
@@ -1417,7 +1433,7 @@ impl Interp<'_> {
                         !self.is_failed(member.object)
                             && !member.dependencies.iter().any(|dependency| self.is_failed(*dependency))
                     })
-                    .map(|member| self.scene_value(member.object))
+                    .map(|member| member.object)
                     .collect(),
             )
         } else if self.is_set(scope) {
@@ -1426,23 +1442,31 @@ impl Interp<'_> {
             Some(vec![scope])
         };
         if keyword == "SELECT-USAGE" || keyword == "SELECT-ANCESTOR-USAGE" {
-            return self.select_usages(s, sel, &keyword, pool, definition, phase, ctx, snapshot, site, off);
+            let pool =
+                pool.map(|members| members.into_iter().map(|member| self.selection_value(member, phase)).collect());
+            let usages = self.select_usages(s, sel, &keyword, pool, definition, phase, ctx, snapshot, site, off);
+            return usages.into_iter().filter(|usage| self.selection_symbol_matches(s, *usage, &params)).collect();
         }
         let role = params.get("role").cloned();
         let (pool, via) = match pool {
             Some(p) => {
-                let (p, v) = self.walk_usages(&p, role.as_ref(), writer);
+                let (p, v) = if self.follows_0_4(writer) {
+                    (self.walk_selection_usages(s, &p, role.as_ref(), writer, phase, ctx, &keyword), HashSet::new())
+                } else {
+                    self.walk_usages(&p, role.as_ref(), writer)
+                };
                 (Some(p), v)
             }
             None => (None, HashSet::new()),
         };
         match keyword.as_str() {
+            "SELECT-PIN" => self.select_pins(s, pool, &via, &params, snapshot),
             "SELECT-INSTANCE" => {
                 let cands = match &pool {
                     None => self.inst_like(s),
                     Some(pool) => {
-                        // a terminal in the scope gives its device, a net the devices with a terminal on it; as for
-                        // SELECT-TERMINAL, only terminals with a pin count once the symbols are known (TR11, 9.2.4)
+                        // A terminal gives its device, a net the devices with a terminal on it.
+                        // Only earlier languages restrict these steps to drawn terminals (10.1).
                         let mut cands = Vec::new();
                         for &o in pool {
                             match self.o(o).clone() {
@@ -1451,7 +1475,7 @@ impl Interp<'_> {
                                 ObjData::Term { owner, .. }
                                     if matches!(self.o(owner), ObjData::Inst { .. } | ObjData::Bundle { .. }) =>
                                 {
-                                    if self.drawn(s, o, phase) {
+                                    if self.follows_0_4(writer) || self.drawn(s, o, phase) {
                                         cands.push(self.bundle_of(owner));
                                     }
                                 }
@@ -1459,7 +1483,9 @@ impl Interp<'_> {
                                     for ow in self.inst_like(s) {
                                         let mut hit = false;
                                         for t in self.terms_of(s, ow) {
-                                            if self.tnet_has(s, t, o) && self.drawn(s, t, phase) {
+                                            if self.tnet_has(s, t, o)
+                                                && (self.follows_0_4(writer) || self.drawn(s, t, phase))
+                                            {
                                                 hit = true;
                                                 break;
                                             }
@@ -1475,7 +1501,10 @@ impl Interp<'_> {
                         cands
                     }
                 };
-                let out: Vec<ObjId> = cands.into_iter().filter(|o| self.inst_match(*o, &params, false)).collect();
+                let out: Vec<ObjId> = cands
+                    .into_iter()
+                    .filter(|o| self.inst_match(*o, &params, false) && self.selection_symbol_matches(s, *o, &params))
+                    .collect();
                 dedup(out)
             }
             "SELECT-TERMINAL" => {
@@ -1509,6 +1538,9 @@ impl Interp<'_> {
                                     out.extend(self.terms_of(s, b));
                                 }
                                 ObjData::Term { .. } => out.push(o),
+                                ObjData::ScenePin { owner, index } if self.follows_0_4(writer) => {
+                                    out.extend(self.selected_pin_terminals(s, owner, index));
+                                }
                                 _ => {}
                             }
                         }
@@ -1559,7 +1591,7 @@ impl Interp<'_> {
                             continue;
                         }
                     }
-                    if phase >= 5 && !self.has_pin(s, t) {
+                    if !self.follows_0_4(writer) && phase >= 5 && !self.has_pin(s, t) {
                         continue;
                     }
                     out.push(t);
@@ -1579,14 +1611,17 @@ impl Interp<'_> {
                                 ObjData::Inst { .. } | ObjData::Bundle { .. } => {
                                     let b = self.bundle_of(o);
                                     for t in self.terms_of(s, b) {
-                                        if self.drawn(s, t, phase) {
+                                        if self.follows_0_4(writer) || self.drawn(s, t, phase) {
                                             cands.extend(self.tnets(s, t));
                                         }
                                     }
                                 }
                                 ObjData::Term { owner, .. } => {
                                     // a port of this level names its net; other terminals count with a pin (TR11)
-                                    if matches!(self.o(owner), ObjData::LevelObj { .. }) || self.drawn(s, o, phase) {
+                                    if self.follows_0_4(writer)
+                                        || matches!(self.o(owner), ObjData::LevelObj { .. })
+                                        || self.drawn(s, o, phase)
+                                    {
                                         cands.extend(self.tnets(s, o));
                                     }
                                 }
@@ -1924,7 +1959,7 @@ impl Interp<'_> {
         self.bundle_field(o).unwrap_or(o)
     }
 
-    fn inst_match(&self, o: ObjId, p: &BTreeMap<String, Lit>, owner_only: bool) -> bool {
+    pub(super) fn inst_match(&self, o: ObjId, p: &BTreeMap<String, Lit>, owner_only: bool) -> bool {
         let o = match self.o(o) {
             ObjData::Bundle { members, .. } => members[0],
             _ => o,
@@ -1933,6 +1968,9 @@ impl Interp<'_> {
             return if owner_only { !["name", "model", "type"].iter().any(|k| p.contains_key(*k)) } else { false };
         }
         let inst = self.inst_of(o);
+        if !owner_only && p.get("terminals").and_then(Lit::num).is_some_and(|n| inst.nodes.len() as f64 != n) {
+            return false;
+        }
         let cs = inst.case_sensitive;
         // name conditions take `*` and compare by the host's case rule (10.1)
         if let Some(n) = p.get("name").and_then(Lit::str) {

@@ -25,6 +25,7 @@ mod packages;
 mod pin_names;
 mod places;
 mod scene_pins;
+mod selections;
 /// The name of the standard package that the setting of 16.3 brings in at the root.
 pub use packages::STD_NAME;
 pub mod phases;
@@ -212,7 +213,7 @@ pub struct Interp<'p> {
     pub(crate) rules: Rules,
     /// The members of each unit that are rules, as `rule_members` took them last.
     pub(crate) rule_members: HashMap<UnitId, RuleMembers>,
-    pub(crate) block_symbols: HashMap<String, BTreeMap<MemberKey, (Pos, ObjId)>>,
+    pub(crate) block_symbols: HashMap<String, BTreeMap<MemberKey, scene::BlockSymbol>>,
     pub(crate) scenes: Vec<Scene>,
     pub(crate) symbol_order: HashMap<SceneId, Vec<ObjId>>,
     /// Pin views for case-insensitive hosts, shared by all owners of the definition.
