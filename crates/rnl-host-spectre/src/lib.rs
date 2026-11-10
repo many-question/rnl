@@ -1178,6 +1178,10 @@ fn finish(cx: &mut Reading) {
             };
             let inst = &mut cx.doc.levels[lv].instances[k];
             inst.default_terminals = terms;
+            // The adapter owns the dialect's table. The runtime chooses the replacement
+            // for the language version of the instance's source file (6.12, 16.1).
+            inst.default_terminals_0_4 = matches!(master.as_str(), "tline" | "transformer")
+                .then(|| ["p1", "n1", "p2", "n2"].into_iter().map(String::from).collect());
             inst.mtype = mtype;
             inst.is_subckt = is_subckt;
             let param =

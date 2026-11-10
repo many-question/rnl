@@ -164,4 +164,6 @@ In a file of 0.4 the positional facts write their direction (14.1). ORDER, DISTR
 
 See the [roadmap](../../docs/roadmap.md) for planned work.
 
+In a file of draft 0.4, Spectre `tline` and `transformer` instances have the default terminal names `p1`, `n1`, `p2`, `n2` (6.12). The version is that of the instance's source file, including through includes. Explicit DEVICE terminal names still override these defaults; files of 0.2 and 0.3 retain the adapter's existing names.
+
 Draft 0.4 TEXT accepts `fix_rotate=true`: the anchor still follows the symbol, but the text direction stays in scene axes. Keyed TEXT statements override this item independently, including an explicit `false`. `TextInfo.fix_rotate` carries it to the solver; the canonical input adds a marker only when true, leaving older digests unchanged. Fixed symbol text and label templates carry the same setting to renderers.
