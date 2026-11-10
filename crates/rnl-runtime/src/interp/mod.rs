@@ -18,6 +18,7 @@ pub mod cycles;
 mod devices;
 pub mod eval;
 mod export;
+mod groups;
 mod islands;
 pub mod kw;
 mod languages;

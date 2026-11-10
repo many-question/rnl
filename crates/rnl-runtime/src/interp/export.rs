@@ -447,10 +447,10 @@ impl Interp<'_> {
         let mut groups = Vec::new();
         for g in self.scenes[s].groups.clone() {
             let set = g.set;
-            if self.eff_priority(s, None, &g.chain, Some(set)) == Priority::Disabled {
+            if self.failed_group(&g) || self.eff_priority(s, None, &g.chain, Some(set)) == Priority::Disabled {
                 continue;
             }
-            let members = self.flatten(s, set, 7, None);
+            let members = self.group_members(s, &g);
             groups.push(ProblemGroup {
                 label: self.label(set),
                 members: members.iter().filter_map(|m| ix.objects.get(m).copied()).collect(),

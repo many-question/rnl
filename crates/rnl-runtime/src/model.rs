@@ -494,7 +494,8 @@ pub struct GroupInfo {
     /// of a definition makes its own.
     pub id: String,
     /// Its members as a set role holds them ([`Attach`]): in order, each an object by its id or a
-    /// point, nested sets followed down.
+    /// point, nested sets followed down. In draft 0.4, usages without a symbol contribute
+    /// their role members recursively; a usage with a symbol contributes itself (11.5).
     pub members: Vec<Attach>,
     /// The statement that gives GROUP: its first and last character.
     pub source: Option<(crate::diag::Loc, crate::diag::Loc)>,
