@@ -27,17 +27,8 @@ fn published_0_4() -> Value {
 /// covers it from then on; the list is empty when 0.4 is released.
 const PENDING_0_4: &[&str] = &[
     // pins, as objects and in the slots that take points (9.2.4, 10.1)
-    "kinds",
-    "PIN",
     "SELECT-PIN",
-    "ARC",
-    "BEZIER",
-    "CIRCLE",
-    "ELLIPSE",
-    "LINE",
-    "RECTANGLE",
     "TEXT",
-    "WIRE",
     // routing (13.7)
     "ROUTE",
     "ROUTE-NET",
@@ -187,14 +178,24 @@ fn compare(p: &Value, version: &str, pending: &[&str]) {
             w.removed.iter().map(|r| json!({"word":r.word, "what":r.what, "until":r.until, "see":r.see})).collect();
         assert_eq!(json!(removed), p.get("removed").cloned().unwrap_or(json!([])), "removed");
     }
-    for (category, actual) in [("kinds", &w.kinds), ("subobjects", &w.subobjects), ("attributes", &w.attributes)] {
+    let kinds = w.kinds_in(version);
+    for (category, actual) in [("kinds", &kinds), ("subobjects", &w.subobjects), ("attributes", &w.attributes)] {
         if pending(category) {
             continue;
         }
         assert_eq!(strings(actual), names(&p[category]), "{category}");
         for item in p[category].as_array().unwrap() {
             keys(item, &["name", "since"]);
-            assert_eq!(item["since"], w.language_version, "{category}: {item}");
+            let since = if category == "kinds" {
+                w.kind_versions
+                    .iter()
+                    .find(|(name, _, _)| item["name"] == name.as_str())
+                    .and_then(|(_, since, _)| since.as_deref())
+                    .unwrap_or(&w.language_version)
+            } else {
+                &w.language_version
+            };
+            assert_eq!(item["since"], since, "{category}: {item}");
         }
     }
     let record = &p["record"];
@@ -341,7 +342,7 @@ fn compare(p: &Value, version: &str, pending: &[&str]) {
             all_words.insert(slot["name"].as_str().unwrap().to_string());
             if slot["takes"] != "definition" {
                 for kind in slot["kinds"].as_array().into_iter().flatten().filter_map(Value::as_str) {
-                    if !w.kinds.iter().any(|k| k == kind) && kind != "style" {
+                    if !kinds.iter().any(|k| k == kind) && kind != "style" {
                         pseudo.insert(kind.to_string());
                     }
                 }

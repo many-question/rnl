@@ -587,10 +587,9 @@ impl Interp<'_> {
                                 )
                             }
                         };
+                        let role_kinds = words().kinds_in(&self.version_of(Some(self.source_unit(ctx))));
                         for k in &kinds {
-                            if !ROLE_KINDS.contains(&k.as_str())
-                                && !(k == "pin" && self.follows_0_4(self.source_unit(ctx)))
-                            {
+                            if !role_kinds.contains(k) {
                                 return self.fail(
                                     ctx,
                                     codes::DEFINE_ROLE_UNKNOWN_KIND,
@@ -1617,6 +1616,7 @@ impl Interp<'_> {
             takes_versions: Vec::new(),
             kinds: Vec::new(),
             kind_versions: Vec::new(),
+            kind_orders: Vec::new(),
             optional: false,
         }];
         let mapped = self.map_args(kw, args, seg, ctx, &positions)?;
@@ -2732,10 +2732,6 @@ impl Interp<'_> {
         out
     }
 }
-
-/// The kind names a role can be declared with (9.4), those of the word list (5.3).
-const ROLE_KINDS: [&str; 10] =
-    ["instance", "terminal", "net", "point", "wire", "usage", "bundle", "text", "annotation", "label"];
 
 /// One AS or ATTACH, applied once or once per member.
 #[derive(Debug)]
