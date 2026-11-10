@@ -611,6 +611,10 @@ export type TextView = {
   valign: string,
   rotate: number,
   /**
+   * Effective fixed rotation, when supplied by a TEXT statement.
+   */
+  fix_rotate?: boolean,
+  /**
    * Its size, from the document or a package, when one gives it.
    */
   size: number | null,

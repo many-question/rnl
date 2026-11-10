@@ -65,6 +65,8 @@ pub struct SymbolPrim {
     pub halign: Option<String>,
     pub valign: Option<String>,
     pub rotate: Option<f64>,
+    /// Keep the text direction in scene coordinates while its anchor follows the symbol.
+    pub fix_rotate: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -141,6 +143,7 @@ pub struct SymbolLabel {
     pub halign: Option<String>,
     pub valign: Option<String>,
     pub rotate: f64,
+    pub fix_rotate: Option<bool>,
     pub style: Style,
 }
 
@@ -301,7 +304,9 @@ pub struct TextView {
     pub halign: String,
     pub valign: String,
     pub rotate: f64,
-    /// A text written in a symbol turns with its instance (9.2.5); scene texts do not.
+    /// The effective fix_rotate item; None when no statement supplies it.
+    pub fix_rotate: Option<bool>,
+    /// Effective owner orientation; fixed-rotation and scene texts use R0.
     pub orient: Orient,
     pub style: Style,
     /// The properties of `style` the document's own records give, not a package.

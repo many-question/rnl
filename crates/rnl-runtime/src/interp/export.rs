@@ -279,6 +279,7 @@ impl Interp<'_> {
                         halign: items.halign.clone().unwrap_or_else(|| "start".into()),
                         valign: items.valign.clone().unwrap_or_else(|| "baseline".into()),
                         rotate: items.rotate.unwrap_or(0.0),
+                        fix_rotate: items.fix_rotate.unwrap_or(false),
                         style,
                     });
                 }

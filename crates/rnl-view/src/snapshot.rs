@@ -528,6 +528,10 @@ pub struct TextView {
     pub halign: String,
     pub valign: String,
     pub rotate: f64,
+    /// Effective fixed rotation, when supplied by a TEXT statement.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub fix_rotate: Option<bool>,
     /// Its size, from the document or a package, when one gives it.
     pub size: Option<f64>,
     /// The style properties the document's records give it, such as `textcolor`, `bold` and
@@ -998,6 +1002,7 @@ fn level_model(
             halign: t.halign.clone(),
             valign: t.valign.clone(),
             rotate: t.rotate,
+            fix_rotate: t.fix_rotate,
             size: match t.style.get("size") {
                 Some(Lit::Num(n)) => Some(*n),
                 _ => None,
@@ -1036,6 +1041,29 @@ mod tests {
     use super::*;
     use crate::{BuildOptions, MemoryProvider};
     use serde_json::json;
+
+    #[test]
+    fn text_snapshot_preserves_explicit_fixed_rotation_and_omits_unwritten_values() {
+        for (version, param, expected) in [
+            ("0.4", ", fix_rotate=true", Some(true)),
+            ("0.4", ", fix_rotate=false", Some(false)),
+            ("0.4", "", None),
+            ("0.3", "", None),
+        ] {
+            let source = format!("* text\n* @RNL(type=\"header\") {{ @VERSION(\"{version}\") }}\nR1 a b 1k\n* @RNL {{ (2,3) @TEXT(\"ink\"{param}) }}\n.end\n");
+            let files = MemoryProvider::new().with("t.sp", &source);
+            let options =
+                BuildOptions { runtime: Options { std: false, ..Options::default() }, ..BuildOptions::default() };
+            let snap =
+                crate::snapshot("t.sp", &files, &options, Parts { drawing: false, host: false, model: true }).unwrap();
+            let value = serde_json::to_value(snap).unwrap();
+            let text = &value["levels"][0]["model"]["texts"][0];
+            match expected {
+                Some(expected) => assert_eq!(text["fix_rotate"], expected),
+                None => assert!(text.get("fix_rotate").is_none()),
+            }
+        }
+    }
 
     #[test]
     fn pin_label_name_formats_in_the_snapshot_follow_the_file_version() {

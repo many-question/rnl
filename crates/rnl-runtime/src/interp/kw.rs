@@ -1822,6 +1822,7 @@ impl Interp<'_> {
             halign: get(&rest, "halign").and_then(Lit::str).map(String::from),
             valign: get(&rest, "valign").and_then(Lit::str).map(String::from),
             rotate: get(&rest, "rotate").and_then(Lit::num),
+            fix_rotate: get(&rest, "fix_rotate").and_then(Lit::boolean),
             dx: get(&rest, "dx").and_then(Lit::num),
             dy: get(&rest, "dy").and_then(Lit::num),
         };

@@ -715,6 +715,7 @@ impl Interp<'_> {
                     halign: l.items.halign.clone(),
                     valign: l.items.valign.clone(),
                     rotate: l.items.rotate.unwrap_or(0.0),
+                    fix_rotate: l.items.fix_rotate,
                     style: l.style.clone(),
                 })
                 .collect(),
@@ -749,6 +750,7 @@ impl Interp<'_> {
                 halign: p.text.as_ref().and_then(|t| t.halign.clone()),
                 valign: p.text.as_ref().and_then(|t| t.valign.clone()),
                 rotate: p.text.as_ref().and_then(|t| t.rotate),
+                fix_rotate: p.text.as_ref().and_then(|t| t.fix_rotate).unwrap_or(false),
             })
             .collect();
         let pins = sd
@@ -1125,7 +1127,8 @@ impl Interp<'_> {
             let Some(text) = it.text.clone() else { continue };
             let att = self.text_attach(t);
             let drawable_att = matches!(self.o(att), ObjData::Inst { .. } | ObjData::Usage(_) | ObjData::Bundle { .. });
-            let orient = if from_symbol { self.orientation(s, att) } else { Orient::R0 };
+            let orient =
+                if from_symbol && !it.fix_rotate.unwrap_or(false) { self.orientation(s, att) } else { Orient::R0 };
             let lines = self.text_lines(s, &text, att);
             let mut layer = self.layer_of(s, t);
             if drawable_att && layer == Layer::Middle {
@@ -1176,6 +1179,7 @@ impl Interp<'_> {
                 halign: it.halign.clone().unwrap_or_else(|| "start".into()),
                 valign: it.valign.clone().unwrap_or_else(|| "baseline".into()),
                 rotate: it.rotate.unwrap_or(0.0),
+                fix_rotate: it.fix_rotate,
                 orient,
                 style: self.style_of(s, t),
                 own_style: self.own_style_of(s, t),

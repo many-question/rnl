@@ -26,8 +26,6 @@ fn published_0_4() -> Value {
 /// that change with them. A change that brings one takes it off this list, so that the comparison
 /// covers it from then on; the list is empty when 0.4 is released.
 const PENDING_0_4: &[&str] = &[
-    // pins, as objects and in the slots that take points (9.2.4, 10.1)
-    "TEXT",
     // routing (13.7)
     "ROUTE",
     "ROUTE-NET",

@@ -569,7 +569,7 @@ impl Out {
                     &st,
                     layer,
                     key,
-                    code,
+                    if p.fix_rotate { Orient::R0 } else { code },
                 );
                 continue;
             }

@@ -247,7 +247,7 @@ pub fn statements(op: &Op, style: Option<&str>) -> Vec<String> {
                 None => wire,
             }]
         }
-        Op::AddText { name, attach, key, text, at, offset, halign, valign, rotate, size, style } => {
+        Op::AddText { name, attach, key, text, at, offset, halign, valign, rotate, fix_rotate, size, style } => {
             let mut params = vec![quote(&content(text))];
             params.extend(key.iter().map(|k| format!("key={}", quote(k))));
             if let Some([dx, dy]) = offset {
@@ -262,6 +262,7 @@ pub fn statements(op: &Op, style: Option<&str>) -> Vec<String> {
             params.extend(halign.iter().filter(|h| keyed || *h != "start").map(|h| format!("halign={}", quote(h))));
             params.extend(valign.iter().filter(|v| keyed || *v != "baseline").map(|v| format!("valign={}", quote(v))));
             params.extend(rotate.iter().filter(|r| keyed || **r != 0.0).map(|r| format!("rotate={}", num(*r))));
+            params.extend(fix_rotate.iter().map(|fixed| format!("fix_rotate={fixed}")));
             params.extend(size.iter().map(|s| format!("size={}", num(*s))));
             params.extend(style.iter().map(|(k, v)| format!("{k}={}", literal(v))));
             let text = format!("@TEXT({})", params.join(", "));
