@@ -1197,7 +1197,11 @@ impl Interp<'_> {
         let mut currents = Vec::new();
         let mut effective: HashMap<ObjId, (Pos, String)> = HashMap::new();
         let mut current_order = Vec::new();
-        for (p, t, direction, _) in &self.scenes[s].currents {
+        for fact in &self.scenes[s].currents {
+            if !self.current_fact_active(s, fact, usize::MAX) {
+                continue;
+            }
+            let (p, t, direction) = (&fact.pos, &fact.terminal.unwrap(), &fact.direction);
             if let Some(best) = effective.get_mut(t) {
                 if *p > best.0 {
                     *best = (p.clone(), direction.clone());

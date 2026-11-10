@@ -86,13 +86,16 @@ impl Interp<'_> {
         if self.check_scene_pin_bindings(s) {
             self.resolve_scene_subobjects(s);
         }
+        self.resolve_currents(s, false);
         self.scenes[s].phase = 5;
         self.run_tasks(s, 5);
+        self.resolve_currents(s, false);
         self.scenes[s].phase = 6;
         self.run_tasks(s, 6);
         self.resolve_symbols(s, true);
         self.resolve_scene_subobjects(s);
         self.check_scene_pin_bindings(s);
+        self.resolve_currents(s, false);
         self.note_overridden_symbols(s);
         self.symbol_labels(s);
         self.check_scene_pin_text_names(s);
@@ -109,6 +112,7 @@ impl Interp<'_> {
         self.materialize_constraints(s);
         self.run_tasks(s, 7);
         self.check_scene_pin_roles(s);
+        self.resolve_currents(s, true);
         self.resolve_geometry(s);
         self.scenes[s].phase = 8;
         self.run_tasks(s, 8);
@@ -1345,9 +1349,12 @@ impl Interp<'_> {
             let loc = self.scenes[s]
                 .currents
                 .iter()
-                .filter(|c| terms.contains(&c.1))
-                .max_by(|a, b| a.0.cmp(&b.0))
-                .and_then(|c| c.3.clone());
+                .filter(|fact| {
+                    fact.terminal.is_some_and(|terminal| terms.contains(&terminal))
+                        && self.current_fact_active(s, fact, usize::MAX)
+                })
+                .max_by(|a, b| a.pos.cmp(&b.pos))
+                .and_then(|fact| fact.loc.clone());
             let names = terms.iter().map(|t| self.label(*t)).collect::<Vec<_>>().join(", ");
             let into = if ways[0] > 0 { "into" } else { "out of" };
             let net = self.label(net);

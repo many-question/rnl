@@ -168,7 +168,16 @@ impl Interp<'_> {
             "CURRENT" => {
                 let p = self.params(kw, seg, ctx, &self.sig_params(kw, ctx), None, false, None)?;
                 let d = get(&p, "direction").and_then(Lit::str).unwrap_or("unspecified").to_string();
-                self.target_each(kw, &args, seg, ctx, 3, TargetOp::Current { direction: d, off: seg.start }, "terminal")
+                let phase = if self.follows_0_4(self.source_unit(ctx)) { 5 } else { 3 };
+                self.target_each(
+                    kw,
+                    &args,
+                    seg,
+                    ctx,
+                    phase,
+                    TargetOp::Current { direction: d, off: seg.start },
+                    "terminal",
+                )
             }
             "PRIORITY" => {
                 let p = self.params(kw, seg, ctx, &self.sig_params(kw, ctx), None, false, None)?;
