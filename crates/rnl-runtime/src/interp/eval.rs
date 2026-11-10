@@ -30,6 +30,8 @@ pub enum Stop {
     OwnLevel,
     /// A statement that needs a circuit, read where there is none (a package, an included file level).
     NoCircuit,
+    /// The statement lies outside the record's host language sections (2.8).
+    Language,
 }
 
 pub type R<T> = Result<T, Stop>;
@@ -704,6 +706,25 @@ impl<'p> Interp<'p> {
         pos: Option<Pos>,
         origin: &str,
     ) -> R<ObjId> {
+        if header.languages != crate::host::language::Languages::ALL {
+            let defines = m.segments.iter().any(|seg| {
+                seg.call.as_ref().is_some_and(|call| {
+                    matches!(self.kw(&call.kw, u).as_str(), "DEFINE" | "DEFINE-SYMBOL" | "DEFINE-STYLE")
+                })
+            });
+            if !defines {
+                match scene {
+                    Some(s) if !header.languages.overlaps(self.doc.level_languages(self.scenes[s].level)) => {
+                        return Err(Stop::Language);
+                    }
+                    None => {
+                        self.rules.insert(MemberKey::M { unit: u, rec: rec.unwrap_or(usize::MAX), k, embedded });
+                        return Err(Stop::NoCircuit);
+                    }
+                    _ => {}
+                }
+            }
+        }
         let mkey = MemberKey::M { unit: u, rec: rec.unwrap_or(usize::MAX), k, embedded };
         let skey = (mkey.clone(), scene);
         if let Some(v) = self.memo.get(&skey) {
@@ -711,6 +732,7 @@ impl<'p> Interp<'p> {
                 Memo::Val(v) => Ok(*v),
                 Memo::LocalRef => Err(Stop::LocalRef),
                 Memo::OwnLevel => Err(Stop::OwnLevel),
+                Memo::Language => Err(Stop::Language),
             };
         }
         if self.in_progress.contains(&skey) {
@@ -747,6 +769,7 @@ impl<'p> Interp<'p> {
             segments: Rc::new([]),
             modifier_input: Default::default(),
             reference_dependencies: Default::default(),
+            language_inputs: Vec::new(),
         };
         let (r, bound) = self.eval_member(m, &ctx);
         self.in_progress.remove(&skey);
@@ -759,6 +782,10 @@ impl<'p> Interp<'p> {
             Err(Stop::OwnLevel) => {
                 self.memo.insert(skey, Memo::OwnLevel);
                 return Err(Stop::OwnLevel);
+            }
+            Err(Stop::Language) => {
+                self.memo.insert(skey, Memo::Language);
+                return Err(Stop::Language);
             }
             Err(Stop::NoCircuit) => return Err(Stop::NoCircuit),
             Err(Stop::Fail(d)) => self.new_obj(ObjData::Failed(d)),
@@ -949,6 +976,9 @@ impl<'p> Interp<'p> {
             return Ok((NOTHING, false));
         };
         let kw = self.kw(&call.kw, ctx.unit);
+        let mut call_ctx = ctx.clone();
+        call_ctx.language_inputs = args.iter().map(|arg| arg.obj).collect();
+        let ctx = &call_ctx;
         if self.follows_0_4(self.source_unit(ctx))
             && !ctx.in_symbol()
             && !matches!(
@@ -960,7 +990,12 @@ impl<'p> Interp<'p> {
             // Settle those edits before choosing between immediate and deferred execution.
             for (index, arg) in args.iter_mut().enumerate() {
                 if self.is_set(arg.obj) && !self.is_lazy(arg.obj) {
-                    self.rule_input(arg.obj, seg.start, index, ctx)?;
+                    if self.record_languages(ctx) != crate::host::language::Languages::ALL {
+                        // Language reach depends on all final members, not only selection edits (2.8).
+                        self.constraint_input(arg.obj, seg.start, index, ctx)?;
+                    } else {
+                        self.rule_input(arg.obj, seg.start, index, ctx)?;
+                    }
                     arg.sel |= self.is_lazy(arg.obj);
                 }
             }
@@ -974,6 +1009,14 @@ impl<'p> Interp<'p> {
             && !self.rule_reaches(ctx, args.iter().map(|a| a.obj))
         {
             return Err(Stop::OwnLevel);
+        }
+        if args.iter().any(|arg| !self.language_reaches_object(arg.obj, ctx)) {
+            return Err(Stop::Language);
+        }
+        if args.iter().all(|arg| !self.is_lazy(arg.obj))
+            && !self.language_inputs_reach(ctx, ctx.scene.map_or(3, |scene| self.scenes[scene].phase))
+        {
+            return Err(Stop::Language);
         }
         let independent_args = words().keyword(&kw).is_some_and(|signature| {
             matches!(&signature.positions, crate::words::Positions::List(slots) if slots.len() == 1 && matches!(slots[0].takes, Takes::One | Takes::Shape))
@@ -1214,7 +1257,7 @@ impl<'p> Interp<'p> {
             nested.borrow_mut().insert((p, n), Nested::Val(v, dependencies));
         }
         let r = match r {
-            Err(Stop::LocalRef) | Err(Stop::OwnLevel) | Err(Stop::NoCircuit) => return r,
+            Err(Stop::LocalRef) | Err(Stop::OwnLevel) | Err(Stop::NoCircuit) | Err(Stop::Language) => return r,
             other => other,
         };
         self.nested_memo.insert(key, (r.clone(), ctx.reference_dependencies.borrow().clone()));
@@ -1309,6 +1352,9 @@ impl<'p> Interp<'p> {
             }
             sel = self.is_lazy(obj);
         }
+        if !self.language_reaches_object(obj, ctx) {
+            return Err(Stop::Language);
+        }
         if self.foreign_body_object(obj, ctx) {
             return Err(Stop::LocalRef);
         }
@@ -1318,6 +1364,9 @@ impl<'p> Interp<'p> {
         }
         for p in &e.path {
             obj = self.subobject(obj, p, ctx, e)?;
+            if !self.language_reaches_object(obj, ctx) {
+                return Err(Stop::Language);
+            }
         }
         if e.prefix == '#' && e.path.first().is_some_and(|p| p.sep == Sep::Term) {
             self.note_terminal_ref(ctx, e, obj);
@@ -2427,7 +2476,7 @@ impl<'p> Interp<'p> {
             );
         }
         if let Some(s) = ctx.scene {
-            self.scenes[s].tasks[phase].push((ctx.pos.clone(), task));
+            self.queue_task(s, phase, ctx, task);
         }
         Ok(())
     }

@@ -202,6 +202,10 @@ impl Interp<'_> {
                 self.remember_constraint_set(p.key, expansion.collection);
                 self.install_constraints(p.scene, Some(result), expansion, &ctx, p.segment.start, &p.args);
             }
+            Err(Stop::Language) => {
+                self.inactive_objects.insert((p.scene, result));
+                *self.om(result) = ObjData::Set(Box::new(SetData::plain(Vec::new(), false)));
+            }
             Err(stop) => {
                 self.note_failed_at(ctx.rec, p.segment.start, false);
                 let cause = if let Stop::Fail(d) = stop { d } else { None };
@@ -262,6 +266,9 @@ impl Interp<'_> {
         ctx: &Ctx,
         phase: usize,
     ) -> R<Expansion> {
+        if !self.language_inputs_reach(ctx, phase) {
+            return Err(Stop::Language);
+        }
         let s = ctx.scene.unwrap();
         let kw = template.kind.as_str();
         let positions = super::kw::sig_positions(kw);

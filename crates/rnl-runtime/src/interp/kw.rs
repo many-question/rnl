@@ -1350,7 +1350,12 @@ impl Interp<'_> {
             sub.frame = Some(fr.clone());
             sub.origin = origin.clone();
             sub.nested = None;
-            self.definition_member(m, k, &sub)?;
+            match self.definition_member(m, k, &sub) {
+                Err(Stop::Language) => continue,
+                result => {
+                    result?;
+                }
+            }
         }
         Ok(())
     }
@@ -1404,6 +1409,7 @@ impl Interp<'_> {
             }
             Err(Stop::LocalRef) | Err(Stop::OwnLevel) => self.new_obj(ObjData::Failed(None)),
             Err(Stop::NoCircuit) => return Err(Stop::NoCircuit),
+            Err(Stop::Language) => return Err(Stop::Language),
         };
         self.tm_memo.insert(key, val);
         let uname = self.objs[usage.0 as usize].name.clone();
@@ -1503,6 +1509,7 @@ impl Interp<'_> {
             segments: ctx.segments.clone(),
             modifier_input: Default::default(),
             reference_dependencies: Default::default(),
+            language_inputs: Vec::new(),
         };
         for m in body.members.iter() {
             if let Some(err) = &m.error {
@@ -1563,6 +1570,7 @@ impl Interp<'_> {
                 }
                 Err(Stop::LocalRef) => return Err(Stop::LocalRef),
                 Err(Stop::OwnLevel) => return Err(Stop::OwnLevel),
+                Err(Stop::Language) => return Err(Stop::Language),
             }
         }
         Ok(())
@@ -2192,14 +2200,14 @@ impl Interp<'_> {
             });
             if matches!(op, TargetOp::Symbol { .. }) && ctx.frame_generated() && self.follows_0_4(self.source_unit(ctx))
             {
-                self.scenes[ctx.scene.unwrap()].tasks[6].push((ctx.pos.clone(), task));
+                self.queue_task(ctx.scene.unwrap(), 6, ctx, task);
             } else if phase == 7
                 && matches!(op, TargetOp::Priority { .. })
                 && ctx.frame_generated()
                 && self.follows_0_4(self.source_unit(ctx))
             {
                 // This runs after generation and makes no objects, so it does not recurse (10.5).
-                self.scenes[ctx.scene.unwrap()].tasks[phase].push((ctx.pos.clone(), task));
+                self.queue_task(ctx.scene.unwrap(), phase, ctx, task);
             } else {
                 self.defer(ctx, phase, task)?;
             }
@@ -2221,7 +2229,7 @@ impl Interp<'_> {
                     }
                 });
                 if let Some(s) = ctx.scene {
-                    self.scenes[s].tasks[6].push((ctx.pos.clone(), task6));
+                    self.queue_task(s, 6, ctx, task6);
                 }
             }
             return Ok((a.obj, a.sel || self.is_lazy(a.obj)));
@@ -2266,7 +2274,7 @@ impl Interp<'_> {
                 if self.scenes[s].phase >= phase {
                     task(self, s, phase);
                 } else {
-                    self.scenes[s].tasks[phase].push((ctx.pos.clone(), task));
+                    self.queue_task(s, phase, ctx, task);
                 }
                 return Ok((a.obj, a.sel));
             }

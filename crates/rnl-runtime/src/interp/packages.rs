@@ -10,6 +10,7 @@
 //! within the major version of the reference expanded first. The standard package `rnl-std` is a
 //! package collection of this kind (16.3), used implicitly at the root.
 
+use crate::host::language::Languages;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
@@ -616,7 +617,40 @@ impl Interp<'_> {
                 }
             };
             eff.index.insert(u, eff.entries.len());
-            eff.entries.push(EffPackage { decl: uses[i].decl.clone(), unit: u, place });
+            eff.entries.push(EffPackage { decl: uses[i].decl.clone(), unit: u, place, languages: Languages::NONE });
+        }
+        // Propagate each effective use's section mask through the effective reference graph.
+        // A package still binds its names once; only its object rules and DEVICE are restricted.
+        for &i in &tops {
+            if let Some(unit) = uses[i].unit {
+                if let Some(&index) = eff.index.get(&unit) {
+                    let language = uses[i].decl.as_ref().map_or(Languages::ALL, |decl| decl.languages);
+                    eff.entries[index].languages = eff.entries[index].languages.union(language);
+                }
+            }
+        }
+        loop {
+            let mut changed = false;
+            for index in 0..eff.entries.len() {
+                let unit = eff.entries[index].unit;
+                let language = eff.entries[index].languages;
+                for (reference, decl) in self.units[unit].refs.iter().enumerate() {
+                    if decl.pkg.is_none() || eff.failed.contains(&(unit, reference)) {
+                        continue;
+                    }
+                    let Some(Some(target)) = eff.unit.get(&decl.name) else { continue };
+                    let Some(&target) = eff.index.get(target) else { continue };
+                    let old = eff.entries[target].languages;
+                    let new = old.union(language.intersect(decl.languages));
+                    if old != new {
+                        eff.entries[target].languages = new;
+                        changed = true;
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
         }
         eff
     }

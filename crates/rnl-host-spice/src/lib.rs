@@ -949,7 +949,7 @@ impl Reader<'_, '_> {
         }
         if first == ".global" {
             for t in body.split_whitespace().skip(1) {
-                self.cx.doc.add_global(t, fname);
+                self.cx.doc.add_global_at(t, fname, no);
             }
             return;
         }
