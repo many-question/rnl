@@ -36,8 +36,8 @@ pub use catalog::{
     Terminal,
 };
 pub use constraints::{
-    constraint, Constraint, ConstraintGroup, ConstraintKind, ConstraintObject, ConstraintPoint, ConstraintReference,
-    ConstraintRoute, ConstraintSource, ConstraintUsage, LevelConstraints,
+    constraint, Constraint, ConstraintDirectedPin, ConstraintGroup, ConstraintKind, ConstraintObject, ConstraintPoint,
+    ConstraintReference, ConstraintRoute, ConstraintSource, ConstraintUsage, LevelConstraints,
 };
 pub use document::{
     AutoIncludeCandidate, Child, Diagnostic, Document, Drawings, Hit, InspectedLabel, InspectedPin, InspectedSymbol,

@@ -118,6 +118,11 @@ impl Interp<'_> {
             ConstraintKind::Order => self.order_contradiction(s, members),
             ConstraintKind::Distance => self.distance_contradiction(s, cd),
             ConstraintKind::OrientRelation => {
+                // A mirror may leave a direction unchanged without leaving an entire object
+                // orientation unchanged. The solver checks pin relations as directions.
+                if cd.args.iter().any(|object| self.is_pin_direction_input(*object)) {
+                    return None;
+                }
                 // an object on both sides would have its own orientation turned by the relation,
                 // which only R0 leaves as it is (14.9): of a list, when none is R0
                 let relations = cd.params.relations();

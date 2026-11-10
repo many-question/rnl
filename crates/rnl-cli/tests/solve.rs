@@ -231,6 +231,8 @@ fn reaches(f: &FactKind, objects: &[usize]) -> bool {
     match f {
         FactKind::Place { at, .. } => point(at, objects),
         FactKind::PointCoordinate { point: k, .. } | FactKind::Orient { object: k, .. } => objects.contains(k),
+        FactKind::PinOrient { pin, .. } => objects.contains(&pin.object),
+        FactKind::PinOrientRelation { from, to, .. } => objects.contains(&from.object) || objects.contains(&to.object),
         FactKind::Offset { text, from, .. } => objects.contains(text) || point(from, objects),
         FactKind::Align { members, .. } | FactKind::Order { members, .. } | FactKind::Distribute { members, .. } => {
             members.iter().any(|m| point(m, objects))

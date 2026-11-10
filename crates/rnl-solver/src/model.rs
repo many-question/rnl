@@ -222,6 +222,12 @@ pub(crate) enum ChoiceKind {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum OrientEffect {
     None,
+    /// Direction facts constrain pins without fixing the owner's mirror choice.
+    Pins {
+        from: rnl_runtime::problem::DirectedPin,
+        to: Option<rnl_runtime::problem::DirectedPin>,
+        codes: Vec<Orient>,
+    },
     /// ORIENT: the object has this orientation.
     Fix {
         object: usize,
@@ -234,6 +240,25 @@ pub(crate) enum OrientEffect {
         from: Vec<usize>,
         to: Vec<usize>,
     },
+}
+
+impl OrientEffect {
+    pub(crate) fn pin_objects(&self) -> Vec<usize> {
+        match self {
+            Self::Pins { from, to, .. } => std::iter::once(from.object).chain(to.map(|pin| pin.object)).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    pub(crate) fn pins_hold(&self, orientation: impl Fn(usize) -> Orient) -> bool {
+        match self {
+            Self::Pins { from, to: Some(to), codes } => {
+                from.relates(orientation(from.object), *to, orientation(to.object), codes)
+            }
+            Self::Pins { from, to: None, codes } => from.faces(orientation(from.object), codes),
+            _ => true,
+        }
+    }
 }
 
 /// One unit of 8.5: a fact, as bounds and choices.
@@ -590,6 +615,12 @@ impl Model {
                 }
             }
             FactKind::Orient { object, code } => orient = OrientEffect::Fix { object: *object, code: *code },
+            FactKind::PinOrient { pin, codes } => {
+                orient = OrientEffect::Pins { from: *pin, to: None, codes: codes.clone() }
+            }
+            FactKind::PinOrientRelation { from, to, relations } => {
+                orient = OrientEffect::Pins { from: *from, to: Some(*to), codes: relations.clone() }
+            }
             FactKind::OrientRelation { relation, from, to } => {
                 orient = OrientEffect::Relate { relation: *relation, from: from.clone(), to: to.clone() }
             }

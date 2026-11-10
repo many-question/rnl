@@ -32,6 +32,10 @@ pub(crate) fn check(kind: &FactKind, at: At, ori: Ori, tol: &Q, equal: &Q) -> Op
             near(at(&PointRef::Origin(*text), *axis)? - at(from, *axis)?, from_f64(*value)?)
         }
         FactKind::Orient { object, code } => ori(*object)? == *code,
+        FactKind::PinOrient { pin, codes } => pin.faces(ori(pin.object)?, codes),
+        FactKind::PinOrientRelation { from, to, relations } => {
+            from.relates(ori(from.object)?, *to, ori(to.object)?, relations)
+        }
         FactKind::OrientRelation { relation, from, to } => {
             let side = |ks: &[usize]| -> Option<Vec<Orient>> { ks.iter().map(|k| ori(*k)).collect() };
             let (a, b) = (side(from)?, side(to)?);

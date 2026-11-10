@@ -70,6 +70,24 @@ impl Orient {
         (a as f64 * p.0 + b as f64 * p.1, c as f64 * p.0 + d as f64 * p.1)
     }
 
+    /// Turn one of the four pin exit directions, in degrees from right (9.2.4, 11.2).
+    pub fn direction(self, degrees: u16) -> Option<u16> {
+        let vector = match degrees {
+            0 => (1.0, 0.0),
+            90 => (0.0, 1.0),
+            180 => (-1.0, 0.0),
+            270 => (0.0, -1.0),
+            _ => return None,
+        };
+        match self.apply(vector) {
+            (1.0, 0.0) => Some(0),
+            (0.0, 1.0) => Some(90),
+            (-1.0, 0.0) => Some(180),
+            (0.0, -1.0) => Some(270),
+            _ => None,
+        }
+    }
+
     /// `outer` applied after `self`.
     pub fn then(self, outer: Orient) -> Orient {
         let (a0, a1, a2, a3) = outer.matrix();

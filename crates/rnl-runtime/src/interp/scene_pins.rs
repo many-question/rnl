@@ -10,6 +10,26 @@ use super::obj::{InputMember, ObjData, ObjId, SceneId, SetData, TermKey};
 use super::Interp;
 
 impl Interp<'_> {
+    /// A pin reached directly or by a terminal's last bound pin, before requiring a direction.
+    pub(crate) fn direction_pin(&mut self, scene: SceneId, object: ObjId) -> Option<(ObjId, usize, Option<u16>)> {
+        let value = self.scene_value(object);
+        let (owner, index) = match *self.o(value) {
+            ObjData::ScenePin { owner, index } => (owner, index),
+            ObjData::Term { owner, .. } => (owner, self.pin_for(scene, owner, value)?),
+            _ => return None,
+        };
+        if matches!(self.o(owner), ObjData::Inst { bundle: Some(_), .. }) {
+            return None;
+        }
+        let symbol = self.scenes[scene].symbol.get(&owner)?;
+        let pin = self.symbol(*symbol).pins.get(index)?;
+        Some((owner, index, pin.dir))
+    }
+
+    pub(crate) fn is_pin_direction_input(&self, object: ObjId) -> bool {
+        matches!(self.o(self.scene_value(object)), ObjData::ScenePin { .. } | ObjData::Term { .. })
+    }
+
     pub(crate) fn scene_pin_object(&mut self, scene: SceneId, owner: ObjId, index: usize) -> ObjId {
         if let Some(&pin) = self.scenes[scene].pins.get(&(owner, index)) {
             return pin;

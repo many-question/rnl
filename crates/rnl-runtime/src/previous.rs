@@ -180,7 +180,10 @@ fn reaches(f: &FactKind, k: usize) -> bool {
             members.iter().any(|m| on(m, k))
         }
         FactKind::Distance { from, to, .. } => from.iter().chain(to).any(|m| on(m, k)),
-        FactKind::Orient { .. } | FactKind::OrientRelation { .. } => false,
+        FactKind::Orient { .. }
+        | FactKind::OrientRelation { .. }
+        | FactKind::PinOrient { .. }
+        | FactKind::PinOrientRelation { .. } => false,
     }
 }
 

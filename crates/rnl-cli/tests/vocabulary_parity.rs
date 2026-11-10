@@ -38,8 +38,6 @@ const PENDING_0_4: &[&str] = &[
     "RECTANGLE",
     "TEXT",
     "WIRE",
-    "ORIENT",
-    "ORIENT-RELATION",
     // routing (13.7)
     "ROUTE",
     "ROUTE-NET",
@@ -314,12 +312,12 @@ fn compare(p: &Value, version: &str, pending: &[&str]) {
         } else {
             assert!(a.definition_at.is_none());
             for s in a.position_list() {
-                let (take, kinds) = match &s.takes {
-                    Takes::One => ("one", s.kinds.clone()),
-                    Takes::Set => ("set", s.kinds.clone()),
-                    Takes::Any => ("any", s.kinds.clone()),
-                    Takes::Shape => ("shape", s.kinds.clone()),
-                    Takes::Body => ("body", s.kinds.clone()),
+                let (take, kinds) = match s.takes_in(version) {
+                    Takes::One => ("one", s.kinds_in(version)),
+                    Takes::Set => ("set", s.kinds_in(version)),
+                    Takes::Any => ("any", s.kinds_in(version)),
+                    Takes::Shape => ("shape", s.kinds_in(version)),
+                    Takes::Body => ("body", s.kinds_in(version)),
                     Takes::Def(kind) => {
                         ("definition", vec![if kind == "definition" { "general".into() } else { kind.clone() }])
                     }

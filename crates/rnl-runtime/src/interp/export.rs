@@ -1041,15 +1041,21 @@ impl Interp<'_> {
                 continue;
             }
             let FactData::Orient(code) = f.data else { continue };
-            let Some(&object) = ix.objects.get(&f.target) else { continue };
             let source = f.ctx.as_ref().and_then(|c| self.rec_loc(c.rec, f.off));
-            if let Some(codes) = self.scenes[s].orient_codes.get(&k) {
-                lists.insert(ranked.len(), codes.clone());
-            }
+            let kind = if let Some(pin) = self.export_directed_pin(s, ix, f.target) {
+                let codes = self.scenes[s].orient_codes.get(&k).cloned().unwrap_or_else(|| vec![code]);
+                FactKind::PinOrient { pin, codes }
+            } else {
+                let Some(&object) = ix.objects.get(&f.target) else { continue };
+                if let Some(codes) = self.scenes[s].orient_codes.get(&k) {
+                    lists.insert(ranked.len(), codes.clone());
+                }
+                FactKind::Orient { object, code }
+            };
             ranked.push(Ranked {
                 key: (rank(p), f.order(), 2, 0, ranked.len()),
                 fact: ProblemFact {
-                    kind: FactKind::Orient { object, code },
+                    kind,
                     priority: p,
                     label: format!("the orientation {} of {}", code.as_str(), self.label(f.target)),
                     reference: None,
@@ -1079,7 +1085,7 @@ impl Interp<'_> {
             if let Some(site) = &cd.site {
                 pos = order_pos(&pos, &site.segments);
             }
-            if !cd.params.relations.is_empty() {
+            if matches!(kind, FactKind::OrientRelation { .. }) && !cd.params.relations.is_empty() {
                 lists.insert(ranked.len(), cd.params.relations.clone());
             }
             ranked.push(Ranked {
@@ -1109,6 +1115,11 @@ impl Interp<'_> {
             })
             .collect();
         (facts, orient_lists)
+    }
+
+    fn export_directed_pin(&mut self, s: SceneId, ix: &Index, object: ObjId) -> Option<DirectedPin> {
+        let (owner, pin, direction) = self.direction_pin(s, object)?;
+        Some(DirectedPin { object: *ix.objects.get(&owner)?, pin, direction: direction? })
     }
 
     fn text_off(&self, t: ObjId) -> usize {
@@ -1148,6 +1159,13 @@ impl Interp<'_> {
                 to: self.extent_points(s, ix, cd.args[1])?,
             },
             ConstraintKind::OrientRelation => {
+                if cd.args.len() == 2 && self.is_pin_direction_input(cd.args[0]) {
+                    return Some(FactKind::PinOrientRelation {
+                        from: self.export_directed_pin(s, ix, cd.args[0])?,
+                        to: self.export_directed_pin(s, ix, cd.args[1])?,
+                        relations: cd.params.relations(),
+                    });
+                }
                 let mut sides = Vec::new();
                 for a in &cd.args[..2] {
                     let ms = if self.is_set(*a) { self.flatten(s, *a, 7, None) } else { vec![*a] };

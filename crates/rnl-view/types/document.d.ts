@@ -543,6 +543,11 @@ export type ConstraintPoint =
   | { centre: Array<ConstraintPoint> };
 
 /**
+ * A pin with its local direction, transformed by its owner's orientation.
+ */
+export type ConstraintDirectedPin = { object: number, pin: number, direction: number };
+
+/**
  * What a fact says, by its kind. Objects are indexes in `LevelConstraints.objects`.
  */
 export type ConstraintKind =
@@ -553,6 +558,8 @@ export type ConstraintKind =
   | { "kind": "TEXT-dx", text: number, from: ConstraintPoint, value: number }
   | { "kind": "TEXT-dy", text: number, from: ConstraintPoint, value: number }
   | { "kind": "ORIENT", object: number, code: string }
+  | { "kind": "PIN-ORIENT", pin: ConstraintDirectedPin, codes: Array<string> }
+  | { "kind": "PIN-ORIENT-RELATION", from: ConstraintDirectedPin, to: ConstraintDirectedPin, relations: Array<string> }
   | { "kind": "ALIGN", axis: string, members: Array<ConstraintPoint> }
   | { "kind": "ORDER", axis: string, sense: string, members: Array<ConstraintPoint> }
   | { "kind": "DISTRIBUTE", axis: string, members: Array<ConstraintPoint> }
@@ -587,7 +594,7 @@ export type Constraint = {
    * The usages whose expansion made it, outermost first, by index in `LevelConstraints.usages`.
    */
   chain: Array<number>,
-} & ({ "kind": "PLACE-x", at: ConstraintPoint, value: number } | { "kind": "PLACE-y", at: ConstraintPoint, value: number } | { "kind": "POINT-x", point: number, value: number } | { "kind": "POINT-y", point: number, value: number } | { "kind": "TEXT-dx", text: number, from: ConstraintPoint, value: number } | { "kind": "TEXT-dy", text: number, from: ConstraintPoint, value: number } | { "kind": "ORIENT", object: number, code: string } | { "kind": "ALIGN", axis: string, members: Array<ConstraintPoint> } | { "kind": "ORDER", axis: string, sense: string, members: Array<ConstraintPoint> } | { "kind": "DISTRIBUTE", axis: string, members: Array<ConstraintPoint> } | { "kind": "DISTANCE", axis: string, sense: string, min: number | null, max: number | null, from: Array<ConstraintPoint>, to: Array<ConstraintPoint> } | { "kind": "ORIENT-RELATION", relation: string, from: Array<number>, to: Array<number> });
+} & ({ "kind": "PLACE-x", at: ConstraintPoint, value: number } | { "kind": "PLACE-y", at: ConstraintPoint, value: number } | { "kind": "POINT-x", point: number, value: number } | { "kind": "POINT-y", point: number, value: number } | { "kind": "TEXT-dx", text: number, from: ConstraintPoint, value: number } | { "kind": "TEXT-dy", text: number, from: ConstraintPoint, value: number } | { "kind": "ORIENT", object: number, code: string } | { "kind": "PIN-ORIENT", pin: ConstraintDirectedPin, codes: Array<string> } | { "kind": "PIN-ORIENT-RELATION", from: ConstraintDirectedPin, to: ConstraintDirectedPin, relations: Array<string> } | { "kind": "ALIGN", axis: string, members: Array<ConstraintPoint> } | { "kind": "ORDER", axis: string, sense: string, members: Array<ConstraintPoint> } | { "kind": "DISTRIBUTE", axis: string, members: Array<ConstraintPoint> } | { "kind": "DISTANCE", axis: string, sense: string, min: number | null, max: number | null, from: Array<ConstraintPoint>, to: Array<ConstraintPoint> } | { "kind": "ORIENT-RELATION", relation: string, from: Array<number>, to: Array<number> });
 
 /**
  * A place in a file, as `Document.files[].path` names the file.

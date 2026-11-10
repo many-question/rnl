@@ -1601,7 +1601,14 @@ impl Interp<'_> {
         let mut spec = sig.param_list().to_vec();
         spec.extend(style_specs(sig.style.as_deref().unwrap_or("line_style")));
         let p = self.params(kw, seg, ctx, &spec, None, false, None)?;
-        let positions = [PositionSpec { name: "points".into(), takes: Takes::Set, kinds: Vec::new(), optional: false }];
+        let positions = [PositionSpec {
+            name: "points".into(),
+            takes: Takes::Set,
+            takes_versions: Vec::new(),
+            kinds: Vec::new(),
+            kind_versions: Vec::new(),
+            optional: false,
+        }];
         let mapped = self.map_args(kw, args, seg, ctx, &positions)?;
         let obj = mapped["points"].obj;
         if self.is_lazy(obj) {

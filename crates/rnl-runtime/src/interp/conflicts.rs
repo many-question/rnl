@@ -310,6 +310,11 @@ impl Interp<'_> {
         const MOST_FACTS: usize = 16;
         const MOST_CHECKS: usize = 4096;
         let relation = cd.kind == ConstraintKind::OrientRelation;
+        if relation && cd.args.iter().any(|object| self.is_pin_direction_input(*object)) {
+            // Direction alternatives need the solver's orientation search, not the preview's
+            // fixed whole-object orientation subset checker.
+            return (Vec::new(), false);
+        }
         // A relative coordinate can violate a constraint even without any absolute anchor.
         // Finding its minimal groups needs the solver; do not mislabel a coordinate path as
         // the complete conflict. The exported facts retain all their ranks for that resolution.

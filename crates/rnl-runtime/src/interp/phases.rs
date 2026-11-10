@@ -799,6 +799,10 @@ impl Interp<'_> {
         let mut ob: HashMap<ObjId, (Priority, Pos, usize)> = HashMap::new();
         for k in live_or {
             let f = &orient[k];
+            // A pin direction is a solver fact, not the owner's unsolved preview orientation.
+            if self.is_pin_direction_input(f.target) {
+                continue;
+            }
             let p = self.fact_priority(s, f);
             if p == Priority::Disabled {
                 continue;
@@ -1147,6 +1151,35 @@ impl Interp<'_> {
             return true;
         }
         let obj = f.target;
+        if what == "ORIENT"
+            && f.ctx.as_ref().is_some_and(|ctx| self.follows_0_4(self.source_unit(ctx)))
+            && self.is_pin_direction_input(obj)
+        {
+            return match self.direction_pin(s, obj) {
+                Some((_, _, Some(_))) => true,
+                Some((_, _, None)) => {
+                    self.diag_fact(
+                        Severity::Error,
+                        codes::PIN_DIRECTION_MISSING,
+                        f,
+                        format!(
+                            "{} has no written pin direction: this {what} fails (9.2.4, 11.2, 14.9)",
+                            self.label(obj)
+                        ),
+                    );
+                    false
+                }
+                None => {
+                    self.diag_fact(
+                        Severity::Error,
+                        codes::PLACE_ORIENT_NOT_TAKEN,
+                        f,
+                        format!("{} has no usable pin in its symbol: ORIENT fails (5.2.4, 11.2)", self.label(obj)),
+                    );
+                    false
+                }
+            };
+        }
         match self.o(obj).clone() {
             ObjData::Inst { bundle: Some(_), .. } => {
                 self.member_draw_error(s, list, k, f, obj);
@@ -1799,10 +1832,51 @@ impl Interp<'_> {
                 vec![cd.args[0]]
             };
             let leaves = self.leaves(s, &members);
+            if relation && site.as_ref().is_some_and(|ctx| self.follows_0_4(self.source_unit(ctx))) {
+                let pin_count = leaves.iter().filter(|m| self.is_pin_direction_input(**m)).count();
+                if pin_count > 0 && pin_count < leaves.len() {
+                    self.diag_site(
+                        Severity::Error,
+                        codes::CONSTRAINT_ORIENT_RELATION_MIXED_KINDS,
+                        &site,
+                        cd.off,
+                        "ORIENT-RELATION relates two pins or two oriented objects, not a pin to an object (14.9)"
+                            .into(),
+                    );
+                    self.constraint_mut(c).failed = true;
+                    continue;
+                }
+                let mut no_direction = false;
+                for &member in &leaves {
+                    if matches!(self.direction_pin(s, member), Some((_, _, None))) {
+                        self.diag_site(
+                            Severity::Error,
+                            codes::PIN_DIRECTION_MISSING,
+                            &site,
+                            cd.off,
+                            format!(
+                                "{} has no written pin direction: this ORIENT-RELATION fails (9.2.4, 11.2, 14.9)",
+                                self.label(member)
+                            ),
+                        );
+                        no_direction = true;
+                    }
+                }
+                if no_direction {
+                    self.constraint_mut(c).failed = true;
+                    continue;
+                }
+            }
             let mut bad = None;
             for &m in &leaves {
                 let why = if relation {
-                    self.orientable(s, m)
+                    if site.as_ref().is_some_and(|ctx| self.follows_0_4(self.source_unit(ctx)))
+                        && self.direction_pin(s, m).is_some_and(|(_, _, dir)| dir.is_some())
+                    {
+                        None
+                    } else {
+                        self.orientable(s, m)
+                    }
                 } else if site.as_ref().is_some_and(|c| self.follows_0_4(self.source_unit(c)))
                     && matches!(
                         self.o(m),
@@ -2032,6 +2106,16 @@ impl Interp<'_> {
         let ObjData::Constraint(cd) = self.o(c).clone() else { return Some(true) };
         let tol = self.tol;
         if cd.kind == ConstraintKind::OrientRelation {
+            if cd.site.as_ref().is_some_and(|ctx| self.follows_0_4(self.source_unit(ctx)))
+                && cd.args.len() == 2
+                && self.is_pin_direction_input(cd.args[0])
+            {
+                let (a, _, ad) = self.direction_pin(s, cd.args[0])?;
+                let (b, _, bd) = self.direction_pin(s, cd.args[1])?;
+                let from = self.scenes[s].ori.get(&a)?.direction(ad?)?;
+                let to = self.scenes[s].ori.get(&b)?.direction(bd?)?;
+                return Some(cd.params.relations().iter().any(|rel| rel.direction(from) == Some(to)));
+            }
             // each side shares one orientation; `to` is `from` turned by the relation in the drawing's frame (14.9)
             let mut sides = Vec::new();
             for a in &cd.args {

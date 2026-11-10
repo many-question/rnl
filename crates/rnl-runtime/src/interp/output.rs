@@ -35,27 +35,9 @@ fn from_package(p: &Pos) -> bool {
     matches!(p.first(), Some(PosElem::Int(0))) || p.contains(&PosElem::Tag("pkg"))
 }
 
-/// The unit vector of an exit direction in degrees, for the four directions pins have.
-fn dir_vector(d: u16) -> Option<(f64, f64)> {
-    match d {
-        0 => Some((1.0, 0.0)),
-        90 => Some((0.0, 1.0)),
-        180 => Some((-1.0, 0.0)),
-        270 => Some((0.0, -1.0)),
-        _ => None,
-    }
-}
-
 /// An exit direction turned with an object's orientation.
 fn turned(d: Option<u16>, o: Orient) -> Option<u16> {
-    let (x, y) = o.apply(dir_vector(d?)?);
-    match (x.round() as i32, y.round() as i32) {
-        (1, 0) => Some(0),
-        (0, 1) => Some(90),
-        (-1, 0) => Some(180),
-        (0, -1) => Some(270),
-        _ => None,
-    }
+    o.direction(d?)
 }
 
 impl Interp<'_> {

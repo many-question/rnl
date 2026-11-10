@@ -223,6 +223,41 @@ fn every_group(model: &Model, n: usize, f: usize, before: &[usize]) -> Option<Ve
 
 // ---------------------------------------------------------------------------- checking results
 
+// Independent direction oracle: unit vectors, without the runtime's direction predicates.
+fn direction_vector(direction: u16) -> (i32, i32) {
+    match direction {
+        0 => (1, 0),
+        90 => (0, 1),
+        180 => (-1, 0),
+        270 => (0, -1),
+        _ => panic!("not a pin direction"),
+    }
+}
+
+fn turn_vector(code: Orient, (x, y): (i32, i32)) -> (i32, i32) {
+    match code {
+        Orient::R0 => (x, y),
+        Orient::R90 => (-y, x),
+        Orient::R180 => (-x, -y),
+        Orient::R270 => (y, -x),
+        Orient::MX => (x, -y),
+        Orient::MY => (-x, y),
+        Orient::MXR90 => (y, x),
+        Orient::MYR90 => (-y, -x),
+    }
+}
+
+fn pin_directions_hold(kind: &FactKind, orientations: &[Orient]) -> bool {
+    let drawn = |pin: &DirectedPin| turn_vector(orientations[pin.object], direction_vector(pin.direction));
+    match kind {
+        FactKind::PinOrient { pin, codes } => codes.iter().any(|&code| drawn(pin) == turn_vector(code, (-1, 0))),
+        FactKind::PinOrientRelation { from, to, relations } => {
+            relations.iter().any(|&code| drawn(to) == turn_vector(code, drawn(from)))
+        }
+        _ => panic!("not a pin direction fact"),
+    }
+}
+
 /// Whether a placement satisfies a fact, from the standard: points as 14.1 counts them, constant
 /// bounds within the tolerance, equalities exact.
 pub(crate) fn semantic_holds(problem: &LevelProblem, kind: &FactKind, g: &Geometry, tol: &Q) -> bool {
@@ -240,6 +275,7 @@ pub(crate) fn semantic_holds(problem: &LevelProblem, kind: &FactKind, g: &Geomet
             near(v(&o(*text), a) - v(from, a), *value)
         }
         FactKind::Orient { object, code } => g.orient[*object] == *code,
+        FactKind::PinOrient { .. } | FactKind::PinOrientRelation { .. } => pin_directions_hold(kind, &g.orient),
         FactKind::OrientRelation { relation, from, to } => relation_holds(&g.orient, *relation, from, to),
         FactKind::Align { axis, members } => {
             let vals: Vec<Q> = members.iter().map(|m| v(m, axis_of(axis))).collect();
@@ -1477,6 +1513,7 @@ fn brute_feasible(model: &Model, problem: &LevelProblem, units: &[usize]) -> Opt
             g[k] = from_index(((code >> (3 * i)) & 7) as u8);
         }
         let orientations_hold = units.iter().all(|&u| match &model.units[u].orient {
+            OrientEffect::Pins { .. } => pin_directions_hold(&problem.facts[u].kind, &g),
             OrientEffect::None => true,
             OrientEffect::Fix { object, code } => g[*object] == *code,
             OrientEffect::Relate { relation, from, to } => relation_holds(&g, *relation, from, to),
@@ -1654,4 +1691,59 @@ fn the_resolution_agrees_with_brute_force() {
     // left out
     assert!(discards > 150 && failed > 0, "{discards} discarded, {failed} failed");
     assert!(skipped < 10, "{skipped}");
+}
+
+#[test]
+fn pin_directions_and_coordinates_agree_with_brute_force() {
+    let mut rng = Rng(0xe154_69aa_23b0_cdf1);
+    let options = SolverOptions::without_time_limit();
+    let mut discarded_pins = 0;
+    let mut checked = 0;
+    for case in 0..96 {
+        let mut p = random_problem(&mut rng);
+        let instances = p.objects.len() - 3;
+        let mut directed = || {
+            let index = rng.below(3);
+            DirectedPin { object: 3 + rng.below(instances), pin: index, direction: [180, 90, 270][index] }
+        };
+        let from = directed();
+        let to = directed();
+        let codes: Vec<_> = (0..1 + rng.below(3)).map(|_| Orient::ALL[rng.below(8)]).collect();
+        let relations: Vec<_> = (0..1 + rng.below(3)).map(|_| Orient::ALL[rng.below(8)]).collect();
+        // Vary insertion order so that later coordinate and whole-object facts must backtrack
+        // over earlier pin choices, and a rejected pin fact must restore its saved state.
+        let i = rng.below(8);
+        let j = (i + 1 + rng.below(7)) % 8;
+        p.facts[i] = fact(FactKind::PinOrient { pin: from, codes });
+        p.facts[j] = fact(FactKind::PinOrientRelation { from, to, relations });
+        let r = check(&p, &options);
+        let whole = Model::new(&p, r.model.tol.clone());
+        let mut kept = Vec::new();
+        let mut complete = true;
+        for f in 0..p.facts.len() {
+            if let Some(alone) = brute_feasible(&whole, &p, &[f]) {
+                assert_eq!(alone, !r.failed.contains(&f), "case {case}, fact {f} alone");
+            }
+            if r.failed.contains(&f) {
+                continue;
+            }
+            let mut with = kept.clone();
+            with.push(f);
+            match brute_feasible(&r.model, &p, &with) {
+                Some(true) => kept = with,
+                Some(false) => {}
+                None => {
+                    complete = false;
+                    break;
+                }
+            }
+        }
+        if complete {
+            assert_eq!(r.kept, kept, "case {case}: {:?}", p.facts);
+            checked += 1;
+        }
+        discarded_pins += r.discarded.iter().filter(|d| d.fact == i || d.fact == j).count();
+    }
+    assert!(checked >= 90, "only {checked} complete oracle checks");
+    assert!(discarded_pins > 0);
 }

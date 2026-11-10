@@ -113,12 +113,54 @@ pub enum Takes {
     Def(String),
 }
 
+impl Takes {
+    fn parse(value: &str) -> Takes {
+        match value {
+            "one" => Takes::One,
+            "set" => Takes::Set,
+            "shape" => Takes::Shape,
+            "any" => Takes::Any,
+            "body" => Takes::Body,
+            other => other.strip_prefix("def:").map_or(Takes::Any, |kind| Takes::Def(kind.to_string())),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PositionSpec {
     pub name: String,
     pub takes: Takes,
+    /// Changes of the slot's cardinality, keyed by the version that introduces each change.
+    pub takes_versions: Vec<(String, Takes)>,
     pub kinds: Vec<String>,
+    /// The versions that add or remove accepted kinds, as `kinds_since` and `kinds_until` write them.
+    pub kind_versions: Vec<(String, Option<String>, Option<String>)>,
     pub optional: bool,
+}
+
+impl PositionSpec {
+    pub fn takes_in(&self, version: &str) -> &Takes {
+        let key = crate::interp::unit::version_key;
+        self.takes_versions
+            .iter()
+            .filter(|(since, _)| key(since) <= key(version))
+            .max_by_key(|(since, _)| key(since))
+            .map_or(&self.takes, |(_, takes)| takes)
+    }
+
+    /// The kinds accepted by this position in a file of the given language version.
+    pub fn kinds_in(&self, version: &str) -> Vec<String> {
+        self.kinds
+            .iter()
+            .filter(|kind| {
+                self.kind_versions
+                    .iter()
+                    .find(|(name, _, _)| name == *kind)
+                    .is_none_or(|(_, since, until)| in_version(since, until, version))
+            })
+            .cloned()
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -414,10 +456,10 @@ fn str_of(v: Option<&Value>) -> Option<String> {
 
 /// The values of an enumeration that a version adds or removes: `values_since` and `values_until`
 /// map a value to the version that adds it or the last that has it.
-fn value_versions(spec: &Value) -> Vec<(String, Option<String>, Option<String>)> {
+fn word_versions(spec: &Value, field: &str) -> Vec<(String, Option<String>, Option<String>)> {
     let mut out: Vec<(String, Option<String>, Option<String>)> = Vec::new();
-    for (key, since) in [("values_since", true), ("values_until", false)] {
-        for (word, v) in spec.get(key).and_then(Value::as_object).into_iter().flatten() {
+    for (suffix, since) in [("since", true), ("until", false)] {
+        for (word, v) in spec.get(format!("{field}_{suffix}")).and_then(Value::as_object).into_iter().flatten() {
             let v = v.as_str().map(String::from);
             match out.iter_mut().find(|(w, _, _)| w == word) {
                 Some(e) if since => e.1 = v,
@@ -467,26 +509,24 @@ fn keyword(name: &str, spec: &Value) -> Result<KeywordSig, String> {
             items
                 .iter()
                 .map(|p| {
-                    let takes = match p.get("takes").and_then(Value::as_str).unwrap_or("one") {
-                        "one" => Takes::One,
-                        "set" => Takes::Set,
-                        "shape" => Takes::Shape,
-                        "any" => Takes::Any,
-                        "body" => Takes::Body,
-                        other => match other.strip_prefix("def:") {
-                            Some(kind) => Takes::Def(kind.to_string()),
-                            None => Takes::Any,
-                        },
-                    };
+                    let takes = Takes::parse(p.get("takes").and_then(Value::as_str).unwrap_or("one"));
                     PositionSpec {
                         name: str_of(p.get("name")).unwrap_or_default(),
                         takes,
+                        takes_versions: p
+                            .get("takes_since")
+                            .and_then(Value::as_object)
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|(version, takes)| Some((version.clone(), Takes::parse(takes.as_str()?))))
+                            .collect(),
                         kinds: p
                             .get("kinds")
                             .and_then(Value::as_array)
                             .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
                             .unwrap_or_default(),
                         optional: p.get("optional").and_then(Value::as_bool).unwrap_or(false),
+                        kind_versions: word_versions(p, "kinds"),
                     }
                 })
                 .collect(),
@@ -506,7 +546,7 @@ fn keyword(name: &str, spec: &Value) -> Result<KeywordSig, String> {
                     since: str_of(p.get("since")),
                     until: str_of(p.get("until")),
                     list: false,
-                    value_versions: value_versions(p),
+                    value_versions: word_versions(p, "values"),
                     list_since: str_of(p.get("list_since")),
                 })
                 .collect(),

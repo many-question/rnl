@@ -2915,6 +2915,13 @@
    "sections": ["11.3"]
   },
   {
+   "number": "RNL4120",
+   "name": "pin-direction-missing",
+   "severity": "error",
+   "message": "{pin} has no written pin direction: this {keyword} fails (9.2.4, 11.2, 14.9)",
+   "sections": ["9.2.4", "11.2", "14.9"]
+  },
+  {
    "number": "RNL4200",
    "name": "point-in-symbol-free-coordinate",
    "severity": "error",
@@ -3343,6 +3350,13 @@
    "sections": [
     "14.1"
    ]
+  },
+  {
+   "number": "RNL5006",
+   "name": "constraint-orient-relation-mixed-kinds",
+   "severity": "error",
+   "message": "ORIENT-RELATION relates two pins or two oriented objects, not a pin to an object (14.9)",
+   "sections": ["5.2.4", "14.9"]
   },
   {
    "number": "RNL5100",
