@@ -84,7 +84,10 @@ fn symbol(s: &SymbolView) -> usize {
                     + optional(&p.params.arrow)
             })
             .sum::<usize>()
-        + s.pins.iter().map(|p| optional(&p.label) + strings(&p.terminals)).sum::<usize>()
+        + s.pins
+            .iter()
+            .map(|p| optional(&p.label) + strings(&p.terminals) + p.identity.as_ref().map_or(0, |i| strings(&i.names)))
+            .sum::<usize>()
 }
 
 impl Drawings {

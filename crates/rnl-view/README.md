@@ -161,3 +161,13 @@ With `BuildOptions::constraints` (`constraints: true` in a request of the [WebAs
 - `input` is the digest of the solver's input. A report of a solve (`rnl_cli::preview::LevelReport`, `rnl preview`) has `host`, the level's `Level.host`, and `input`: when the two `input`s are the same, the report's `facts[k]` is `constraints.facts[k]`; when they differ, the report is of another input and says nothing about these facts. The Document of a preview has its constraints already.
 
 What is not in `facts`: a fact with priority `"disabled"` (14.8) and one that failed as it was read (8.5, 7.6) never reach a solver. A usage so turned off is in `Level.usages[]` with its `state`, and on its members in `Object.usages`. A constraint statement turned off on its own, such as `{#R1 #R2} @ORDER("y", priority="disabled")`, is not in the Document at all: `rnl dump` lists it in the level's `constraints`, with the status `disabled`. A statement that failed is in `Document.diagnostics` and in `SourceFile.failed`, and an application that failed in `Object.usages` with its state.
+
+## Independent pins in language 0.4
+
+Each pin of a real assigned symbol has an entry of `kind: "pin"` in `Document.objects`, including unbound and unplaced pins. Its `pin.owner` is a Document object index; `pin.index` is the zero-based index in the assigned symbol. `names` preserves all local aliases and `bus` distinguishes a one-terminal bus. `at` is in scene units, y up, or null before placement; `local_at` is the symbol-local point. `nets` contains level-local net ids. Renderer stand-ins do not create these entries.
+
+A pin hit's optional `pin` field indexes that entry. Its existing `objects` still identifies connected nets. Usage role inspection and object membership resolve pin aliases to the same physical entry while preserving the written member names. These physical ids do not change the language's written-handle identity rules.
+
+Snapshot object pins carry the same index, names, bus flag, local position and opaque id. Symbol definitions and inspected symbols also expose names and bus shape. The optional `reference` is an expression that can be written back to reach this exact pin; it is absent when no supported named reference is available. In particular, an unnamed earlier pin bound to a terminal cannot borrow the terminal reference of its later binding. A wire's pin vertex has a nullable `reference` for the same reason. Never write an opaque id into RNL source.
+
+The released 0.2 and 0.3 interfaces keep their existing serialized output. Pin metadata does not change the base schematic SVG or solve geometry. Optional role inspection overlays can now show roles filled by named pins.

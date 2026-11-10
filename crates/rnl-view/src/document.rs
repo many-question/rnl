@@ -361,6 +361,10 @@ pub struct AutoIncludeCandidate {
 #[derive(Serialize, Debug)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Hit {
+    /// For a 0.4 pin hit, its independent object index in Document.objects.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub pin: Option<usize>,
     /// "box": a symbol, given by its top-left and bottom-right corners; "pin": a pin, one point;
     /// "wire": a wire, its vertices; "flyline": a flyline, its two ends, which stands for its
     /// nets as a wire does, there only when the flylines are drawn; "label": a label of an
@@ -426,7 +430,11 @@ pub struct SourceFile {
 #[derive(Serialize, Debug)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Object {
-    /// "instance", "net", "usage", "group" (a set marked with GROUP), or "bundle" for a 0.4 pin host.
+    /// The data of an independent 0.4 pin. Absent for other object kinds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub pin: Option<PinObject>,
+    /// "instance", "net", "usage", "group" (a set marked with GROUP), or "bundle" for a 0.4 pin host, or "pin".
     pub kind: &'static str,
     /// An instance or net's name, or a usage's or group's editor identity (`%gnd1` when named).
     pub name: String,
@@ -442,6 +450,27 @@ pub struct Object {
     /// terminals too for an instance, and those a failed application names, with their state. In
     /// the order of the level's usages, then of the failed applications.
     pub usages: Vec<MemberOf>,
+}
+
+#[derive(Serialize, Debug)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct PinObject {
+    /// The instance, bundle or usage, as an index in Document.objects.
+    pub owner: usize,
+    /// Zero-based physical index in that object's assigned symbol.
+    pub index: usize,
+    pub names: Vec<String>,
+    pub bus: bool,
+    /// A source expression for this exact pin; null when none is available.
+    pub reference: Option<String>,
+    /// Scene coordinates, y up; null when the owner is not positioned.
+    pub at: Option<[f64; 2]>,
+    /// Symbol-local coordinates, before orientation and translation.
+    pub local_at: [f64; 2],
+    /// Exit direction in scene degrees, independent of whether the position is known.
+    pub dir: Option<u16>,
+    /// Level-local net ids, as the snapshot writes them.
+    pub nets: Vec<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -574,8 +603,13 @@ pub(crate) fn document(
             .map(|i| {
                 let master = i.model.clone().unwrap_or_default();
                 let level = r.doc.subckt_of(i).and_then(|h| drawn.get(&h).copied());
-                let same =
-                    |m: &str, sensitive: bool| if sensitive { m == master } else { m.eq_ignore_ascii_case(&master) };
+                let same = |m: &str, sensitive: bool| {
+                    if sensitive {
+                        m == master
+                    } else {
+                        m.eq_ignore_ascii_case(&master)
+                    }
+                };
                 let candidates = r
                     .doc
                     .library_candidates
@@ -769,6 +803,7 @@ struct Index<'a> {
     insts: HashMap<(usize, usize), usize>,
     nets: HashMap<(usize, String), usize>,
     usages: HashMap<(usize, String), usize>,
+    pins: HashMap<(usize, String, usize), usize>,
 }
 
 impl<'a> Index<'a> {
@@ -781,6 +816,7 @@ impl<'a> Index<'a> {
             insts: HashMap::new(),
             nets: HashMap::new(),
             usages: HashMap::new(),
+            pins: HashMap::new(),
         }
     }
 
@@ -796,6 +832,7 @@ impl<'a> Index<'a> {
         }
         let o = self.objects.len();
         self.objects.push(Object {
+            pin: None,
             kind,
             name: id.into(),
             level,
@@ -827,6 +864,7 @@ impl<'a> Index<'a> {
         }
         let name = if key == "0" { "0".to_string() } else { written.to_string() };
         self.objects.push(Object {
+            pin: None,
             kind: "net",
             name,
             level,
@@ -850,6 +888,7 @@ impl<'a> Index<'a> {
                     Some((f, last, tokens))
                 });
                 self.objects.push(Object {
+                    pin: None,
                     kind: "instance",
                     name: inst.name.clone(),
                     level: lv,
@@ -905,9 +944,83 @@ impl<'a> Index<'a> {
         }
     }
 
+    /// Physical ids and written pin names identify the same editable pin. Written role
+    /// members stay unchanged, including two aliases of one pin.
+    fn pin_references(&self, lv: &LevelView) -> HashMap<String, usize> {
+        let mut out = HashMap::new();
+        for owner in &lv.objects {
+            for pin in &owner.pins {
+                let Some(identity) = &pin.identity else { continue };
+                let Some(&object) = self.pins.get(&(lv.level, owner.id.clone(), identity.index)) else { continue };
+                out.insert(identity.id.clone(), object);
+                for name in &identity.names {
+                    out.insert(format!("{}::{}", owner.id, rnl_runtime::model::quoted(name)), object);
+                }
+                if let Some(reference) = &identity.reference {
+                    if reference.contains("::") {
+                        out.insert(reference.clone(), object);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    fn index_pins(&mut self, lv: &LevelView) {
+        let instances: HashMap<String, usize> = self.doc.levels[lv.level]
+            .instances
+            .iter()
+            .enumerate()
+            .filter_map(|(i, inst)| {
+                self.insts.get(&(lv.level, i)).map(|k| (format!("#{}", rnl_runtime::model::quoted(&inst.name)), *k))
+            })
+            .collect();
+        for object in &lv.objects {
+            if !object.pins.iter().any(|p| p.identity.is_some()) {
+                continue;
+            }
+            let owner = match object.kind {
+                "instance" => match instances.get(&object.id) {
+                    Some(owner) => *owner,
+                    None => continue,
+                },
+                "bundle" => self.usage_of_kind(lv.level, &object.id, "bundle"),
+                _ => self.usage(lv.level, &object.id),
+            };
+            for pin in &object.pins {
+                let Some(identity) = &pin.identity else {
+                    continue;
+                };
+                let index = self.objects.len();
+                self.objects.push(Object {
+                    kind: "pin",
+                    name: identity.id.clone(),
+                    level: lv.level,
+                    level_title: lv.title.clone(),
+                    lines: None,
+                    opens: None,
+                    usages: Vec::new(),
+                    pin: Some(PinObject {
+                        owner,
+                        index: identity.index,
+                        names: identity.names.clone(),
+                        bus: identity.bus,
+                        reference: identity.reference.clone(),
+                        at: pin.at.map(|p| [p.0, p.1]),
+                        local_at: [identity.local_at.0, identity.local_at.1],
+                        dir: pin.dir,
+                        nets: pin.nets.clone(),
+                    }),
+                });
+                self.pins.insert((lv.level, object.id.clone(), identity.index), index);
+            }
+        }
+    }
+
     /// The drawing of a level, as `options` ask, and what on it can be clicked.
     fn level(&mut self, lv: &LevelView, options: &BuildOptions, lazy: bool) -> Level {
         let lv = &with_page_ids(lv);
+        self.index_pins(lv);
         let render = rnl_render::RenderOptions { flylines: options.flylines, ..rnl_render::RenderOptions::default() };
         let prims = rnl_render::primitives(lv, &render);
         let px = |p: Pt| [p.0 * render.scale, -p.1 * render.scale];
@@ -947,6 +1060,7 @@ impl<'a> Index<'a> {
             }
             item_objects.push(labels);
             hits.push(Hit {
+                pin: None,
                 kind: "box",
                 points: vec![px((left, top)), px((right, bottom))],
                 origin: Some(px(it.at)),
@@ -954,18 +1068,20 @@ impl<'a> Index<'a> {
                 id: Some(it.id.clone()),
                 name,
             });
-            for (pin, nets) in sym.pins.iter().zip(&it.pin_nets) {
-                if nets.is_empty() {
+            for (index, (pin, nets)) in sym.pins.iter().zip(&it.pin_nets).enumerate() {
+                let pin_object = self.pins.get(&(lv.level, it.object_id.clone(), index)).copied();
+                if nets.is_empty() && pin_object.is_none() {
                     continue;
                 }
                 let objects = nets.iter().map(|n| self.net(lv.level, n)).collect();
                 let points = vec![px(place(it.at, it.orient, pin.pos))];
-                hits.push(Hit { kind: "pin", points, origin: None, objects, id: None, name: None });
+                hits.push(Hit { pin: pin_object, kind: "pin", points, origin: None, objects, id: None, name: None });
             }
         }
         for w in &lv.wires {
             let objects = w.nets.iter().map(|n| self.net(lv.level, n)).collect();
             hits.push(Hit {
+                pin: None,
                 kind: "wire",
                 points: w.points.iter().map(|p| px(*p)).collect(),
                 origin: None,
@@ -977,6 +1093,7 @@ impl<'a> Index<'a> {
         // a flyline stands for its nets, as a wire does
         for (k, f) in lv.flylines.iter().enumerate().filter(|_| render.flylines) {
             hits.push(Hit {
+                pin: None,
                 kind: "flyline",
                 points: vec![px(f.a), px(f.b)],
                 origin: None,
@@ -1014,6 +1131,7 @@ impl<'a> Index<'a> {
                 None => Vec::new(),
             };
             hits.push(Hit {
+                pin: None,
                 kind: "label",
                 points: vec![px((x0.min(x1), y0.max(y1))), px((x0.max(x1), y0.min(y1)))],
                 origin: None,

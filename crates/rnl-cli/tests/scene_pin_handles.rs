@@ -200,7 +200,7 @@ fn a_wire_keeps_the_named_pin_in_the_model_and_solver_input() {
     let r = read("#R1 @PLACE(0,0); &a @WIRE {#R1::q (4,0)}", false);
     let wire = &r.model.levels[0].wires[0];
     assert!(
-        matches!(&wire.via[0], rnl_runtime::model::Vertex::Pin { owner, pin: 0, reference } if owner == "#R1" && reference == "#R1::q")
+        matches!(&wire.via[0], rnl_runtime::model::Vertex::Pin { owner, pin: 0, reference } if owner == "#R1" && reference.as_deref() == Some("#R1::q"))
     );
     assert_eq!(wire.points.first(), Some(&(0.0, 0.0)));
     let problem = &r.problems[0];

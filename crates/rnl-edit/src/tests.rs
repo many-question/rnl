@@ -9,6 +9,7 @@ use crate::ops::{Run, RunStyle};
 
 fn request(dialect: &str, netlist: &str, ops: Value) -> WriteRequest {
     WriteRequest {
+        language_version: None,
         dialect: dialect.into(),
         netlist: netlist.into(),
         author: "test".into(),
@@ -1032,4 +1033,76 @@ fn a_style_that_a_record_cannot_hold_is_refused() {
         write(&set(json!({}))).unwrap_err(),
         "op 0 (set): nothing to set: no `symbol`, `style`, `at` or `orient`"
     );
+}
+
+#[test]
+fn independent_pin_names_bus_shape_and_unbound_pins_round_trip_in_0_4() {
+    let ops = json!([
+        {"level":"file", "op":"define-symbol", "name":"$S", "prims":[], "pins":[
+            {"terminals":[1],"names":["p","alternate name"],"at":[0,0]},
+            {"terminals":[1],"names":["q"],"at":[1,0]},
+            {"terminals":[2],"bus":true,"at":[2,0]},
+            {"terminals":[],"names":["free"],"at":[3,0]}
+        ]},
+        {"level":"file","op":"set","object":"#R1","symbol":"$S"}
+    ]);
+    let mut req = request("spice", "* pins\nR1 a b 1k\n.end\n", ops);
+    assert!(write(&req).unwrap_err().contains("language_version 0.4"));
+    req.language_version = Some("0.4".into());
+    let out = write(&req).unwrap();
+    assert!(out.contains("@VERSION(\"0.4\")"), "{out}");
+    assert!(out.contains("@PIN(terminal=[2])"), "{out}");
+    assert!(out.contains("@PIN() => %free"), "{out}");
+    let files = MemoryProvider::new().with(entry("spice"), &out);
+    let options =
+        rnl_view::BuildOptions { runtime: Options { std: false, ..Default::default() }, ..Default::default() };
+    let s = rnl_view::snapshot(
+        entry("spice"),
+        &files,
+        &options,
+        rnl_view::Parts { drawing: false, host: false, model: true },
+    )
+    .unwrap();
+    assert!(!s.diagnostics.iter().any(|d| d.severity == "error"), "{out}\n{:?}", s.diagnostics);
+    let model = s.levels[0].model.as_ref().unwrap();
+    let pins = &model.objects.iter().find(|o| o.id == "#R1").unwrap().pins;
+    assert_eq!(pins.len(), 4);
+    assert_eq!(pins[0].names.as_ref().unwrap(), &["p", "alternate name"]);
+    assert_eq!(pins[1].names.as_ref().unwrap(), &["q"]);
+    assert_eq!(pins[2].bus, Some(true));
+    assert!(pins[3].nets.is_empty());
+    assert!(pins.iter().all(|p| p.at.is_none()));
+    let definition = model.symbols.iter().find(|s| s.name == "$S").unwrap().definition.as_ref().unwrap();
+    assert_eq!(definition.pins.len(), 4);
+    assert_eq!(definition.pins[0].names.as_ref().unwrap(), &["p", "alternate name"]);
+}
+
+#[test]
+fn pin_editing_rejects_unwriteable_vertices_and_invalid_metadata() {
+    for pin in [
+        json!({"terminals":[], "at":[0,0], "bus":true}),
+        json!({"terminals":[1,2], "at":[0,0], "bus":false}),
+        json!({"terminals":[1], "at":[0,0], "names":[""]}),
+        json!({"terminals":[4294967296u64], "at":[0,0]}),
+    ] {
+        let mut req = request(
+            "spice",
+            "* pins\nR1 a b 1k\n",
+            json!([
+                {"level":"file","op":"define-symbol","name":"$S","pins":[pin],"prims":[]}
+            ]),
+        );
+        req.language_version = Some("0.4".into());
+        assert!(write(&req).is_err());
+    }
+    let req = request(
+        "spice",
+        "* pins\nR1 a b 1k\n",
+        json!([
+            {"level":"file","op":"add-wire","nets":["&a"],"via":[
+                {"owner":"#R1","pin":0,"reference":null},{"at":[2,0]}
+            ]}
+        ]),
+    );
+    assert!(write(&req).is_err());
 }

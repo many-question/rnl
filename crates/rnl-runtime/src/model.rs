@@ -69,6 +69,8 @@ pub struct SymbolPrim {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PinView {
+    /// Local identity information of a pin declared in a 0.4 symbol.
+    pub identity: Option<SymbolPinIdentity>,
     pub pos: Pt,
     pub label: Option<String>,
     /// Read `\subrest` and `\subdigits` in the label (13.6); false for files before 0.4.
@@ -76,6 +78,12 @@ pub struct PinView {
     /// Exit direction in degrees: 0 right, 90 up, 180 left, 270 down.
     pub dir: Option<u16>,
     pub terminals: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SymbolPinIdentity {
+    pub names: Vec<String>,
+    pub bus: bool,
 }
 
 /// A symbol drawn inside another (9.2.7).
@@ -223,11 +231,11 @@ pub struct WireView {
 pub enum Vertex {
     /// `#M1:1`, `#:inp`.
     Terminal(String),
-    /// A named pin, with both its exact symbol index and its written reference (6.5).
+    /// An independent pin with its exact symbol index and, when available, a source reference (6.5).
     Pin {
         owner: String,
         pin: usize,
-        reference: String,
+        reference: Option<String>,
     },
     /// `%j1`.
     Point(String),
@@ -443,7 +451,7 @@ pub struct ObjectInfo {
     pub symbol: Option<SymbolInfo>,
     pub at: Option<Pt>,
     pub orient: Orient,
-    /// The symbol's pins where they are drawn, when it has a symbol and a position.
+    /// The symbol's pins, including unplaced pins in 0.4.
     pub pins: Vec<PinPlace>,
     /// Its symbol, by index in `LevelView::symbols`, when it is drawn.
     pub symbol_view: Option<usize>,
@@ -529,16 +537,32 @@ pub struct SymbolInfo {
     pub default: bool,
 }
 
-/// A pin of a drawn object, in scene coordinates.
+/// A pin of an assigned symbol, in scene coordinates when the owner is positioned.
 #[derive(Clone, Debug)]
 pub struct PinPlace {
+    /// Physical identity in 0.4, independent of names and placement.
+    pub identity: Option<ScenePinIdentity>,
     /// The terminals at the pin: an instance's by number, `#M1:1`; a usage's by role, `p`.
     pub terminals: Vec<String>,
-    pub at: Pt,
+    pub at: Option<Pt>,
     /// The exit direction after the object's orientation, in degrees.
     pub dir: Option<u16>,
     /// The nets at the pin, as ids.
     pub nets: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ScenePinIdentity {
+    /// Opaque editor id, not an RNL reference. Together with the owner, the index identifies the pin.
+    pub id: String,
+    /// Zero-based position in the assigned symbol's pin list and in the solver's symbol.
+    pub index: usize,
+    pub names: Vec<String>,
+    pub bus: bool,
+    /// A source expression for this exact physical pin, when one is available.
+    pub reference: Option<String>,
+    /// Position in the symbol's own coordinates.
+    pub local_at: Pt,
 }
 
 /// A named point of a level.

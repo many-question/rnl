@@ -302,6 +302,14 @@ pub struct SymbolDefinition {
 #[derive(Serialize, Debug, Clone, PartialEq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct SymbolPin {
+    /// Local names of a 0.4 pin, in binding order; empty for an unnamed pin.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub names: Option<Vec<String>>,
+    /// Whether the binding is a bus, including a one-element array.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub bus: Option<bool>,
     /// The terminals at the pin, by number or name as the symbol writes them.
     pub terminals: Vec<String>,
     pub at: [f64; 2],
@@ -391,7 +399,7 @@ pub struct ObjectView {
     pub at: Slot<[f64; 2]>,
     /// "R0", "R90", "R180", "R270", "MX", "MY", "MXR90" or "MYR90".
     pub orient: Slot<String>,
-    /// The symbol's pins where they are drawn, when it has a symbol and a position.
+    /// The assigned symbol's pins. In 0.4 these include unplaced pins with a null scene position.
     pub pins: Vec<PinView>,
     /// The usages it is a member of in the level, with the roles it fills, those of its terminals
     /// too for an instance ([`UsageOf`]); only for an object that is in some.
@@ -403,9 +411,36 @@ pub struct ObjectView {
 #[derive(Serialize, Debug)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct PinView {
+    /// The independent pin object kind, present in 0.4.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "\"pin\""))]
+    pub kind: Option<&'static str>,
+    /// Opaque editor id. Use `reference`, when present, for writing RNL source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub id: Option<String>,
+    /// Zero-based physical index in the owner's assigned symbol.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub index: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub names: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub bus: Option<bool>,
+    /// A source expression that reaches this exact pin; absent when none is available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub reference: Option<String>,
+    /// Symbol-local position, before the owner's orientation and translation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub local_at: Option<[f64; 2]>,
     /// An instance's terminals by number, `#M1:1`; a usage's roles, `p`.
     pub terminals: Vec<String>,
-    pub at: [f64; 2],
+    /// Scene position; null when the owner has no position yet.
+    pub at: Option<[f64; 2]>,
     /// The exit direction after the orientation, in degrees: 0 right, 90 up, 180 left, 270 down.
     pub dir: Option<u16>,
     /// The nets at the pin, as ids.
@@ -465,7 +500,7 @@ pub struct WireView {
 #[serde(untagged)]
 pub enum Vertex {
     Terminal { terminal: String },
-    Pin { owner: String, pin: usize, reference: String },
+    Pin { owner: String, pin: usize, reference: Option<String> },
     Point { point: String },
     Usage { usage: String, role: String },
     At { at: [f64; 2] },
@@ -752,6 +787,13 @@ fn symbol_refs(doc: &HostDocument, lv: &LevelView) -> Vec<(SymbolInfo, SymbolRef
             let view = match (drawn, &lv.block_symbol) {
                 (Some(k), _) => Some(&lv.symbols[k]),
                 (None, Some(b)) if &b.info == s => Some(&b.view),
+                _ if lv
+                    .objects
+                    .iter()
+                    .any(|o| o.symbol.as_ref() == Some(s) && o.pins.iter().any(|p| p.identity.is_some())) =>
+                {
+                    lv.unplaced_symbols.iter().find(|v| v.name == s.name && v.origin == s.origin)
+                }
                 _ => None,
             };
             let definition = view.filter(|_| package.is_none() && !s.default).map(definition);
@@ -768,6 +810,8 @@ fn definition(sv: &rnl_runtime::model::SymbolView) -> SymbolDefinition {
             .pins
             .iter()
             .map(|p| SymbolPin {
+                names: p.identity.as_ref().map(|i| i.names.clone()),
+                bus: p.identity.as_ref().map(|i| i.bus),
                 terminals: p.terminals.clone(),
                 at: xy(p.pos),
                 dir: p.dir,
@@ -885,7 +929,19 @@ fn level_model(
             pins: o
                 .pins
                 .iter()
-                .map(|p| PinView { terminals: p.terminals.clone(), at: xy(p.at), dir: p.dir, nets: p.nets.clone() })
+                .map(|p| PinView {
+                    kind: p.identity.as_ref().map(|_| "pin"),
+                    id: p.identity.as_ref().map(|i| i.id.clone()),
+                    index: p.identity.as_ref().map(|i| i.index),
+                    names: p.identity.as_ref().map(|i| i.names.clone()),
+                    bus: p.identity.as_ref().map(|i| i.bus),
+                    reference: p.identity.as_ref().and_then(|i| i.reference.clone()),
+                    local_at: p.identity.as_ref().map(|i| xy(i.local_at)),
+                    terminals: p.terminals.clone(),
+                    at: p.at.map(xy),
+                    dir: p.dir,
+                    nets: p.nets.clone(),
+                })
                 .collect(),
             usages: usages.get(&o.id).cloned().unwrap_or_default(),
         })

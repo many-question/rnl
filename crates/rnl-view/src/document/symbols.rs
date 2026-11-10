@@ -29,6 +29,13 @@ pub struct InspectedSymbol {
 #[derive(Serialize, Debug)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct InspectedPin {
+    /// The 0.4 pin's local names, independently of its display label (`name`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub names: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub bus: Option<bool>,
     pub at: Pt,
     pub terminals: Vec<String>,
     pub name: Option<String>,
@@ -129,7 +136,9 @@ pub(super) fn inspect(r: &Interpretation, levels: &mut [Level]) -> Vec<Inspected
 fn template(mut text: &str) -> String {
     let mut out = String::new();
     while let Some((before, rest)) = text.split_once("${") {
-        let Some((key, after)) = rest.split_once('}') else { break };
+        let Some((key, after)) = rest.split_once('}') else {
+            break;
+        };
         out.push_str(before);
         out.push_str(key);
         text = after;
@@ -240,6 +249,8 @@ fn collect(
     }
     for p in s.pins.iter().filter(|_| path.is_empty()) {
         pins.push(InspectedPin {
+            names: p.identity.as_ref().map(|i| i.names.clone()),
+            bus: p.identity.as_ref().map(|i| i.bus),
             at: place(p.pos),
             terminals: p.terminals.clone(),
             name: p.label.clone(),

@@ -155,6 +155,9 @@ fn inspect(
             add_nets(a, lv.level, ix, &mut references);
         }
     }
+    for (id, pin) in ix.pin_references(lv) {
+        references.insert(id, vec![pin]);
+    }
     let mut by_document: HashMap<usize, Geometry> = HashMap::new();
     for h in &level.hits {
         let mut g = Geometry::default();
@@ -163,7 +166,7 @@ fn inspect(
         }
         // Group ids are derived from object membership by the frontend. Do not repeat a
         // large net's complete group list for every ground/port usage attached to that net.
-        for &o in &h.objects {
+        for &o in h.objects.iter().chain(h.pin.iter()) {
             by_document.entry(o).or_default().add(&g);
         }
     }
@@ -180,18 +183,23 @@ fn inspect(
     // Terminal roles enclose the pin, while retaining the owning part's ink during focus.
     for o in &lv.objects {
         for pin in &o.pins {
+            let Some(at) = pin.at else { continue };
             for terminal in &pin.terminals {
                 let id = if o.kind == "usage" { format!("{}:{}", o.id, quoted(terminal)) } else { terminal.clone() };
                 let mut g = direct.get(&o.id).cloned().unwrap_or_default();
-                g.bounds = Some([
-                    pin.at.0 * level.scale,
-                    -pin.at.1 * level.scale,
-                    pin.at.0 * level.scale,
-                    -pin.at.1 * level.scale,
-                ]);
+                g.bounds = Some([at.0 * level.scale, -at.1 * level.scale, at.0 * level.scale, -at.1 * level.scale]);
                 direct.insert(id, g);
             }
         }
+    }
+    // A named or selected pin focuses its owner ink, but bounds only the pin itself.
+    for (id, pin) in ix.pin_references(lv) {
+        let Some(data) = &ix.objects[pin].pin else { continue };
+        let mut geometry = Geometry { objects: [pin, data.owner].into(), ..Default::default() };
+        if let Some([x, y]) = data.at {
+            geometry.bounds = Some([x * level.scale, -y * level.scale, x * level.scale, -y * level.scale]);
+        }
+        direct.insert(id, geometry);
     }
     for p in &lv.points {
         if let Some(at) = p.at {
@@ -475,7 +483,7 @@ mod tests {
         lv.wires.push(next);
         let ground = lv.objects.iter_mut().find(|o| o.id == "%ground").unwrap();
         ground.pins[0].terminals = vec!["pin-name".into()];
-        let pin = ground.pins[0].at;
+        let pin = ground.pins[0].at.unwrap();
         lv.objects.iter_mut().find(|o| o.id == "%pin1").unwrap().attach =
             vec![("pin".into(), Attach::Object("%ground:\"pin-name\"".into()))];
         lv.objects.iter_mut().find(|o| o.id == "%signal").unwrap().attach =
