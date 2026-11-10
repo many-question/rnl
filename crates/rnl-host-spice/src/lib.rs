@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use rnl_runtime::diag::{codes, Loc, Sink};
 use rnl_runtime::host::format::{Card, FileRead, Format, Formats, Reading};
 use rnl_runtime::host::{Dialect, HostDocument, Instance, Level, LevelId, LevelKind};
-use rnl_runtime::records::{scan_run, CarrierLine};
+use rnl_runtime::records::CarrierLine;
 use rnl_runtime::source::Provider;
 
 /// A record in a region written to be encrypted (2.2).
@@ -904,8 +904,7 @@ impl Reader<'_, '_> {
         if run.is_empty() {
             return;
         }
-        let recs = scan_run(run, fname, self.cx.sink);
-        self.cx.doc.levels[level].records.extend(recs);
+        self.cx.scan_records(run, fname, level);
         run.clear();
     }
 

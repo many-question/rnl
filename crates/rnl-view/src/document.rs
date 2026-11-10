@@ -531,8 +531,11 @@ pub(crate) fn document(
         let mut source_doc = r.doc.clone();
         if let Some((name, text)) = r.sources.iter().find(|(name, _)| name == &source_doc.main().file) {
             source_doc.sources.push((name.clone(), text.clone()));
-            source_doc.levels[0].records =
-                rnl_runtime::records::scan_run(&rnl_runtime::records::package_lines(text), name, &mut Sink::new());
+            source_doc.levels[0].records = rnl_runtime::records::scan_package_run(
+                &rnl_runtime::records::package_lines(text),
+                name,
+                &mut Sink::new(),
+            );
         }
         Some(source_doc)
     } else {
