@@ -1439,7 +1439,19 @@ impl Interp<'_> {
         if keyword == "SELECT-USAGE" || keyword == "SELECT-ANCESTOR-USAGE" {
             let pool =
                 pool.map(|members| members.into_iter().map(|member| self.selection_value(member, phase)).collect());
-            let usages = self.select_usages(s, sel, &keyword, pool, definition, phase, ctx, snapshot, site, off);
+            let usages = self.select_usages(
+                s,
+                sel,
+                &keyword,
+                pool,
+                definition,
+                phase,
+                ctx,
+                snapshot,
+                site,
+                off,
+                self.follows_0_4(writer),
+            );
             return usages.into_iter().filter(|usage| self.selection_symbol_matches(s, *usage, &params)).collect();
         }
         let role = params.get("role").cloned();
@@ -1673,6 +1685,26 @@ impl Interp<'_> {
                     .collect();
                 let cands: Vec<ObjId> = match &pool {
                     None => wires,
+                    Some(pool) if self.follows_0_4(writer) => {
+                        let ids: HashSet<_> = wires.iter().copied().collect();
+                        let mut by_net: HashMap<ObjId, Vec<ObjId>> = HashMap::new();
+                        for wire in wires {
+                            if let ObjData::Wire { nets, .. } = self.o(wire) {
+                                for net in nets {
+                                    by_net.entry(*net).or_default().push(wire);
+                                }
+                            }
+                        }
+                        let mut out = Vec::new();
+                        for object in pool {
+                            if ids.contains(object) {
+                                out.push(*object);
+                            } else if let Some(wires) = by_net.get(object) {
+                                out.extend(wires);
+                            }
+                        }
+                        dedup(out)
+                    }
                     Some(pool) => {
                         // a net in the scope gives the wires drawn on it; nets that are only usage members are not scopes (PR16)
                         let nets: HashSet<ObjId> = pool
@@ -1713,6 +1745,22 @@ impl Interp<'_> {
                     self.drawables(s, snapshot).into_iter().filter(|o| self.obj_kind(*o) == Some("label")).collect();
                 let cands: Vec<ObjId> = match &pool {
                     None => labels,
+                    Some(pool) if self.follows_0_4(writer) => {
+                        let ids: HashSet<_> = labels.iter().copied().collect();
+                        let mut by_owner: HashMap<ObjId, Vec<ObjId>> = HashMap::new();
+                        for label in labels {
+                            by_owner.entry(self.text_attach(label)).or_default().push(label);
+                        }
+                        let mut out = Vec::new();
+                        for object in pool {
+                            if ids.contains(object) {
+                                out.push(*object);
+                            } else if let Some(labels) = by_owner.get(object) {
+                                out.extend(labels);
+                            }
+                        }
+                        dedup(out)
+                    }
                     Some(pool) => {
                         // an object in the scope gives the labels attached to it; a label in the scope is taken itself
                         let ids: HashSet<ObjId> = pool
@@ -1747,7 +1795,12 @@ impl Interp<'_> {
                     None => self.drawables(s, snapshot),
                     Some(p) => p,
                 };
-                objs.into_iter().filter(|o| self.obj_kind(*o) == Some("annotation")).collect()
+                let out = objs.into_iter().filter(|o| self.obj_kind(*o) == Some("annotation")).collect();
+                if self.follows_0_4(writer) {
+                    dedup(out)
+                } else {
+                    out
+                }
             }
             _ => Vec::new(),
         }
@@ -1774,6 +1827,7 @@ impl Interp<'_> {
         snapshot: bool,
         site: Option<Rc<Ctx>>,
         off: usize,
+        modern: bool,
     ) -> Vec<ObjId> {
         let usages: Vec<ObjId> = self.scenes[s]
             .usages
@@ -1830,7 +1884,27 @@ impl Interp<'_> {
                 .filter(|a| dfn.is_none_or(|d| self.usage(*a).definition == d) && ids.contains(a))
                 .collect();
         }
-        let ids: HashSet<ObjId> = pool.unwrap_or_default().into_iter().collect();
+        let pool = pool.unwrap_or_default();
+        let ids: HashSet<ObjId> = pool.iter().copied().collect();
+        if modern {
+            let mut ancestors: HashMap<ObjId, Vec<ObjId>> = HashMap::new();
+            for usage in usages {
+                if Some(self.usage(usage).definition) != dfn || ids.contains(&usage) {
+                    continue;
+                }
+                let members = self.all_members(s, usage, phase, ctx, &mut HashSet::new());
+                for member in members.into_iter().collect::<HashSet<_>>() {
+                    ancestors.entry(member).or_default().push(usage);
+                }
+            }
+            let mut out = Vec::new();
+            for member in pool {
+                if let Some(usages) = ancestors.get(&member) {
+                    out.extend(usages);
+                }
+            }
+            return dedup(out);
+        }
         let mut out = Vec::new();
         for a in usages {
             if Some(self.usage(a).definition) != dfn || ids.contains(&a) {
