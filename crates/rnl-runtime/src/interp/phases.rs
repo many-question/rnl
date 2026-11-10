@@ -1644,6 +1644,9 @@ impl Interp<'_> {
     pub(crate) fn route_terms(&mut self, s: SceneId) -> HashMap<ObjId, Vec<(ObjId, ObjId, u32)>> {
         let mut out: HashMap<ObjId, Vec<(ObjId, ObjId, u32)>> = HashMap::new();
         for ow in self.inst_like(s) {
+            if self.add_independent_route_pins(s, ow, &mut out) {
+                continue;
+            }
             for t in self.terms_of(s, ow) {
                 let ObjData::Term { index: i, .. } = *self.o(t) else { continue };
                 let nets = self.tnets(s, t);
@@ -1658,6 +1661,9 @@ impl Interp<'_> {
             if self.usage(a).in_symbol || !self.scenes[s].symbol.contains_key(&a) {
                 continue;
             }
+            if self.add_independent_route_pins(s, a, &mut out) {
+                continue;
+            }
             for t in self.terms_of(s, a) {
                 let ObjData::Term { index: i, name, .. } = self.o(t).clone() else { continue };
                 if let Some(role) = name.as_ref().and_then(|n| self.usage(a).role(n)) {
@@ -1666,6 +1672,31 @@ impl Interp<'_> {
             }
         }
         out
+    }
+
+    fn add_independent_route_pins(
+        &mut self,
+        scene: SceneId,
+        owner: ObjId,
+        out: &mut HashMap<ObjId, Vec<(ObjId, ObjId, u32)>>,
+    ) -> bool {
+        let Some(&symbol) = self.scenes[scene].symbol.get(&owner) else { return false };
+        if !self.symbol(symbol).independent_pins {
+            return false;
+        }
+        if self.is_failed(owner) {
+            return true;
+        }
+        for index in 0..self.symbol(symbol).pins.len() {
+            let object = self.scene_pin_object(scene, owner, index);
+            let mut seen = HashSet::new();
+            for net in self.scene_pin_nets(scene, owner, index) {
+                if seen.insert(net) {
+                    out.entry(net).or_default().push((owner, object, index as u32));
+                }
+            }
+        }
+        true
     }
 
     /// The vertices of a wire after its routing mode (13.1), as it is drawn: rewritten, by the

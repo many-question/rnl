@@ -10,6 +10,27 @@ use super::obj::{InputMember, ObjData, ObjId, SceneId, SetData, TermKey};
 use super::Interp;
 
 impl Interp<'_> {
+    pub(crate) fn scene_pin_object(&mut self, scene: SceneId, owner: ObjId, index: usize) -> ObjId {
+        if let Some(&pin) = self.scenes[scene].pins.get(&(owner, index)) {
+            return pin;
+        }
+        let pin = self.new_obj(ObjData::ScenePin { owner, index });
+        self.scenes[scene].pins.insert((owner, index), pin);
+        pin
+    }
+
+    /// Physical connection identity. A position sub-object remains a point and never connects
+    /// the pin at that position; a terminal in a wire stands for its last bound pin (5.2.4).
+    pub(crate) fn wire_point_handle(&mut self, scene: SceneId, object: ObjId) -> ObjId {
+        let object = self.scene_value(object);
+        if let ObjData::Term { owner, .. } = *self.o(object) {
+            if let Some(index) = self.pin_for(scene, owner, object) {
+                return self.scene_pin_object(scene, owner, index);
+            }
+        }
+        object
+    }
+
     pub(crate) fn scene_pin_nets(&mut self, scene: SceneId, owner: ObjId, index: usize) -> Vec<ObjId> {
         self.scene_pin_nets_inner(scene, owner, index, &mut std::collections::HashSet::new())
     }
@@ -95,14 +116,24 @@ impl Interp<'_> {
         object: ObjId,
         site: Option<&Ctx>,
     ) -> Vec<InputMember> {
+        self.scene_input_members_at(scene, object, 7, site)
+    }
+
+    pub(crate) fn scene_input_members_at(
+        &mut self,
+        scene: SceneId,
+        object: ObjId,
+        phase: usize,
+        site: Option<&Ctx>,
+    ) -> Vec<InputMember> {
         if !self.is_set(object) && !self.is_set(self.scene_value(object)) {
             return vec![InputMember::plain(object)];
         }
         let mut out = Vec::new();
-        for member in self.flatten_inputs(scene, object, 7, site) {
+        for member in self.flatten_inputs(scene, object, phase, site) {
             let value = self.scene_value(member.object);
             if value != member.object && self.is_set(value) {
-                for mut child in self.scene_input_members(scene, value, site) {
+                for mut child in self.scene_input_members_at(scene, value, phase, site) {
                     child.depend_on(&member.dependencies);
                     child.depend_on(&[member.object]);
                     out.push(child);
@@ -500,13 +531,7 @@ impl Interp<'_> {
                 .get(&parent)
                 .and_then(|symbol| self.symbol(*symbol).pins.iter().position(|pin| pin.names.contains(&name)));
             let value = if let Some(index) = pin {
-                if let Some(&pin) = self.scenes[scene].pins.get(&(parent, index)) {
-                    Some(pin)
-                } else {
-                    let pin = self.new_obj(ObjData::ScenePin { owner: parent, index });
-                    self.scenes[scene].pins.insert((parent, index), pin);
-                    Some(pin)
-                }
+                Some(self.scene_pin_object(scene, parent, index))
             } else {
                 self.scenes[scene].keytexts.get(&(parent, name)).copied()
             };

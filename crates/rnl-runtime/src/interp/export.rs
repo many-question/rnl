@@ -326,6 +326,12 @@ impl Interp<'_> {
                 let mut pins = Vec::new();
                 let mut seen: HashSet<(ObjId, u32)> = HashSet::new();
                 for &(ow, t, i) in terms.get(&net).into_iter().flatten() {
+                    if matches!(self.o(t), ObjData::ScenePin { .. }) {
+                        if let Some(pin) = self.point_ref(s, &ix, t) {
+                            pins.push(pin);
+                        }
+                        continue;
+                    }
                     if self.scenes[s].symbol.get(&ow).is_some_and(|sym| self.symbol(*sym).independent_pins) {
                         for pin in self.pins_for(s, ow, t) {
                             if let Some(p) = self.symbol_pin_ref(s, &ix, ow, pin) {
@@ -826,6 +832,16 @@ impl Interp<'_> {
     /// binding, but an earlier pin must never borrow the reference of a later one (5.2.4).
     fn symbol_pin_ref(&mut self, s: SceneId, ix: &Index, owner: ObjId, pin: usize) -> Option<PointRef> {
         let object = *ix.objects.get(&owner)?;
+        let name = self.scenes[s]
+            .symbol
+            .get(&owner)
+            .and_then(|symbol| self.symbol(*symbol).pins.get(pin))
+            .and_then(|pin| pin.names.first())
+            .cloned();
+        if let Some(name) = name {
+            let reference = self.reference_of(s, ix, owner).then(&format!("::{}", written_name(&name)));
+            return Some(PointRef::SymbolPin { object, pin, reference });
+        }
         for t in self.terms_of(s, owner) {
             if self.pin_for(s, owner, t) == Some(pin) {
                 return self.point_ref(s, ix, t);

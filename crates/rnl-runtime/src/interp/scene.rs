@@ -1390,6 +1390,17 @@ impl Interp<'_> {
         let snapshot = phase <= 5; // generated objects are not seen before step 6 (10.5)
         let pool: Option<Vec<ObjId>> = if scope == LEVEL || matches!(self.o(scope), ObjData::LevelObj { .. }) {
             None
+        } else if phase >= 5 && self.follows_0_4(writer) {
+            Some(
+                self.scene_input_members_at(s, scope, phase, ctx)
+                    .into_iter()
+                    .filter(|member| {
+                        !self.is_failed(member.object)
+                            && !member.dependencies.iter().any(|dependency| self.is_failed(*dependency))
+                    })
+                    .map(|member| self.scene_value(member.object))
+                    .collect(),
+            )
         } else if self.is_set(scope) {
             Some(self.flatten(s, scope, phase, ctx))
         } else {
@@ -1561,6 +1572,9 @@ impl Interp<'_> {
                                     }
                                 }
                                 ObjData::Wire { nets, .. } => cands.extend(nets),
+                                ObjData::ScenePin { owner, index } => {
+                                    cands.extend(self.scene_pin_nets(s, owner, index))
+                                }
                                 _ => {}
                             }
                         }
@@ -2006,6 +2020,14 @@ impl Interp<'_> {
     }
 
     pub(crate) fn has_pin(&mut self, s: SceneId, t: ObjId) -> bool {
+        let t = self.scene_value(t);
+        if let ObjData::ScenePin { owner, index } = *self.o(t) {
+            return !self.is_failed(owner)
+                && self.scenes[s]
+                    .symbol
+                    .get(&owner)
+                    .is_some_and(|symbol| self.symbol(*symbol).pins.get(index).is_some());
+        }
         let ObjData::Term { owner, .. } = self.o(t).clone() else { return false };
         self.pin_for(s, owner, t).is_some()
     }

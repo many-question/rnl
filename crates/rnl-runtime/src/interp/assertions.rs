@@ -466,8 +466,30 @@ impl Interp<'_> {
             return;
         }
         let kw = a.kw.as_str();
-        let members: Vec<ObjId> =
-            if self.is_set(a.members) { self.flatten(s, a.members, 7, Some(&a.site)) } else { vec![a.members] };
+        let members: Vec<ObjId> = if self.follows_0_4(self.source_unit(&a.site)) {
+            let inputs = self.scene_input_members(s, a.members, Some(&a.site));
+            let failed = self.failed_body(&a.site)
+                || self.failed_obj(a.members).is_some()
+                || self.failed_written_member(a.members).is_some()
+                || inputs.iter().any(|input| {
+                    self.is_failed(input.object)
+                        || input.dependencies.iter().any(|dependency| self.is_failed(*dependency))
+                });
+            if failed {
+                self.assertion_diag(
+                    Severity::Error,
+                    codes::ASSERT_MEMBER_FAILED,
+                    a,
+                    format!("an object used by @{kw} failed; the assertion is not checked (7.3, 15.3)"),
+                );
+                return;
+            }
+            inputs.into_iter().map(|input| self.scene_value(input.object)).collect()
+        } else if self.is_set(a.members) {
+            self.flatten(s, a.members, 7, Some(&a.site))
+        } else {
+            vec![a.members]
+        };
         let want = kind_of_assertion(kw);
         // a terminal converts to its net (5.2.4)
         let members: Vec<ObjId> = members
@@ -479,6 +501,14 @@ impl Interp<'_> {
                         vec![m]
                     } else {
                         ns
+                    }
+                }
+                ("net", ObjData::ScenePin { owner, index }) => {
+                    let nets = self.scene_pin_nets(s, *owner, *index);
+                    if nets.is_empty() {
+                        vec![m]
+                    } else {
+                        nets
                     }
                 }
                 _ => vec![m],

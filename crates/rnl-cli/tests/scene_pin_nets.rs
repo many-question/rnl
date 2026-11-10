@@ -186,3 +186,50 @@ fn a_failed_network_reference_does_not_fail_an_independent_wire() {
     assert_eq!(r.problems[0].wires[0].nets, ["a"]);
     assert!(r.diagnostics().iter().any(|d| d.code == codes::REF_NO_SUBOBJECT));
 }
+
+#[test]
+fn assertions_read_resolved_networks_and_report_real_violations() {
+    let r = read(
+        r#"
+        $S = @DEFINE-SYMBOL { %p = (0,0) @PIN(terminal=1) };
+        #R1::p::net @ASSERT-NET(name="a");
+        #R1::p @ASSERT-NET(name="a");
+        #R1::p::net @ASSERT-NET(name="b");
+        #R1 @SET-SYMBOL $S
+    "#,
+    );
+    no_errors(&r);
+    assert_eq!(r.diagnostics().iter().filter(|d| d.severity == Severity::Violation).count(), 1);
+    assert!(r.diagnostics().iter().any(|d| d.code == codes::VIOLATION_CONDITION));
+}
+
+#[test]
+fn a_network_reference_is_a_selection_scope_after_symbols_are_given() {
+    let r = read(
+        r#"
+        $S = @DEFINE-SYMBOL { %p = (0,0) @PIN(terminal=[1,2]) };
+        $D = @DEFINE(roles=[["n","net"]]) {};
+        #R1::p::net @SELECT-NET => @AS $D;
+        #R1 @SET-SYMBOL $S
+    "#,
+    );
+    no_errors(&r);
+    assert_eq!(r.problems[0].usages.len(), 2);
+    let nets: Vec<_> = r.problems[0].usages.iter().map(|usage| usage.roles[0].members.clone()).collect();
+    assert_eq!(nets, [vec![Filler::Net("a".into())], vec![Filler::Net("b".into())]]);
+}
+
+#[test]
+fn assertions_do_not_silently_drop_a_late_failed_reference() {
+    let r = read(
+        r#"
+        $S = @DEFINE-SYMBOL { %p = (0,0) @PIN(terminal=1) };
+        $D = @DEFINE(roles=[["r","instance"],["n","net"]]) {};
+        %bad = #R1::p(r) &a(n) @AS $D;
+        {%bad::n &b} @ASSERT-NET(name="b");
+        #R1 @SET-SYMBOL $S
+    "#,
+    );
+    assert!(r.diagnostics().iter().any(|d| d.code == codes::ASSERT_MEMBER_FAILED));
+    assert!(!r.diagnostics().iter().any(|d| d.severity == Severity::Violation));
+}
