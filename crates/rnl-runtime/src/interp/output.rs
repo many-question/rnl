@@ -89,7 +89,9 @@ impl Interp<'_> {
             return false;
         }
         let u = self.level_unit[self.scenes[s].level];
-        let Some(b) = self.units[u].names.get(&('%', name.clone())) else { return false };
+        let Some(b) = self.units[u].names.get(&('%', name.clone())) else {
+            return false;
+        };
         let key = b.key();
         [Some(s), None].into_iter().any(|sc| {
             let k = (key.clone(), sc);
@@ -171,7 +173,10 @@ impl Interp<'_> {
                     _ => format!("{base}:{index}"),
                 }
             }
-            ObjData::KeyText { attach, key, .. } => format!("{}::{key}", self.ref_id(s, *attach, ids)),
+            ObjData::ScenePin { owner, index } => format!("pin({},{index})", self.ref_id(s, *owner, ids)),
+            ObjData::KeyText { attach, key, .. } => {
+                format!("{}::{key}", self.ref_id(s, *attach, ids))
+            }
             ObjData::NamedSubobject { parent, name, .. } => {
                 format!("{}::{}", self.ref_id(s, *parent, ids), quoted(name))
             }
@@ -199,13 +204,20 @@ impl Interp<'_> {
     }
 
     /// A vertex of a wire as the statement gives it.
-    fn vertex(&mut self, s: SceneId, v: ObjId, ids: &HashMap<ObjId, String>) -> Option<Vertex> {
+    fn vertex(
+        &mut self,
+        s: SceneId,
+        v: ObjId,
+        ids: &HashMap<ObjId, String>,
+        refs: &HashMap<ObjId, String>,
+    ) -> Option<Vertex> {
         if let ObjData::ScenePin { owner, index } = *self.o(self.scene_value(v)) {
-            return Some(Vertex::Pin {
-                owner: self.ref_id(s, owner, ids),
-                pin: index,
-                reference: self.ref_id(s, v, ids),
-            });
+            let reference = if matches!(self.o(v), ObjData::ScenePin { .. }) {
+                self.editor_pin_reference(s, owner, index, refs)
+            } else {
+                Some(self.ref_id(s, v, ids))
+            };
+            return Some(Vertex::Pin { owner: self.ref_id(s, owner, ids), pin: index, reference });
         }
         match self.o(v).clone() {
             ObjData::Term { owner, index, name } if matches!(self.o(owner), ObjData::Usage(_)) => Some(Vertex::Usage {
@@ -277,6 +289,53 @@ impl Interp<'_> {
         owner.filter(|o| positioned.iter().all(|p| p == o))
     }
 
+    /// Names that can be written back, unlike opaque editor ids of unnamed objects.
+    fn editor_references(&self, s: SceneId) -> HashMap<ObjId, String> {
+        let mut refs = HashMap::new();
+        for (name, object) in self.level_names(s) {
+            refs.entry(object).or_insert_with(|| format!("%{}", quoted(&name)));
+        }
+        for &object in &self.scenes[s].insts {
+            refs.insert(object, format!("#{}", quoted(&self.inst_name(object))));
+        }
+        let mut usages = self.scenes[s].usages.clone();
+        usages.sort();
+        for usage in usages {
+            let Some(base) = refs.get(&usage).cloned() else {
+                continue;
+            };
+            for (name, object) in &self.usage(usage).locals {
+                refs.entry(*object).or_insert_with(|| format!("{base}::{}", quoted(name)));
+            }
+        }
+        refs
+    }
+
+    fn editor_pin_reference(
+        &mut self,
+        s: SceneId,
+        owner: ObjId,
+        index: usize,
+        refs: &HashMap<ObjId, String>,
+    ) -> Option<String> {
+        let base = refs.get(&owner)?;
+        let symbol = *self.scenes[s].symbol.get(&owner)?;
+        if let Some(name) = self.symbol(symbol).pins[index].names.first() {
+            return Some(format!("{base}::{}", quoted(name)));
+        }
+        if !matches!(self.o(owner), ObjData::Usage(_)) {
+            for terminal in self.terms_of(s, owner) {
+                if self.pin_for(s, owner, terminal) == Some(index) {
+                    let ObjData::Term { index: number, .. } = self.o(terminal) else {
+                        continue;
+                    };
+                    return Some(format!("{base}:{number}"));
+                }
+            }
+        }
+        None
+    }
+
     /// The instances, bundles and usages of a scene, drawn or not, and its named points.
     fn objects_of(
         &mut self,
@@ -312,6 +371,19 @@ impl Interp<'_> {
                 parent = self.usage(p).parent;
             }
         }
+        let refs = self.editor_references(s);
+        let language_0_4 = self.follows_0_4(self.level_unit[self.scenes[s].level]);
+        let new_assignments: HashSet<ObjId> = self.scenes[s]
+            .symbol_won
+            .iter()
+            .filter_map(|k| {
+                let fact = &self.scenes[s].appear[*k];
+                fact.ctx
+                    .as_ref()
+                    .filter(|ctx| self.follows_0_4(self.source_unit(ctx)))
+                    .map(|_| self.scene_value(fact.target))
+            })
+            .collect();
         let mut out = Vec::new();
         for &o in objs {
             let (kind, host) = match self.o(o).clone() {
@@ -336,17 +408,34 @@ impl Interp<'_> {
             });
             let at = self.xy(s, o);
             let orient = self.orientation(s, o);
+            let own_point = kind == "usage" && self.usage_own_point(o);
+            let pin_objects = self.object_drawn(s, o)
+                && sym.is_some_and(|sym| {
+                    self.symbol(sym).independent_pins
+                        || new_assignments.contains(&o)
+                        || if kind == "usage" { own_point } else { language_0_4 }
+                });
             let mut pins = Vec::new();
-            if let (Some(sym), Some(at)) = (sym, at) {
+            if let Some(sym) = sym.filter(|_| at.is_some() || pin_objects) {
                 let sd = self.symbol(sym).clone();
                 pins = sd
                     .pins
                     .iter()
-                    .map(|p| {
+                    .enumerate()
+                    .map(|(index, p)| {
                         let d = orient.apply(p.pos);
+                        let identity = pin_objects.then(|| ScenePinIdentity {
+                            id: format!("pin({},{index})", ids[&o]),
+                            index,
+                            names: p.names.clone(),
+                            bus: self.scene_pin_is_bus(s, o, index),
+                            reference: self.editor_pin_reference(s, o, index, &refs),
+                            local_at: p.pos,
+                        });
                         PinPlace {
+                            identity,
                             terminals: Vec::new(),
-                            at: (at.0 + d.0, at.1 + d.1),
+                            at: at.map(|at| (at.0 + d.0, at.1 + d.1)),
                             dir: turned(p.dir, orient),
                             nets: Vec::new(),
                         }
@@ -370,9 +459,19 @@ impl Interp<'_> {
                         }
                     }
                 }
+                if pin_objects {
+                    for (index, pin) in pins.iter_mut().enumerate() {
+                        pin.nets.clear();
+                        for net in self.scene_pin_nets(s, o, index) {
+                            let id = self.ref_id(s, net, ids);
+                            if !pin.nets.contains(&id) {
+                                pin.nets.push(id);
+                            }
+                        }
+                    }
+                }
             }
             let (origin, parent, disabled) = self.usage_origin(s, o, ids);
-            let own_point = kind == "usage" && self.usage_own_point(o);
             let pin_of =
                 if own_point { self.usage_pin_owner(s, o).map(|owner| self.ref_id(s, owner, ids)) } else { None };
             out.push(ObjectInfo {
@@ -423,7 +522,9 @@ impl Interp<'_> {
     /// priority or that of a usage it is made in being "disabled" (14.8); for another object,
     /// written, none and not.
     fn usage_origin(&self, s: SceneId, o: ObjId, ids: &HashMap<ObjId, String>) -> (UsageOrigin, Option<String>, bool) {
-        let ObjData::Usage(u) = self.o(o) else { return (UsageOrigin::Written, None, false) };
+        let ObjData::Usage(u) = self.o(o) else {
+            return (UsageOrigin::Written, None, false);
+        };
         let mut disabled = false;
         let mut at = Some(o);
         while let Some(a) = at {
@@ -654,6 +755,9 @@ impl Interp<'_> {
             .pins
             .iter()
             .map(|p| PinView {
+                identity: sd
+                    .independent_pins
+                    .then(|| SymbolPinIdentity { names: p.names.clone(), bus: p.bus || p.terms.len() > 1 }),
                 pos: p.pos,
                 label: p.label.clone(),
                 label_name_formats: p.label_name_formats,
@@ -688,7 +792,9 @@ impl Interp<'_> {
             .enumerate()
             .filter_map(|(index, a)| {
                 let u = self.usage(*a);
-                let (Some(inner), Some((_, pt))) = (u.sym_symbol, u.roles.first()) else { return None };
+                let (Some(inner), Some((_, pt))) = (u.sym_symbol, u.roles.first()) else {
+                    return None;
+                };
                 if !matches!(self.o(inner), ObjData::Symbol(_)) {
                     return None;
                 }
@@ -933,6 +1039,7 @@ impl Interp<'_> {
         // section 9); a rewritten wire is drawn by its rewrite (13.1)
         let mut wires = Vec::new();
         let mut flylines = Vec::new();
+        let refs = self.editor_references(s);
         for w in self.scenes[s].wires.clone() {
             if self.is_obj_failed(w) {
                 continue;
@@ -940,7 +1047,7 @@ impl Interp<'_> {
             let ObjData::Wire { nets, .. } = self.o(w).clone() else { continue };
             let Some(shape) = self.wire_shape(s, w) else { continue };
             // the vertices as written: the rewrite's, when one holds (13.1)
-            let via: Vec<Vertex> = shape.points.iter().filter_map(|v| self.vertex(s, *v, &ids)).collect();
+            let via: Vec<Vertex> = shape.points.iter().filter_map(|v| self.vertex(s, *v, &ids, &refs)).collect();
             // every point of the wire has a position: it is drawn whole, as one run
             let whole = shape.points.iter().all(|&q| self.point_of(s, q).is_some());
             let (runs, gaps) = self.wire_drawing(s, w);

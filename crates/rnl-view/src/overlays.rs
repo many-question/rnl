@@ -121,8 +121,8 @@ pub(crate) fn currents(lv: &LevelView, scale: f64) -> Vec<CurrentArrow> {
                 }
                 for p in &o.pins {
                     if p.nets.contains(net) {
-                        if let Some(dir) = p.dir {
-                            places.push((p.at, dir));
+                        if let (Some(at), Some(dir)) = (p.at, p.dir) {
+                            places.push((at, dir));
                         }
                     }
                 }

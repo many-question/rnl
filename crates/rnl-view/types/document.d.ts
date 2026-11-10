@@ -73,7 +73,17 @@ export type InspectedSymbol = {
   scale: number,
 };
 
-export type InspectedPin = { at: [number, number], terminals: Array<string>, name: string | null, direction: number | null };
+export type InspectedPin = {
+  /**
+   * The 0.4 pin's local names, independently of its display label (`name`).
+   */
+  names?: Array<string>,
+  bus?: boolean,
+  at: [number, number],
+  terminals: Array<string>,
+  name: string | null,
+  direction: number | null,
+};
 
 export type InspectedLabel = { key: string | null, text: string, at: [number, number] | null };
 
@@ -284,6 +294,10 @@ export type CurrentArrow = {
  * Something on a drawing that stands for objects.
  */
 export type Hit = {
+  /**
+   * For a 0.4 pin hit, its independent object index in Document.objects.
+   */
+  pin?: number,
   /**
    * "box": a symbol, given by its top-left and bottom-right corners; "pin": a pin, one point;
    * "wire": a wire, its vertices; "flyline": a flyline, its two ends, which stands for its
@@ -788,7 +802,11 @@ export type FormatInfo = {
 
 export type Object = {
   /**
-   * "instance", "net", "usage", "group" (a set marked with GROUP), or "bundle" for a 0.4 pin host.
+   * The data of an independent 0.4 pin. Absent for other object kinds.
+   */
+  pin?: PinObject,
+  /**
+   * "instance", "net", "usage", "group" (a set marked with GROUP), or "bundle" for a 0.4 pin host, or "pin".
    */
   kind: string,
   /**
@@ -815,6 +833,39 @@ export type Object = {
    * the order of the level's usages, then of the failed applications.
    */
   usages: Array<MemberOf>,
+};
+
+export type PinObject = {
+  /**
+   * The instance, bundle or usage, as an index in Document.objects.
+   */
+  owner: number,
+  /**
+   * Zero-based physical index in that object's assigned symbol.
+   */
+  index: number,
+  names: Array<string>,
+  bus: boolean,
+  /**
+   * A source expression for this exact pin; null when none is available.
+   */
+  reference: string | null,
+  /**
+   * Scene coordinates, y up; null when the owner is not positioned.
+   */
+  at: [number, number] | null,
+  /**
+   * Symbol-local coordinates, before orientation and translation.
+   */
+  local_at: [number, number],
+  /**
+   * Exit direction in scene degrees, independent of whether the position is known.
+   */
+  dir: number | null,
+  /**
+   * Level-local net ids, as the snapshot writes them.
+   */
+  nets: Array<string>,
 };
 
 /**

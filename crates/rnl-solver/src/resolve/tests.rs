@@ -45,6 +45,7 @@ impl Clock for Ticks {
 /// A MOS-like symbol: the gate at (−3, 0), the drain at (0, 2), the source at (0, −2).
 fn symbol() -> ProblemSymbol {
     let pin = |x: f64, y: f64, dir: u16, t: &str| PinView {
+        identity: None,
         pos: (x, y),
         label: None,
         label_name_formats: false,
@@ -302,7 +303,9 @@ pub(crate) fn semantic_holds(problem: &LevelProblem, kind: &FactKind, g: &Geomet
                 let vals: Vec<Q> = ms.iter().map(|m| v(m, a)).collect();
                 vals.iter().min().cloned().zip(vals.iter().max().cloned())
             };
-            let (Some((a_lo, a_hi)), Some((b_lo, b_hi))) = (extent(from), extent(to)) else { return true };
+            let (Some((a_lo, a_hi)), Some((b_lo, b_hi))) = (extent(from), extent(to)) else {
+                return true;
+            };
             let (g0, g1) = (&b_lo - &a_hi, &a_lo - &b_hi);
             let d = match sense {
                 Sense::Increasing => g0,

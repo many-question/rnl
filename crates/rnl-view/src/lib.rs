@@ -14,6 +14,8 @@ pub mod overlays;
 mod params;
 #[cfg(test)]
 mod pin_attachments;
+#[cfg(test)]
+mod pin_objects;
 mod primitive;
 pub use overlays::{CurrentArrow, OverlayOptions, OverlayStyle, UsageFrame, UsageMode};
 mod snapshot;
@@ -43,7 +45,7 @@ pub use constraints::{
 };
 pub use document::{
     AutoIncludeCandidate, Child, Diagnostic, Document, Drawings, Hit, InspectedLabel, InspectedPin, InspectedSymbol,
-    Level, LevelHint, MemberOf, NetLabel, Object, RoleOf, RuleAt, SourceFile, SourceInclude, Span, Unplaced,
+    Level, LevelHint, MemberOf, NetLabel, Object, PinObject, RoleOf, RuleAt, SourceFile, SourceInclude, Span, Unplaced,
     UnplacedDrawing, Usage, UsageRole,
 };
 pub use formats::{detect_format, formats, FormatInfo};

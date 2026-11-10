@@ -378,6 +378,14 @@ export type SymbolDefinition = {
 
 export type SymbolPin = {
   /**
+   * Local names of a 0.4 pin, in binding order; empty for an unnamed pin.
+   */
+  names?: Array<string>,
+  /**
+   * Whether the binding is a bus, including a one-element array.
+   */
+  bus?: boolean,
+  /**
    * The terminals at the pin, by number or name as the symbol writes them.
    */
   terminals: Array<string>,
@@ -478,7 +486,7 @@ export type ObjectView = {
    */
   orient: Slot<string>,
   /**
-   * The symbol's pins where they are drawn, when it has a symbol and a position.
+   * The assigned symbol's pins. In 0.4 these include unplaced pins with a null scene position.
    */
   pins: Array<PinView>,
   /**
@@ -490,10 +498,35 @@ export type ObjectView = {
 
 export type PinView = {
   /**
+   * The independent pin object kind, present in 0.4.
+   */
+  kind?: "pin",
+  /**
+   * Opaque editor id. Use `reference`, when present, for writing RNL source.
+   */
+  id?: string,
+  /**
+   * Zero-based physical index in the owner's assigned symbol.
+   */
+  index?: number,
+  names?: Array<string>,
+  bus?: boolean,
+  /**
+   * A source expression that reaches this exact pin; absent when none is available.
+   */
+  reference?: string,
+  /**
+   * Symbol-local position, before the owner's orientation and translation.
+   */
+  local_at?: [number, number],
+  /**
    * An instance's terminals by number, `#M1:1`; a usage's roles, `p`.
    */
   terminals: Array<string>,
-  at: [number, number],
+  /**
+   * Scene position; null when the owner has no position yet.
+   */
+  at: [number, number] | null,
   /**
    * The exit direction after the orientation, in degrees: 0 right, 90 up, 180 left, 270 down.
    */
@@ -540,7 +573,7 @@ export type WireView = {
  */
 export type Vertex =
   | { terminal: string }
-  | { owner: string, pin: number, reference: string }
+  | { owner: string, pin: number, reference: string | null }
   | { point: string }
   | { usage: string, role: string }
   | { at: [number, number] };

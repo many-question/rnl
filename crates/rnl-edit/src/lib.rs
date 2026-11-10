@@ -52,6 +52,9 @@ pub const LINE: usize = 132;
 /// What to write: a netlist, its dialect, and the ops of one author.
 #[derive(Deserialize, Debug, Clone)]
 pub struct WriteRequest {
+    /// Explicit language opt-in. None retains the released writer default.
+    #[serde(default)]
+    pub language_version: Option<String>,
     /// "spice" or "spectre".
     pub dialect: String,
     /// The netlist, without RNL records.
@@ -94,6 +97,10 @@ pub fn entry(dialect: &str) -> &'static str {
 /// Write the ops into the netlist; the netlist's own text stays as it is, line endings included.
 /// An op that cannot be written refuses the whole request, with the reason.
 pub fn write(request: &WriteRequest) -> Result<String, String> {
+    let version = request.language_version.as_deref().unwrap_or(VERSION);
+    if !["0.3", "0.4"].contains(&version) {
+        return Err(format!("unsupported output language version `{version}`"));
+    }
     let dialect = request.dialect.as_str();
     // the formats of the files that are not netlists, a Verilog-A model or a package file (2.7): this
     // writer does not write into them
@@ -114,6 +121,20 @@ pub fn write(request: &WriteRequest) -> Result<String, String> {
         return Err(format!("dialect \"{dialect}\" is not {}", names.join(" or ")));
     }
     let ops: Vec<LevelOp> = request.ops.iter().enumerate().map(|(k, v)| ops::parse(k, v)).collect::<Result<_, _>>()?;
+
+    if version != "0.4" {
+        for op in &ops {
+            if let Op::DefineSymbol { pins, .. } = &op.op {
+                if pins.iter().any(|p| p.terminals.is_empty() || !p.names.is_empty() || p.bus && p.terminals.len() == 1)
+                {
+                    return Err(
+                        "independent pin names, unbound pins and one-terminal bus pins require language_version 0.4"
+                            .into(),
+                    );
+                }
+            }
+        }
+    }
 
     let path = entry_of(request);
     let read = |text: &str| {
@@ -191,7 +212,7 @@ pub fn write(request: &WriteRequest) -> Result<String, String> {
 
     // the header first, where a new header goes; then the netlist is read again, so that the
     // records follow its carrier (2.2), at the places of the text that has it
-    let mut text = add_header(&doc, &file, &request.netlist, |marker| header(&packages, marker));
+    let mut text = add_header(&doc, &file, &request.netlist, |marker| header(&packages, marker, version));
     let doc = read(&text)?;
     let mut at: BTreeMap<LevelId, u32> = BTreeMap::new();
     for &level in levels.keys() {
@@ -248,9 +269,9 @@ fn record(author: &str, statements: &[String], marker: &str) -> String {
 }
 
 /// The header record: on one line when it fits, else one statement a line.
-fn header(packages: &[String], marker: &str) -> String {
+fn header(packages: &[String], marker: &str, version: &str) -> String {
     let statements: Vec<String> =
-        std::iter::once(format!("@VERSION({})", form::quote(VERSION))).chain(packages.iter().cloned()).collect();
+        std::iter::once(format!("@VERSION({})", form::quote(version))).chain(packages.iter().cloned()).collect();
     let one = format!("@RNL(type=\"header\") {{ {}}}", statements.join("; "));
     if marker.len() + 1 + one.chars().count() <= LINE {
         return one;

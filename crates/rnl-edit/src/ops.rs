@@ -106,6 +106,10 @@ pub struct ShapeOp {
 pub struct PinOp {
     /// One terminal, or several for a bus pin, by number or by name.
     pub terminals: Vec<TermKey>,
+    /// All local names of this pin, in binding order (0.4).
+    pub names: Vec<String>,
+    /// Keep a one-member list as a bus pin (0.4).
+    pub bus: bool,
     pub at: Point,
     /// "right", "up", "left" or "down".
     pub direction: Option<String>,
@@ -565,18 +569,20 @@ fn shape_op(obj: &Map<String, Value>) -> Result<ShapeOp, String> {
 /// A pin of define-symbol.
 fn pin_op(v: &Value) -> Result<PinOp, String> {
     let o = v.as_object().ok_or("not an object")?;
-    if let Some(f) = o.keys().find(|f| !["terminals", "at", "direction", "label"].contains(&f.as_str())) {
+    if let Some(f) = o.keys().find(|f| !["terminals", "at", "direction", "label", "names", "bus"].contains(&f.as_str()))
+    {
         return Err(format!("unknown field `{f}`"));
     }
     let terminals: Vec<TermKey> = o
         .get("terminals")
         .and_then(Value::as_array)
-        .filter(|a| !a.is_empty())
         .and_then(|a| {
             a.iter()
                 .map(|t| match t {
                     Value::String(s) => Some(TermKey::Name(s.clone())),
-                    Value::Number(n) => n.as_u64().filter(|n| *n >= 1).map(|n| TermKey::Num(n as u32)),
+                    Value::Number(n) => {
+                        n.as_u64().filter(|n| *n >= 1).and_then(|n| u32::try_from(n).ok()).map(TermKey::Num)
+                    }
                     _ => None,
                 })
                 .collect()
@@ -599,7 +605,25 @@ fn pin_op(v: &Value) -> Result<PinOp, String> {
         },
         Some(_) => return Err("`label` is not {markup} or {lines}".into()),
     };
-    Ok(PinOp { terminals, at, direction, label })
+    let names = match o.get("names") {
+        None => Vec::new(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|n| {
+                n.as_str().filter(|s| !s.is_empty()).map(str::to_string).ok_or("`names` must contain nonempty strings")
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        Some(_) => return Err("`names` is not a list".into()),
+    };
+    let bus = match o.get("bus") {
+        None => terminals.len() > 1,
+        Some(Value::Bool(bus)) => *bus,
+        Some(_) => return Err("`bus` is not a boolean".into()),
+    };
+    if bus && terminals.is_empty() || !bus && terminals.len() > 1 {
+        return Err("a bus pin needs one or more terminals; a non-bus pin has at most one".into());
+    }
+    Ok(PinOp { terminals, names, bus, at, direction, label })
 }
 
 fn as_point(v: &Value) -> Option<Point> {

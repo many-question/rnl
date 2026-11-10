@@ -70,6 +70,8 @@ fn snapshot(read: &Interpretation) -> BTreeMap<Key, Value> {
         let mut put = |category: &str, key: String, value: Value| {
             out.insert((file.clone(), level.title.clone(), category.into(), key), value);
         };
+        // Earlier interfaces expose object pins only after placement. Unplaced local
+        // geometry and connectivity are compared separately below.
         for (index, object) in level.objects.iter().enumerate() {
             let id = if object.id.starts_with('@') { format!("object-{index}") } else { object.id.clone() };
             put(
@@ -82,7 +84,7 @@ fn snapshot(read: &Interpretation) -> BTreeMap<Key, Value> {
                     "parameters":format!("{:?}",object.params),"disabled":object.disabled,
                     "style":format!("{:?}",object.own_style),
                     "geometry":object.symbol_view.map(|i|symbol(&level.symbols,i,0)),
-                    "pins":object.pins.iter().map(|p| json!({"at":p.at,"nets":p.nets,"direction":p.dir})).collect::<Vec<_>>()}),
+                    "pins":object.pins.iter().filter(|p| p.at.is_some()).map(|p| json!({"at":p.at,"nets":p.nets,"direction":p.dir})).collect::<Vec<_>>()}),
             );
         }
         // Objects with free positions still have meaningful local geometry,

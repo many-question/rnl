@@ -899,6 +899,10 @@ impl Interp<'_> {
                 .pins
                 .iter()
                 .map(|p| crate::model::PinView {
+                    identity: sd.independent_pins.then(|| crate::model::SymbolPinIdentity {
+                        names: p.names.clone(),
+                        bus: p.bus || p.terms.len() > 1,
+                    }),
                     pos: p.pos,
                     label: p.label.clone(),
                     label_name_formats: p.label_name_formats,

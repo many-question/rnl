@@ -101,10 +101,14 @@ struct Members<'l> {
     view: &'l LevelView,
     instances: HashMap<String, (usize, usize)>,
     usages: HashMap<&'l str, usize>,
+    pins: HashMap<String, usize>,
 }
 
 impl Members<'_> {
     fn find(&self, ix: &mut Index<'_>, id: &str) -> Option<(usize, Option<String>)> {
+        if let Some(&object) = self.pins.get(id) {
+            return Some((object, None));
+        }
         if let Some(&(object, _)) = self.instances.get(id) {
             return Some((object, None));
         }
@@ -214,7 +218,7 @@ fn level(
     for o in &listed {
         usages.insert(o.id.as_str(), ix.usage_of_kind(lv.level, &o.id, o.kind));
     }
-    let found = Members { level: lv.level, view: lv, instances, usages };
+    let found = Members { level: lv.level, view: lv, instances, usages, pins: ix.pin_references(lv) };
     let mut out = Vec::new();
     let mut groups = Vec::new();
     for o in &listed {

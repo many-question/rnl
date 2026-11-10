@@ -18,9 +18,9 @@ use crate::{
     AutoIncludeCandidate, Bar, Cap, Catalog, CatalogDefinition, CatalogLabel, CatalogPackage, CatalogPin, CatalogSet,
     CatalogSymbol, Child, Color, Diagnostic, Document, FileRef, HAlign, Hit, HostInstance, HostLevel, HostNet,
     HostTerminal, Join, Layer, Level, LevelModel, LevelSnapshot, Object, ObjectView, PackageUse, ParamValue, PinLabel,
-    PinView, PointView, Primitive, Run, RunStyle, Segment, Shape, ShapeView, Slot, Snapshot, SourceFile, Span, Stroke,
-    SubcktParam, SymbolDefinition, SymbolPin, SymbolPrim, SymbolRef, Terminal, Text, TextRun, TextView, Unit, Unplaced,
-    UnplacedDrawing, VAlign, Vertex, WireView,
+    PinObject, PinView, PointView, Primitive, Run, RunStyle, Segment, Shape, ShapeView, Slot, Snapshot, SourceFile,
+    Span, Stroke, SubcktParam, SymbolDefinition, SymbolPin, SymbolPrim, SymbolRef, Terminal, Text, TextRun, TextView,
+    Unit, Unplaced, UnplacedDrawing, VAlign, Vertex, WireView,
 };
 
 const CATALOG_HEADER: &str = "\
@@ -157,6 +157,7 @@ fn all() -> Vec<(String, String)> {
         one::<SourceInclude>(&cfg),
         one::<FormatInfo>(&cfg),
         one::<Object>(&cfg),
+        one::<PinObject>(&cfg),
         one::<MemberOf>(&cfg),
         one::<RoleOf>(&cfg),
         one::<RuleAt>(&cfg),

@@ -153,13 +153,20 @@ fn pin(p: &PinOp) -> String {
         TermKey::Name(s) => quote(s),
     };
     let terminal = match p.terminals.as_slice() {
-        [one] => key(one),
+        [one] if !p.bus => key(one),
         many => format!("[{}]", many.iter().map(key).collect::<Vec<_>>().join(", ")),
     };
-    let mut params = vec![format!("terminal={terminal}")];
+    let mut params = Vec::new();
+    if !p.terminals.is_empty() {
+        params.push(format!("terminal={terminal}"));
+    }
     params.extend(p.label.iter().map(|l| format!("label={}", quote(&content(l)))));
     params.extend(p.direction.iter().map(|d| format!("direction={}", quote(d))));
-    format!("{} @PIN({})", point(p.at), params.join(", "))
+    let mut written = format!("{} @PIN({})", point(p.at), params.join(", "));
+    for name in &p.names {
+        written.push_str(&format!(" => %{}", rnl_runtime::model::quoted(name)));
+    }
+    written
 }
 
 /// The facts of a position: `@PLACE` and `@ORIENT`. An orientation given is written, R0 too: without
