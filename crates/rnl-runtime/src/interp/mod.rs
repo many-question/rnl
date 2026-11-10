@@ -7,6 +7,7 @@
 
 mod assertions;
 pub mod attrs;
+mod body_rules;
 pub mod catalog;
 mod conflicts;
 mod constraints;
@@ -208,12 +209,13 @@ pub struct Interp<'p> {
     pub(crate) bound_memo: HashMap<(MemberKey, Option<SceneId>), Bound>,
     pub(crate) in_progress: HashSet<(MemberKey, Option<SceneId>)>,
     pub(crate) nested_memo: HashMap<(usize, usize, Option<SceneId>), CachedMember>,
-    pub(crate) tm_memo: HashMap<(usize, ObjId), ObjId>,
-    pub(crate) tm_in_progress: HashSet<(usize, ObjId)>,
+    pub(crate) tm_memo: HashMap<(usize, ObjId, Option<SceneId>), ObjId>,
+    pub(crate) tm_in_progress: HashSet<(usize, ObjId, Option<SceneId>)>,
     pub(crate) node_memo: HashMap<(&'static str, usize, usize, usize), ObjId>,
     /// Active symbol-body expansions; a limit failure invalidates only the active chain.
     pub(crate) symbol_expansions: Vec<Option<DiagId>>,
     pub(crate) rules: Rules,
+    body_rules: body_rules::BodyRules,
     /// The members of each unit that are rules, as `rule_members` took them last.
     pub(crate) rule_members: HashMap<UnitId, RuleMembers>,
     pub(crate) block_symbols: HashMap<String, BTreeMap<MemberKey, scene::BlockSymbol>>,
@@ -352,6 +354,7 @@ impl<'p> Interp<'p> {
             node_memo: HashMap::new(),
             symbol_expansions: Vec::new(),
             rules: Rules::default(),
+            body_rules: body_rules::BodyRules::default(),
             rule_members: HashMap::new(),
             block_symbols: HashMap::new(),
             scenes: Vec::new(),
@@ -602,6 +605,7 @@ impl<'p> Interp<'p> {
                 work.push(Work { u: au, m: m.clone() });
             }
         }
+        self.inherited_body_rules(s);
         // its own text, then the records written above with scope= this subcircuit (2.6), whose
         // members are its own as well, evaluated in its unit
         let own = self.units[unit].members.iter().chain(&self.units[unit].scope_members);

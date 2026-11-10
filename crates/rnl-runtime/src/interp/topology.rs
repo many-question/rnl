@@ -104,7 +104,7 @@ impl Interp<'_> {
         let lazy = self.is_lazy(members);
         let Some(s) = ctx.scene else {
             if lazy {
-                self.rules.insert(ctx.member_key.clone());
+                self.note_rule(ctx);
                 return Ok((NOTHING, true));
             }
             return self.scene_only(ctx, seg.start);
@@ -126,7 +126,7 @@ impl Interp<'_> {
             self.scenes[s].tasks[8].push((ctx.pos.clone(), task));
         }
         if lazy {
-            self.rules.insert(ctx.member_key.clone());
+            self.note_rule(ctx);
         }
         Ok((NOTHING, false))
     }

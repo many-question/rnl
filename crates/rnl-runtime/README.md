@@ -48,6 +48,10 @@ Selections default to `recursive=false`. A statement that writes a selection, in
 
 Set reach follows its binding, members and ADD-TO sources; REMOVE-FROM does not extend it. An ADD-TO statement without a written selection follows its source, not its target. A local set is empty outside its reach, including when a recursive rule uses it. Selection edits written after a use are included when deciding whether the use is a rule. Each evaluation still contains objects of only one drawing level.
 
+An ordinary definition can have `roles=[]`. In its body, bare `#` is the usage's drawing level, whether or not the definition has roles. Body rules start in that level and follow the same reach rules. Inheriting a body rule does not create another copy of its enclosing usage, and each usage keeps its own role and local bindings. A role referring to a parent-level object is empty when used as a selection scope below that level; another single role of a generation cannot carry that object into a lower level. Collection roles keep only that level's members, including when their members are pins.
+
+Named host references still enter through roles, and symbol bodies cannot use bare `#`. An ordinary definition body cannot assign its level's block symbol: `# @SET-SYMBOL $S` reports RNL3416, including when the definition is never applied. These body-scope rules apply only to 0.4 source statements.
+
 A definition receiving a selection-dependent set role is a generation rule, applied once with the whole set. A single-object role still expands one member at a time, including repeated members of an ordinary set.
 
 Package rules start at their USE-PACKAGE level, with root packages starting at the top level of the file that uses them. A scoped record starts at its target level. Files written in 0.2 or 0.3 retain their existing selection behavior.

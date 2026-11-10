@@ -16,7 +16,7 @@ pub enum FrameKind {
 }
 
 /// The body of a definition being expanded, or a symbol body (6.9, 6.10, 9.2).
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Frame {
     pub kind: FrameKind,
     pub usage: Option<ObjId>,
@@ -114,6 +114,8 @@ pub struct Ctx {
     pub recursive_selection: bool,
     /// The statement contains a selection, even when all its flags are false.
     pub written_selection: bool,
+    /// The level of the usage whose body is being evaluated.
+    pub body_scene: Option<SceneId>,
     pub defining: Option<Rc<Defining>>,
     /// The unit whose names a definition body is resolved with (6.9).
     pub def_unit: Option<UnitId>,

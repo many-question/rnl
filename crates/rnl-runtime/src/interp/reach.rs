@@ -42,7 +42,7 @@ impl Interp<'_> {
 
     pub(super) fn selection_at_home(&mut self, scene: SceneId, writer: UnitId, site: Option<&Ctx>) -> bool {
         if let Some(site) = site.filter(|site| site.frame_kind() == Some(FrameKind::Definition)) {
-            return site.scene == Some(scene);
+            return site.body_scene.or(site.scene) == Some(scene);
         }
         let level = self.scenes[scene].level;
         let writer = site.map_or(writer, |site| site.unit);
