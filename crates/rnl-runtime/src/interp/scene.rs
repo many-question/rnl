@@ -2265,7 +2265,7 @@ impl Interp<'_> {
         objects
     }
 
-    fn in_generation_snapshot(&self, s: SceneId, object: ObjId) -> bool {
+    pub(super) fn in_generation_snapshot(&self, s: SceneId, object: ObjId) -> bool {
         if let Some(phase) = self.scenes[s].created_phase.get(&object) {
             return *phase < 5;
         }

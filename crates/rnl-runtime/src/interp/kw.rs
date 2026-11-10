@@ -1669,14 +1669,6 @@ impl Interp<'_> {
         }];
         let mapped = self.map_args(kw, args, seg, ctx, &positions)?;
         let obj = mapped["points"].obj;
-        if self.is_lazy(obj) {
-            return self.fail(
-                ctx,
-                codes::KEYWORD_GRAPHIC_POINTS_SELECTION,
-                format!("the points of @{kw} take no selection (9.2.5)"),
-                seg.start,
-            );
-        }
         let (style, rest) = split_style(&p);
         let params = PrimParams {
             width: get(&rest, "width").and_then(Lit::num),
@@ -1689,6 +1681,109 @@ impl Interp<'_> {
         let centred = (matches!(shape, Shape::Rectangle | Shape::Ellipse)
             && (params.width.is_some() || params.height.is_some()))
             || (shape == Shape::Circle && params.radius.is_some());
+        if self.is_lazy(obj) {
+            if !self.follows_0_4(self.source_unit(ctx)) {
+                return self.fail(
+                    ctx,
+                    codes::KEYWORD_GRAPHIC_POINTS_SELECTION,
+                    format!("the points of @{kw} take no selection (9.2.5)"),
+                    seg.start,
+                );
+            }
+            if !centred && !matches!(shape, Shape::Line | Shape::Arc | Shape::Bezier) {
+                return self.fail(
+                    ctx,
+                    codes::KEYWORD_GRAPHIC_POINTS_SELECTION,
+                    format!("the points of @{kw} take no selection in this form (9.2.5, 10.4)"),
+                    seg.start,
+                );
+            }
+            if matches!(shape, Shape::Rectangle | Shape::Ellipse)
+                && !(params.width.is_some() && params.height.is_some())
+            {
+                return self.fail(
+                    ctx,
+                    codes::PARAM_GRAPHIC_WIDTH_HEIGHT,
+                    format!("write both width and height of @{kw} (9.2.5)"),
+                    seg.call.as_ref().unwrap().start,
+                );
+            }
+            let key = ("graphic-gen", ptr_seg(seg), self.frame_key(ctx), 0usize);
+            let gen = match self.node_memo.get(&key) {
+                Some(&gen) => gen,
+                None => {
+                    let gen = self.new_obj(ObjData::Set(Box::new(SetData {
+                        kind: SetKind::Gen { by_scene: HashMap::new() },
+                        reach_site: Some(Rc::new(ctx.clone())),
+                        reach_sources: vec![obj],
+                        ..SetData::plain(Vec::new(), false)
+                    })));
+                    self.node_memo.insert(key, gen);
+                    gen
+                }
+            };
+            if ctx.scene.is_none() {
+                self.note_rule(ctx);
+                return Ok((gen, true));
+            }
+            let c = Rc::new(ctx.clone());
+            let seg = seg.clone();
+            let keyword = kw.to_string();
+            let task: Task = Rc::new(move |it: &mut Interp, s: SceneId, phase: usize| {
+                let members: Vec<_> = it
+                    .flatten_inputs(s, obj, phase, Some(&c))
+                    .into_iter()
+                    .filter(|member| it.in_generation_snapshot(s, member.object))
+                    .collect();
+                let mut out = Vec::new();
+                if centred {
+                    for (index, member) in members.into_iter().enumerate() {
+                        let mut sub = c.with_dependencies(&member.dependencies);
+                        sub.pos = pos_plus(&c.pos, "g", index as i64);
+                        sub.selected = true;
+                        if let Ok((object, _)) =
+                            it.make_graphics(&keyword, shape, true, member.object, &params, &style, &sub, &seg)
+                        {
+                            out.push(object);
+                        }
+                    }
+                } else if !members.is_empty() {
+                    let mut sub = (*c).clone();
+                    sub.pos = pos_plus(&c.pos, "g", 0);
+                    sub.selected = true;
+                    let mut set = SetData::plain(members.iter().map(|m| (m.object, true)).collect(), false);
+                    set.item_dependencies = members.into_iter().map(|m| m.dependencies).collect();
+                    let input = it.new_obj(ObjData::Set(Box::new(set)));
+                    if let Ok((object, _)) =
+                        it.make_graphics(&keyword, shape, false, input, &params, &style, &sub, &seg)
+                    {
+                        out.push(object);
+                    }
+                }
+                if let ObjData::Set(data) = it.om(gen) {
+                    if let SetKind::Gen { by_scene } = &mut data.kind {
+                        by_scene.insert(s, out);
+                    }
+                }
+            });
+            self.defer(ctx, 5, task)?;
+            return Ok((gen, true));
+        }
+        self.make_graphics(kw, shape, centred, obj, &params, &style, ctx, seg)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn make_graphics(
+        &mut self,
+        kw: &str,
+        shape: Shape,
+        centred: bool,
+        obj: ObjId,
+        params: &PrimParams,
+        style: &StyleMap,
+        ctx: &Ctx,
+        seg: &Segment,
+    ) -> R<(ObjId, bool)> {
         let pts = self.shape_points(kw, obj, ctx, seg)?;
         if centred {
             if matches!(shape, Shape::Rectangle | Shape::Ellipse)
@@ -1707,7 +1802,7 @@ impl Interp<'_> {
                 for (k, member) in pts.into_iter().enumerate() {
                     let q = member.object;
                     let member_ctx = ctx.with_dependencies(&member.dependencies);
-                    outs.push(self.make_prim(shape, vec![q], &params, &style, &member_ctx, seg, Some((k, q)))?);
+                    outs.push(self.make_prim(shape, vec![q], params, style, &member_ctx, seg, Some((k, q)))?);
                 }
                 let s = self.new_obj(ObjData::Set(Box::new(SetData::plain(
                     outs.into_iter().map(|o| (o, true)).collect(),
@@ -1719,7 +1814,7 @@ impl Interp<'_> {
                 ctx.depend_on(&member.dependencies);
             }
             let points = pts.into_iter().map(|member| member.object).collect();
-            return Ok((self.make_prim(shape, points, &params, &style, ctx, seg, None)?, false));
+            return Ok((self.make_prim(shape, points, params, style, ctx, seg, None)?, false));
         }
         let n = pts.len();
         let ok = match shape {
@@ -1741,7 +1836,7 @@ impl Interp<'_> {
             ctx.depend_on(&member.dependencies);
         }
         let points = pts.into_iter().map(|member| member.object).collect();
-        Ok((self.make_prim(shape, points, &params, &style, ctx, seg, None)?, false))
+        Ok((self.make_prim(shape, points, params, style, ctx, seg, None)?, false))
     }
 
     fn shape_points(&mut self, kw: &str, obj: ObjId, ctx: &Ctx, seg: &Segment) -> R<Vec<InputMember>> {
