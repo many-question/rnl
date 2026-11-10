@@ -789,6 +789,7 @@ impl Interp<'_> {
     /// The point an object counts by (14.1): an origin, the pin of a terminal, or the centre of
     /// a set. None for what has no point, or is not in the problem.
     fn point_ref(&mut self, s: SceneId, ix: &Index, o: ObjId) -> Option<PointRef> {
+        let o = self.input_value(o);
         match self.o(o).clone() {
             ObjData::NamedSubobject { resolved, .. } => {
                 let value = resolved?;
@@ -817,7 +818,28 @@ impl Interp<'_> {
                 let pin = self.pin_for(s, owner, t)?;
                 Some(PointRef::Pin { object, pin, terminal: name.unwrap_or_else(|| index.to_string()) })
             }
-            ObjData::Pos { parent } => self.point_ref(s, ix, parent),
+            ObjData::Pos { parent } => {
+                let point = self.point_ref(s, ix, parent)?;
+                match point {
+                    PointRef::SymbolPin { object, pin, reference } => {
+                        Some(PointRef::PinPosition { object, pin, reference: reference.then("::position") })
+                    }
+                    PointRef::Pin { object, pin, terminal }
+                        if matches!(self.o(parent), ObjData::ScenePin { .. })
+                            || matches!(self.o(parent), ObjData::Term { owner, .. }
+                                if self.scenes[s].symbol.get(owner).is_some_and(|s| self.symbol(*s).independent_pins)) =>
+                    {
+                        let reference = match *self.o(parent) {
+                            ObjData::ScenePin { owner, .. } => {
+                                self.reference_of(s, ix, owner).then(&format!(":{}", written_name(&terminal)))
+                            }
+                            _ => self.reference_of(s, ix, parent),
+                        };
+                        Some(PointRef::PinPosition { object, pin, reference: reference.then("::position") })
+                    }
+                    point => Some(point),
+                }
+            }
             ObjData::Set(_) => {
                 let leaves = self.flatten(s, o, 7, None);
                 let mut points = Vec::new();

@@ -242,7 +242,8 @@ fn point(r: &PointRef) -> ConstraintPoint {
         PointRef::Pin { object, pin, terminal } => {
             ConstraintPoint::Pin { object: *object, pin: *pin, terminal: terminal.clone() }
         }
-        PointRef::SymbolPin { object, pin, reference: r } => {
+        // Constraints use the coordinate of either kind; their reference retains ::position.
+        PointRef::SymbolPin { object, pin, reference: r } | PointRef::PinPosition { object, pin, reference: r } => {
             ConstraintPoint::SymbolPin { object: *object, pin: *pin, reference: reference(r, true) }
         }
         PointRef::Centre(points) => ConstraintPoint::Centre { centre: points_of(points) },

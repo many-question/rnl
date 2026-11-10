@@ -366,7 +366,10 @@ impl Refs<'_> {
         let mut roots = Vec::new();
         for q in points {
             let (piece, label) = match q {
-                WirePoint::Anchor(r @ PointRef::SymbolPin { object, reference, .. }) => {
+                WirePoint::Anchor(
+                    r @ (PointRef::SymbolPin { object, reference, .. }
+                    | PointRef::PinPosition { object, reference, .. }),
+                ) => {
                     self.p.objects.get(*object).ok_or_else(missing)?;
                     (Piece::Ref(reference.clone()), crate::problem::point_name(self.p, r))
                 }
@@ -781,7 +784,9 @@ fn coordinate(p: &LevelProblem, s: &Solution, r: &PointRef, axis: Axis, depth: u
                 Position::At(_) => None,
             }
         }
-        PointRef::Pin { object, pin, .. } | PointRef::SymbolPin { object, pin, .. } => {
+        PointRef::Pin { object, pin, .. }
+        | PointRef::SymbolPin { object, pin, .. }
+        | PointRef::PinPosition { object, pin, .. } => {
             let o = p.objects.get(*object)?;
             let pos = p.symbols.get(o.symbol?)?.pins.get(*pin)?.pos;
             let base = coordinate(p, s, &PointRef::Origin(*object), axis, depth + 1)?;

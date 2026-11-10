@@ -608,7 +608,8 @@ fn the_brainstorm_cases_give_whole_problems() {
                     match r {
                         PointRef::Origin(k)
                         | PointRef::Pin { object: k, .. }
-                        | PointRef::SymbolPin { object: k, .. } => *k < n,
+                        | PointRef::SymbolPin { object: k, .. }
+                        | PointRef::PinPosition { object: k, .. } => *k < n,
                         PointRef::Centre(rs) => rs.iter().all(|r| check(r, n)),
                     }
                 }

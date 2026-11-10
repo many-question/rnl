@@ -2386,7 +2386,7 @@ impl Interp<'_> {
         // that one (its 13.1). In 0.2 a wire there is of the wrong kind, as a set that holds one is
         // in both
         let rewrite = matches!(self.o(nets_a.obj), ObjData::Wire { .. }) && self.statement_follows_0_3(ctx);
-        let (nets, bus) = if rewrite {
+        let (mut nets, mut bus) = if rewrite {
             (Vec::new(), false)
         } else if self.is_set(nets_a.obj) {
             let nets = self.flatten_inputs(s, nets_a.obj, 3, Some(ctx));
@@ -2406,6 +2406,23 @@ impl Interp<'_> {
         } else {
             (vec![nets_a.obj], false)
         };
+        if self.follows_0_4(self.source_unit(ctx)) {
+            let mut converted = Vec::new();
+            for net in nets {
+                // This conversion does not depend on symbol assignment (5.2.4).
+                let value = if matches!(self.o(net), ObjData::Term { .. }) && !self.role_inputs.contains_key(&net) {
+                    self.term_net(s, net, ctx, nets_a.off)?
+                } else {
+                    net
+                };
+                bus |= self.is_set(value);
+                converted.extend(self.flatten_inputs(s, value, 3, Some(ctx)).into_iter().map(|member| {
+                    ctx.depend_on(&member.dependencies);
+                    member.object
+                }));
+            }
+            nets = converted;
+        }
         for n in &nets {
             if let Some(d) = self.failed_obj(*n) {
                 let id = self.err_cause(
@@ -2418,7 +2435,8 @@ impl Interp<'_> {
                 return Err(Stop::Fail(Some(id)));
             }
             let deferred_net = self.follows_0_4(self.source_unit(ctx))
-                && (matches!(self.o(*n), ObjData::NamedSubobject { .. }) || self.role_inputs.contains_key(n));
+                && (matches!(self.o(*n), ObjData::NamedSubobject { .. } | ObjData::ScenePin { .. })
+                    || self.role_inputs.contains_key(n));
             if !deferred_net && !matches!(self.o(*n), ObjData::Net { .. }) {
                 let l = self.label(*n);
                 return self.fail(

@@ -243,7 +243,7 @@ impl Geometry {
         match p {
             PointId::Origin(k) => self.origin[k][axis].clone(),
             PointId::Text(t) if model.points[&p].free == Some(axis) => self.origin[t][axis].clone(),
-            PointId::Pin(..) | PointId::Text(_) => {
+            PointId::Pin(..) | PointId::PinPosition(..) | PointId::Text(_) => {
                 let info = &model.points[&p];
                 let Some(k) = info.object else { return Q::zero() };
                 let base = match model.origin_point[k] {
@@ -1441,7 +1441,9 @@ pub(crate) fn point_value(problem: &LevelProblem, g: &Geometry, r: &PointRef, ax
     };
     match r {
         PointRef::Origin(k) => origin(*k),
-        PointRef::Pin { object, pin, .. } | PointRef::SymbolPin { object, pin, .. } => {
+        PointRef::Pin { object, pin, .. }
+        | PointRef::SymbolPin { object, pin, .. }
+        | PointRef::PinPosition { object, pin, .. } => {
             let o = problem.objects.get(*object)?;
             let pos = problem.symbols.get(o.symbol?)?.pins.get(*pin)?.pos;
             let local = (from_f64(pos.0)?, from_f64(pos.1)?);

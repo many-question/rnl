@@ -282,7 +282,9 @@ fn beside() -> [Q; 2] {
 fn anchor_point(r: &PointRef) -> Option<(usize, Option<usize>)> {
     match r {
         PointRef::Origin(k) => Some((*k, None)),
-        PointRef::Pin { object, pin, .. } | PointRef::SymbolPin { object, pin, .. } => Some((*object, Some(*pin))),
+        PointRef::Pin { object, pin, .. }
+        | PointRef::SymbolPin { object, pin, .. }
+        | PointRef::PinPosition { object, pin, .. } => Some((*object, Some(*pin))),
         PointRef::Centre(_) => None,
     }
 }
@@ -707,7 +709,7 @@ impl Structure {
     pub(crate) fn point_at(&self, at: &[[Q; 2]], orient: &[Orient], p: PointId) -> Option<[Q; 2]> {
         match p {
             PointId::Origin(k) | PointId::Text(k) => at.get(k).cloned(),
-            PointId::Pin(k, pin) => self.pin_at(at, orient, k, pin),
+            PointId::Pin(k, pin) | PointId::PinPosition(k, pin) => self.pin_at(at, orient, k, pin),
             PointId::Centre(_) => None,
         }
     }
@@ -1048,7 +1050,9 @@ fn object_infos(problem: &LevelProblem, model: &Model, kept: &[usize]) -> Vec<Ob
             for p in &model.units[f].touched[axis] {
                 let k = match p {
                     PointId::Origin(k) => Some(*k),
-                    PointId::Pin(k, _) => model.points.get(p).and_then(|i| i.object).or(Some(*k)),
+                    PointId::Pin(k, _) | PointId::PinPosition(k, _) => {
+                        model.points.get(p).and_then(|i| i.object).or(Some(*k))
+                    }
                     // the owner of a text on the axes its symbol gives; on the one the scene gives,
                     // the fact reaches the text alone (13.3)
                     PointId::Text(k) => model.points.get(p).and_then(|i| i.object_on(axis)).or(Some(*k)),
@@ -2036,7 +2040,7 @@ fn touched_elements(s: &Structure, f: usize, axis: usize) -> Vec<usize> {
     for p in &s.model.units[f].touched[axis] {
         let k = match p {
             PointId::Origin(k) => Some(*k),
-            PointId::Pin(k, _) => Some(*k),
+            PointId::Pin(k, _) | PointId::PinPosition(k, _) => Some(*k),
             _ => None,
         };
         if let Some(k) = k.filter(|&k| s.objects.get(k).is_some_and(|o| o.role == Role::Element)) {
@@ -2212,7 +2216,9 @@ fn netlist_way<'a>(members: impl DoubleEndedIterator<Item = &'a [usize]> + Clone
 fn elements_of(r: &PointRef, out: &mut Vec<usize>) {
     match r {
         PointRef::Origin(k) => out.push(*k),
-        PointRef::Pin { object, .. } | PointRef::SymbolPin { object, .. } => out.push(*object),
+        PointRef::Pin { object, .. } | PointRef::SymbolPin { object, .. } | PointRef::PinPosition { object, .. } => {
+            out.push(*object)
+        }
         PointRef::Centre(members) => {
             for m in members {
                 elements_of(m, out);

@@ -24,6 +24,9 @@ fn point(r: &PointRef) -> Value {
         PointRef::SymbolPin { object, pin, reference: r } => {
             json!({"object": object, "pin": pin, "reference": reference(r, true)})
         }
+        PointRef::PinPosition { object, pin, reference: r } => {
+            json!({"object": object, "pin_position": pin, "reference": reference(r, true)})
+        }
         PointRef::Centre(points) => json!({"centre": points.iter().map(point).collect::<Vec<_>>()}),
     }
 }

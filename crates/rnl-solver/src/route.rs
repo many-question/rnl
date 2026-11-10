@@ -1433,8 +1433,15 @@ fn parts_of(n: &NetIn) -> usize {
 #[derive(Clone, Debug, PartialEq)]
 struct Point {
     reference: PointRef,
-    /// A pin by object and index, or a point object.
-    key: (usize, Option<usize>),
+    key: PointKey,
+}
+
+/// Coordinate equality does not connect a pin and its position point (5.2.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PointKey {
+    Pin(usize, usize),
+    PinPosition(usize, usize),
+    Object(usize),
 }
 
 /// A net of the ROUTEs: the first ROUTE of it, its name, its points and the wires written on it.
@@ -1501,7 +1508,7 @@ fn jobs(problem: &LevelProblem) -> Vec<Job> {
         };
         for p in &r.pins {
             if let PointRef::Pin { object, pin, .. } | PointRef::SymbolPin { object, pin, .. } = p {
-                let key = (*object, Some(*pin));
+                let key = PointKey::Pin(*object, *pin);
                 if !jobs[j].points.iter().any(|q| q.key == key) {
                     jobs[j].points.push(Point { reference: p.clone(), key });
                 }
@@ -1545,10 +1552,13 @@ pub(crate) fn style_notes(problem: &LevelProblem) -> Vec<String> {
 fn wire_point(problem: &LevelProblem, r: &PointRef) -> Option<Point> {
     match r {
         PointRef::Pin { object, pin, .. } | PointRef::SymbolPin { object, pin, .. } => {
-            Some(Point { reference: r.clone(), key: (*object, Some(*pin)) })
+            Some(Point { reference: r.clone(), key: PointKey::Pin(*object, *pin) })
+        }
+        PointRef::PinPosition { object, pin, .. } => {
+            Some(Point { reference: r.clone(), key: PointKey::PinPosition(*object, *pin) })
         }
         PointRef::Origin(k) if problem.objects.get(*k).is_some_and(|o| o.kind == ObjectKind::Point) => {
-            Some(Point { reference: r.clone(), key: (*k, None) })
+            Some(Point { reference: r.clone(), key: PointKey::Object(*k) })
         }
         _ => None,
     }
@@ -1592,11 +1602,11 @@ pub(crate) fn route(
                 return Some(i);
             }
             let at = [point_value(problem, g, &p.reference, 0, 0)?, point_value(problem, g, &p.reference, 1, 0)?];
-            let exit = match p.key {
-                (k, Some(pin)) => s.exit(k, pin, g.orient[k]),
-                _ => None,
+            let (exit, owner) = match p.key {
+                PointKey::Pin(k, pin) => (s.exit(k, pin, g.orient[k]), Some(k)),
+                PointKey::PinPosition(k, _) => (None, Some(k)),
+                PointKey::Object(_) => (None, None),
             };
-            let owner = p.key.1.map(|_| p.key.0);
             net.anchors.push(AnchorIn { at, exit, owner });
             pts.push(p);
             Some(pts.len() - 1)

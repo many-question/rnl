@@ -5,7 +5,7 @@ use std::path::Path;
 use rnl_cli::interpret_file;
 use rnl_runtime::diag::Severity;
 use rnl_runtime::problem::{PointRef, Reference, RouteIntent};
-use rnl_runtime::solution::{write_record, RoutedWire, Solution, WirePoint};
+use rnl_runtime::solution::{write_record, RoutedWire, Solution, WirePoint, WireRoute};
 use rnl_runtime::source::MemoryProvider;
 use rnl_runtime::{Interpretation, Options};
 
@@ -29,6 +29,60 @@ fn interpret(text: &str) -> Interpretation {
 
 fn parts(r: &Interpretation) -> usize {
     r.model.levels[0].net_labels.iter().filter(|label| label.net == "a").count()
+}
+
+#[test]
+fn a_pin_position_stays_disconnected_after_wire_writeback() {
+    for (name, point) in [("%p =", "#R1::p::position"), ("%p =", "#R1:1"), ("", "#R1:1"), ("", "#R1:1::position")] {
+        let body = format!(
+            r#"
+            $S = @DEFINE-SYMBOL {{ {name} (-3,0) @PIN(terminal=1) }};
+            #R1 @SET-SYMBOL $S => @PLACE(0,0) => @ORIENT("R0");
+            $D = @DEFINE(roles=[["p","point"],["n","net"]]) {{ %end = (0,2); %w = ?n @WIRE {{?p %end}} }};
+            %u = {point} &a @AS $D
+        "#
+        );
+        let r = interpret(&source("0.4", &body, ""));
+        assert_eq!(parts(&r), 2);
+        let problem = &r.problems[0];
+        let anchors = &problem.wires[0].anchors;
+        assert!(matches!(anchors[0], PointRef::PinPosition { .. }));
+        assert_eq!(anchors[0].pin_key(), None);
+        let solution = Solution {
+            wire_routes: vec![WireRoute {
+                wire: 0,
+                points: vec![
+                    WirePoint::Anchor(anchors[0].clone()),
+                    WirePoint::Bend((-3.0, 2.0)),
+                    WirePoint::Anchor(anchors[1].clone()),
+                ],
+            }],
+            ..Solution::default()
+        };
+        let written = write_record(problem, &solution, "test", "");
+        assert!(written.unsolved.is_empty(), "{:?}", written.unsolved);
+        let reread = interpret(&source("0.4", &body, &written.record));
+        assert_eq!(parts(&reread), 2, "{}", written.record);
+        assert_eq!(reread.model.levels[0].wires[0].points[0], (-3.0, 0.0));
+    }
+}
+
+#[test]
+fn solving_preserves_a_pin_position_and_its_owner_transform() {
+    let body = r#"
+        $S = @DEFINE-SYMBOL { %p = (-3,0) @PIN(terminal=1,direction="left") };
+        #R1 @SET-SYMBOL $S => @PLACE(5,2) => @ORIENT("R90");
+        %end = (0,4); %w = &a @WIRE {#R1::p::position %end}
+    "#;
+    let r = interpret(&source("0.4", body, ""));
+    let p = &r.problems[0];
+    let solved = rnl_solver::solve(p, &rnl_solver::SolverOptions::without_time_limit());
+    assert!(solved.report.failed.is_empty() && solved.report.discarded.is_empty(), "{:?}", solved.report);
+    let written = write_record(p, &solved.solution, "test", "");
+    assert!(written.unsolved.is_empty(), "{:?}", written.unsolved);
+    let reread = interpret(&source("0.4", body, &written.record));
+    assert_eq!(parts(&reread), 2);
+    assert_eq!(reread.model.levels[0].wires[0].points[0], (5.0, -1.0));
 }
 
 #[test]

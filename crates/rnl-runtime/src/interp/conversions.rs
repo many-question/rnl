@@ -217,22 +217,51 @@ impl Interp<'_> {
             return Ok(object);
         }
         let target = self.conversion_kind(object, &view.kinds);
-        let scene = view.scene;
-        let value = match (self.o(object).clone(), target.as_deref()) {
+        let value = self.convert_member(object, target.as_deref(), view.scene, &view.site, view.off)?;
+        match value {
+            Some(value) => Ok(value),
+            None => self.fail(
+                &view.site,
+                codes::USAGE_ROLE_WRONG_KIND,
+                format!(
+                    "the role {} takes {}, but {} ({}) cannot convert to it (5.2.4, 9.4)",
+                    view.role,
+                    view.kinds.join("/"),
+                    self.label(object),
+                    self.kind_of(object)
+                ),
+                view.off,
+            ),
+        }
+    }
+
+    /// Apply a conversion after its required symbols are known. The consumer reports a mismatch.
+    pub(crate) fn convert_member(
+        &mut self,
+        object: ObjId,
+        target: Option<&str>,
+        scene: SceneId,
+        site: &Ctx,
+        off: usize,
+    ) -> R<Option<ObjId>> {
+        if target.is_some_and(|kind| self.role_kind_matches(object, kind)) {
+            return Ok(Some(object));
+        }
+        let value = match (self.o(object).clone(), target) {
             (ObjData::Term { owner, .. }, Some("pin" | "point")) => self.pin_for(scene, owner, object).map(|index| {
                 let pin = self.scene_pin_object(scene, owner, index);
-                if target.as_deref() == Some("point") {
+                if target == Some("point") {
                     self.scene_pos_of(scene, pin)
                 } else {
                     pin
                 }
             }),
             (ObjData::Term { .. }, Some("net")) => {
-                return self.term_net(scene, object, &view.site, view.off);
+                return self.term_net(scene, object, site, off).map(Some);
             }
             (ObjData::ScenePin { .. }, Some("point")) => Some(self.scene_pos_of(scene, object)),
             (ObjData::ScenePin { owner, index }, Some("terminal" | "net")) => {
-                let values = if target.as_deref() == Some("net") {
+                let values = if target == Some("net") {
                     self.scene_pin_nets(scene, owner, index)
                 } else if matches!(self.o(owner), ObjData::Usage(_)) {
                     Vec::new()
@@ -255,20 +284,6 @@ impl Interp<'_> {
             }
             _ => None,
         };
-        match value {
-            Some(value) => Ok(value),
-            None => self.fail(
-                &view.site,
-                codes::USAGE_ROLE_WRONG_KIND,
-                format!(
-                    "the role {} takes {}, but {} ({}) cannot convert to it (5.2.4, 9.4)",
-                    view.role,
-                    view.kinds.join("/"),
-                    self.label(object),
-                    self.kind_of(object)
-                ),
-                view.off,
-            ),
-        }
+        Ok(value)
     }
 }

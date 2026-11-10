@@ -321,9 +321,10 @@ impl Interp<'_> {
     fn resolve_scene_wire_nets(&mut self, scene: SceneId, wire: ObjId) {
         let ObjData::Wire { nets, bus, site: Some(site), off, .. } = self.o(wire).clone() else { return };
         if !self.follows_0_4(self.source_unit(&site))
-            || !nets
-                .iter()
-                .any(|net| matches!(self.o(*net), ObjData::NamedSubobject { .. }) || self.role_inputs.contains_key(net))
+            || !nets.iter().any(|net| {
+                matches!(self.o(*net), ObjData::NamedSubobject { .. } | ObjData::ScenePin { .. })
+                    || self.role_inputs.contains_key(net)
+            })
         {
             return;
         }
@@ -332,9 +333,19 @@ impl Interp<'_> {
         for net in nets {
             is_bus |= self.is_set(self.scene_value(net));
             for member in self.scene_input_members(scene, net, Some(&site)) {
-                let value = self.scene_value(member.object);
+                let source = self.scene_value(member.object);
+                let value = match self.convert_member(source, Some("net"), scene, &site, off) {
+                    Ok(Some(value)) => value,
+                    Ok(None) => source,
+                    Err(_) => {
+                        self.set_failed(wire);
+                        return;
+                    }
+                };
                 let failure = self.failed_obj(member.object);
-                if failure.is_some() || !matches!(self.o(value), ObjData::Net { .. }) {
+                is_bus |= self.is_set(value);
+                let values = self.scene_input_members(scene, value, Some(&site));
+                if failure.is_some() || values.iter().any(|v| !matches!(self.o(v.object), ObjData::Net { .. })) {
                     let diagnostic = self.err_cause(
                         &site,
                         if failure.is_some() { codes::WIRE_NET_FAILED } else { codes::WIRE_NET_WRONG_KIND },
@@ -346,7 +357,7 @@ impl Interp<'_> {
                     self.set_failed(wire);
                     return;
                 }
-                resolved.push(value);
+                resolved.extend(values.into_iter().map(|v| self.scene_value(v.object)));
             }
         }
         if resolved.is_empty() {

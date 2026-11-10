@@ -23,6 +23,64 @@ fn read(version: &str, body: &str) -> Interpretation {
 
 const SYMBOL: &str = r#"$S = @DEFINE-SYMBOL { %p = (-3,0) @PIN(terminal=1,direction="left"); (3,0) @PIN(terminal=2) }; #R1 @SET-SYMBOL $S => @PLACE(0,0)"#;
 
+#[test]
+fn wire_net_slots_convert_terminals_and_pins() {
+    for source in ["#R1:1", "#R1::p", "{#R1:1 #R1::p}"] {
+        let r = checked(&format!("{source} @WIRE {{(0,0) (1,1)}}"));
+        assert_eq!(r.problems[0].wires.len(), 1);
+        assert!(r.problems[0].wires[0].nets.iter().all(|net| net == "a"));
+    }
+}
+
+#[test]
+fn wire_net_slots_convert_bus_pins_after_symbol_assignment() {
+    for terminals in ["[1]", "[1,2]"] {
+        let r = read(
+            "0.4",
+            &format!(
+                r#"
+            $S = @DEFINE-SYMBOL {{ %p = (0,0) @PIN(terminal={terminals}) }};
+            #R1::p @WIRE {{(0,0) (1,1)}};
+            #R1 @SET-SYMBOL $S
+        "#
+            ),
+        );
+        assert!(!r.diagnostics().iter().any(|d| d.severity == Severity::Error), "{:?}", r.diagnostics());
+        let wire = &r.problems[0].wires[0];
+        assert!(wire.bus);
+        assert_eq!(wire.nets.len(), if terminals == "[1]" { 1 } else { 2 });
+    }
+}
+
+#[test]
+fn a_pin_role_can_fill_a_wire_net_slot_without_changing_the_role() {
+    let r = checked(
+        r#"
+        $D = @DEFINE(roles=[["p","pin"]]) { ?p @WIRE {?p (0,2)} };
+        #R1:1 @AS $D
+    "#,
+    );
+    assert!(matches!(r.problems[0].usages[0].roles[0].members[..], [Filler::Pin { .. }]));
+    assert_eq!(r.problems[0].wires[0].nets, ["a"]);
+}
+
+#[test]
+fn wire_net_conversion_rejects_unbound_pins_and_preserves_old_versions() {
+    let r = read(
+        "0.4",
+        r#"
+        $S = @DEFINE-SYMBOL { %p = (0,0) @PIN };
+        #R1::p @WIRE {(0,0) (1,1)}; #R1 @SET-SYMBOL $S;
+        &a @WIRE {(2,0) (3,0)}
+    "#,
+    );
+    assert!(r.diagnostics().iter().any(|d| d.code == rnl_runtime::diag::codes::WIRE_NET_WRONG_KIND));
+    assert_eq!(r.problems[0].wires.len(), 1);
+    let old = read("0.3", "#R1:1 @WIRE {(0,0) (1,1)}");
+    assert!(old.diagnostics().iter().any(|d| d.code == rnl_runtime::diag::codes::WIRE_NET_WRONG_KIND));
+    assert!(old.problems[0].wires.is_empty());
+}
+
 fn checked(body: &str) -> Interpretation {
     let result = read("0.4", &format!("{SYMBOL}; {body}"));
     assert!(!result.diagnostics().iter().any(|d| d.severity == Severity::Error), "{:?}", result.diagnostics());

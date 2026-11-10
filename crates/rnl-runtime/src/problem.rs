@@ -109,6 +109,9 @@ pub enum PointRef {
     /// Geometry uses `object` and `pin`; writeback must use this exact reference, and must leave
     /// an anonymous endpoint unsolved rather than connect another pin of the same terminal.
     SymbolPin { object: usize, pin: usize, reference: Reference },
+    /// The coordinate point of a pin, with no electrical connection to that pin (5.2.4).
+    /// `reference` reaches the point itself, including `::position`, for lossless wire writeback.
+    PinPosition { object: usize, pin: usize, reference: Reference },
     /// The centre of a set, the middle of the extent of its points, nested sets followed down
     /// to the innermost objects (6.5, 14.1).
     Centre(Vec<PointRef>),
@@ -598,6 +601,10 @@ pub fn point_name(p: &LevelProblem, r: &PointRef) -> String {
         PointRef::SymbolPin { object, pin, reference } => match reference {
             Reference::Name(n) => n.clone(),
             _ => format!("pin {} of {}", pin + 1, label(*object)),
+        },
+        PointRef::PinPosition { object, pin, reference } => match reference {
+            Reference::Name(n) => n.clone(),
+            _ => format!("position of pin {} of {}", pin + 1, label(*object)),
         },
         PointRef::Centre(points) => {
             format!("{{{}}}", points.iter().map(|q| point_name(p, q)).collect::<Vec<_>>().join(" "))
@@ -1137,6 +1144,12 @@ impl Canon {
             }
             PointRef::SymbolPin { object, pin, reference } => {
                 self.word("symbol-pin");
+                self.index(*object);
+                self.index(*pin);
+                self.reference(reference);
+            }
+            PointRef::PinPosition { object, pin, reference } => {
+                self.word("pin-position");
                 self.index(*object);
                 self.index(*pin);
                 self.reference(reference);

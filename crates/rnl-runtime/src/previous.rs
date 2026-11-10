@@ -168,7 +168,9 @@ fn reaches(f: &FactKind, k: usize) -> bool {
     fn on(r: &PointRef, k: usize) -> bool {
         match r {
             PointRef::Origin(j) => *j == k,
-            PointRef::Pin { object, .. } | PointRef::SymbolPin { object, .. } => *object == k,
+            PointRef::Pin { object, .. }
+            | PointRef::SymbolPin { object, .. }
+            | PointRef::PinPosition { object, .. } => *object == k,
             PointRef::Centre(members) => members.iter().any(|m| on(m, k)),
         }
     }

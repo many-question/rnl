@@ -148,6 +148,12 @@ The commands read the language versions 0.2, 0.3 and 0.4 (16.1): a file in the v
 
 With `--previous`, each level also has `previous`, the decisions of its record of the solver mapped onto the problem, as hints for a warm start ([`rnl-runtime`](../rnl-runtime/README.md#the-previous-result-and-the-solve-status)), or `null` when it has none: `hash` as written, `same_input` (`null` for a hash that is neither `sig2` nor `sig1`), `numbering` (`null` when the record uses no number), `placements` with the index of each object, its coordinates `x` and `y`, each `null` when the record does not give it, and its orientation, `wire_routes` with the index of each wire that the record rewrites and its points as drawn, and `wires`, the wires that the record writes itself, as for ROUTE, with their nets and points. The levels are read twice, without their records of the solver and with them, or once when the file has none; the rest of the output is as without the option.
 
+In draft 0.4 solver input, a wire anchor at a pin uses `pin`, while a point at the
+same coordinates uses `pin_position`: `{"object": 0, "pin_position": 1,
+"reference": "#R1::p::position"}`. Both follow the symbol's position and orientation,
+but only the pin anchor connects the wire to that pin. Solvers must retain the
+distinction and the position reference when writing a wire back.
+
 ## preview
 
 `preview` solves FILE as `solve` does, with its options, and writes nothing: it prints, as JSON, `{"document": …, "report": …}`, the Document of the files as solved, with its flylines, the texts of the solve held over the files, and the report of what became of each fact. The desktop viewer's Solve menu shows the same ([decision 0010](../../docs/decisions/0010-desktop-viewer-solves-as-a-preview.md)), which [`rnl_cli::preview`](src/preview.rs) gives:

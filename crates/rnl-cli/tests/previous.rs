@@ -81,7 +81,9 @@ fn point_at(p: &LevelProblem, s: &Solution, r: &PointRef) -> Pt {
     };
     match r {
         PointRef::Origin(k) => placed(*k).0,
-        PointRef::Pin { object, pin, .. } | PointRef::SymbolPin { object, pin, .. } => {
+        PointRef::Pin { object, pin, .. }
+        | PointRef::SymbolPin { object, pin, .. }
+        | PointRef::PinPosition { object, pin, .. } => {
             let (at, orient) = placed(*object);
             let d = orient.apply(p.symbols[p.objects[*object].symbol.unwrap()].pins[*pin].pos);
             (at.0 + d.0, at.1 + d.1)
