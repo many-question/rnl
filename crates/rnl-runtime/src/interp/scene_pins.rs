@@ -288,7 +288,7 @@ impl Interp<'_> {
                     codes::WIRE_IN_BUNDLE,
                     format!("{} is in a bundle; wires go to the pins of the bundle (11.8)", self.label(*owner)),
                 )),
-                ObjData::ScenePin { .. } => None,
+                ObjData::ScenePin { .. } | ObjData::Point { .. } | ObjData::Pos { .. } => None,
                 _ => Some((
                     codes::WIRE_POINT_WRONG_KIND,
                     format!(
@@ -692,6 +692,10 @@ impl Interp<'_> {
             if name == "net" {
                 continue;
             }
+            if name == "position" {
+                self.resolve_position_reference(scene, object);
+                continue;
+            }
             let pin = self.scenes[scene]
                 .symbol
                 .get(&parent)
@@ -739,6 +743,9 @@ impl Interp<'_> {
                 continue;
             };
             if resolved.is_some() {
+                continue;
+            }
+            if name == "position" && self.position_waits_for_role(parent) {
                 continue;
             }
             let (code, message) = if name == "net"

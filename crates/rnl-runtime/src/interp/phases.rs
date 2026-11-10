@@ -105,6 +105,7 @@ impl Interp<'_> {
         }
         self.scenes[s].phase = 7;
         self.resolve_role_inputs(s);
+        self.finish_scene_subobjects(s);
         if self.check_scene_pin_bindings(s) {
             self.finish_scene_subobjects(s);
         }

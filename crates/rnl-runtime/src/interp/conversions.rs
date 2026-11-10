@@ -148,6 +148,7 @@ impl Interp<'_> {
         if self.role_inputs.contains_key(&view.source) {
             self.resolve_role_input(view.source);
         }
+        self.resolve_position_role_inputs(view.source);
         let source = self.scene_value(view.source);
         let spread_source = view.collection || (view.allow_set && self.is_set(source));
         let members = if spread_source {
