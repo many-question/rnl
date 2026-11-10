@@ -270,13 +270,8 @@ impl Interp<'_> {
             (ObjData::ScenePin { owner, index }, Some("terminal" | "net")) => {
                 let values = if target == Some("net") {
                     self.scene_pin_nets(scene, owner, index)
-                } else if matches!(self.o(owner), ObjData::Usage(_)) {
-                    Vec::new()
                 } else {
-                    self.terms_of(scene, owner)
-                        .into_iter()
-                        .filter(|terminal| self.pins_for(scene, owner, *terminal).contains(&index))
-                        .collect()
+                    self.scene_pin_terminals(scene, owner, index)
                 };
                 if values.is_empty() {
                     None

@@ -51,6 +51,17 @@ impl Interp<'_> {
         object
     }
 
+    /// The host terminals bound to one physical pin. A usage has roles, not terminals (5.2.4).
+    pub(crate) fn scene_pin_terminals(&mut self, scene: SceneId, owner: ObjId, index: usize) -> Vec<ObjId> {
+        if matches!(self.o(owner), ObjData::Usage(_)) {
+            return Vec::new();
+        }
+        self.terms_of(scene, owner)
+            .into_iter()
+            .filter(|terminal| self.pins_for(scene, owner, *terminal).contains(&index))
+            .collect()
+    }
+
     pub(crate) fn scene_pin_nets(&mut self, scene: SceneId, owner: ObjId, index: usize) -> Vec<ObjId> {
         self.scene_pin_nets_inner(scene, owner, index, &mut std::collections::HashSet::new())
     }
@@ -525,10 +536,16 @@ impl Interp<'_> {
             };
             let Some(site) = site else { continue };
             for input in inputs {
-                if !matches!(self.o(input), ObjData::NamedSubobject { .. }) && !self.role_inputs.contains_key(&input) {
+                let value = self.scene_value(input);
+                let terminal_point = self.follows_0_4(self.source_unit(&site))
+                    && matches!(self.o(object), ObjData::Prim { .. })
+                    && matches!(self.o(value), ObjData::Term { .. });
+                if !terminal_point
+                    && !matches!(self.o(input), ObjData::NamedSubobject { .. })
+                    && !self.role_inputs.contains_key(&input)
+                {
                     continue;
                 }
-                let value = self.scene_value(input);
                 let valid = match self.o(object) {
                     ObjData::Text { .. } | ObjData::KeyText { .. } => {
                         matches!(
@@ -539,6 +556,14 @@ impl Interp<'_> {
                                 | ObjData::Point { .. }
                                 | ObjData::Pos { .. }
                         )
+                    }
+                    _ if terminal_point => {
+                        let ObjData::Term { owner, .. } = *self.o(value) else { unreachable!() };
+                        // A renderer stand-in may supply pins. Only a genuinely undrawn
+                        // instance gets the no-effect exception of 9.2.8.
+                        self.pin_for(scene, owner, value).is_some()
+                            || !self.scenes[scene].symbol.contains_key(&owner)
+                                && matches!(self.o(owner), ObjData::Inst { .. } | ObjData::Bundle { .. })
                     }
                     _ => {
                         matches!(self.o(value), ObjData::ScenePin { .. } | ObjData::Point { .. } | ObjData::Pos { .. })
