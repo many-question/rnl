@@ -132,7 +132,8 @@
  *   `parts`, as build builds the Document.
  * @property {(request: WriteRequest | string) => { text: string, document: object }} write Write the
  *   ops of a request into its netlist, and build what was written. Throws an Error with the core's
- *   message when an op cannot be written.
+ *   message when an op cannot be written. Draft 0.4 adds code, diagnosticName and diagnostics
+ *   to that Error; respond keeps the error string and adds code, name and diagnostics.
  * @property {(request: ReplaceRecordsRequest | string) => Replaced} replaceRecords Replace the records
  *   of a level of a netlist that has records already, in the file that holds the level, and give that
  *   file's new text. Throws an Error when it refuses, with a message that begins with the kind of
@@ -228,7 +229,15 @@ export async function loadCore(wasm) {
   /** The part of the answer a call wants, or the core's error. */
   function part(request, name) {
     const response = respond(request);
-    if ("error" in response) throw new Error(response.error);
+    if ("error" in response) {
+      const error = new Error(response.error);
+      if ("code" in response) {
+        error.code = response.code;
+        error.diagnosticName = response.name;
+        error.diagnostics = response.diagnostics;
+      }
+      throw error;
+    }
     if (!(name in response)) throw new Error(`The core answered with no ${name}: the request is not ${ASKS[name]}.`);
     return response[name];
   }

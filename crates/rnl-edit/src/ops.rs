@@ -1,6 +1,8 @@
 //! The ops of an edit transaction (editor interface draft, 4.1), read from JSON one at a time, so
 //! that a refusal can say which op it is.
 
+use crate::Refusal;
+use rnl_runtime::diag::codes;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
@@ -200,9 +202,19 @@ pub struct RunStyle {
 
 /// Read op `k` of a transaction.
 pub fn parse(k: usize, value: &Value) -> Result<LevelOp, String> {
-    let fail = |op: &str, why: String| format!("op {k} ({op}): {why}");
-    let Some(obj) = value.as_object() else { return Err(format!("op {k}: not an object")) };
-    let kind = obj.get("op").and_then(Value::as_str).ok_or_else(|| format!("op {k}: no \"op\""))?;
+    parse_diagnosed(k, value).map_err(|e| e.message)
+}
+
+/// Read an op, retaining its diagnostic kind independently of its message.
+pub fn parse_diagnosed(k: usize, value: &Value) -> Result<LevelOp, Refusal> {
+    let fail = |code, op: &str, why: String| Refusal::new(code, format!("op {k} ({op}): {why}"));
+    let Some(obj) = value.as_object() else {
+        return Err(Refusal::new(codes::EDIT_OP_NOT_OBJECT, format!("op {k}: not an object")));
+    };
+    let kind = obj
+        .get("op")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Refusal::new(codes::EDIT_OP_MISSING_OP, format!("op {k}: no \"op\"")))?;
     // fields of the draft that this writer does not write yet: refused rather than left out
     let later: &[&str] = match kind {
         "set" | "add-usage" => &["layer"],
@@ -210,7 +222,7 @@ pub fn parse(k: usize, value: &Value) -> Result<LevelOp, String> {
         _ => &[],
     };
     if let Some(f) = later.iter().find(|f| obj.contains_key(**f)) {
-        return Err(fail(kind, format!("`{f}` is not written yet")));
+        return Err(fail(codes::EDIT_OP_NOT_WRITTEN_YET, kind, format!("`{f}` is not written yet")));
     }
     let allowed: &[&str] = match kind {
         "set" => &["object", "symbol", "style", "at", "orient"],
@@ -236,19 +248,19 @@ pub fn parse(k: usize, value: &Value) -> Result<LevelOp, String> {
         "use-package" => &["name", "version", "path"],
         "add-shape" => &["name", "shape", "points", "params", "style", "layer"],
         "define-symbol" => &["name", "box", "pins", "prims"],
-        "unset" | "remove" => return Err(fail(kind, "not written yet".into())),
-        _ => return Err(format!("op {k}: unknown op \"{kind}\"")),
+        "unset" | "remove" => return Err(fail(codes::EDIT_OP_NOT_WRITTEN_YET, kind, "not written yet".into())),
+        _ => return Err(Refusal::new(codes::EDIT_OP_UNKNOWN, format!("op {k}: unknown op \"{kind}\""))),
     };
     if let Some(f) = obj.keys().find(|f| *f != "op" && *f != "level" && !allowed.contains(&f.as_str())) {
-        return Err(fail(kind, format!("unknown field `{f}`")));
+        return Err(fail(codes::EDIT_OP_UNKNOWN_FIELD, kind, format!("unknown field `{f}`")));
     }
     let level = match obj.get("level") {
         None | Some(Value::Null) => None,
         Some(Value::String(s)) => Some(s.clone()),
-        Some(_) => return Err(fail(kind, "`level` is not a string".into())),
+        Some(_) => return Err(fail(codes::EDIT_FIELD_INVALID, kind, "`level` is not a string".into())),
     };
     if level.is_none() && kind != "use-package" {
-        return Err(fail(kind, "no `level`".into()));
+        return Err(fail(codes::EDIT_OP_NO_LEVEL, kind, "no `level`".into()));
     }
     let r = Reader { obj, kind, k };
     let op = match kind {
@@ -262,7 +274,11 @@ pub fn parse(k: usize, value: &Value) -> Result<LevelOp, String> {
             };
             if let Op::Set { symbol: None, at: None, orient: None, style, .. } = &op {
                 if style.is_empty() {
-                    return Err(fail(kind, "nothing to set: no `symbol`, `style`, `at` or `orient`".into()));
+                    return Err(fail(
+                        codes::EDIT_SET_NOTHING,
+                        kind,
+                        "nothing to set: no `symbol`, `style`, `at` or `orient`".into(),
+                    ));
                 }
             }
             op
@@ -284,10 +300,14 @@ pub fn parse(k: usize, value: &Value) -> Result<LevelOp, String> {
         },
         "add-shape" => Op::AddShape {
             name: r.opt_string("name")?,
-            shape: shape_op(obj).map_err(|why| fail(kind, why))?,
+            shape: shape_op(obj).map_err(|e| e.context(format!("op {k} ({kind})")))?,
             layer: match r.opt_string("layer")? {
                 Some(l) if !["bottom", "middle", "top"].contains(&l.as_str()) => {
-                    return Err(fail(kind, format!("`layer` \"{l}\" is not bottom, middle or top")))
+                    return Err(fail(
+                        codes::EDIT_FIELD_INVALID,
+                        kind,
+                        format!("`layer` \"{l}\" is not bottom, middle or top"),
+                    ))
                 }
                 l => l,
             },
@@ -295,7 +315,7 @@ pub fn parse(k: usize, value: &Value) -> Result<LevelOp, String> {
         "define-symbol" => {
             let name = r.string("name")?;
             if !(name.starts_with('$') || name.starts_with('%')) || name.len() < 2 {
-                return Err(fail(kind, format!("`name` \"{name}\" is not a $ or % name")));
+                return Err(fail(codes::EDIT_FIELD_INVALID, kind, format!("`name` \"{name}\" is not a $ or % name")));
             }
             let bbox = match obj.get("box") {
                 None | Some(Value::Null) => None,
@@ -303,33 +323,34 @@ pub fn parse(k: usize, value: &Value) -> Result<LevelOp, String> {
                     let b: Option<Vec<f64>> = v.as_array().and_then(|a| a.iter().map(Value::as_f64).collect());
                     match b.as_deref() {
                         Some(&[x1, y1, x2, y2]) => Some([x1, y1, x2, y2]),
-                        _ => return Err(fail(kind, "`box` is not [x1, y1, x2, y2]".into())),
+                        _ => return Err(fail(codes::EDIT_FIELD_INVALID, kind, "`box` is not [x1, y1, x2, y2]".into())),
                     }
                 }
             };
-            let list = |f: &str| -> Result<Vec<Value>, String> {
+            let list = |f: &str| -> Result<Vec<Value>, Refusal> {
                 match obj.get(f) {
                     None | Some(Value::Null) => Ok(Vec::new()),
                     Some(Value::Array(a)) => Ok(a.clone()),
-                    Some(_) => Err(fail(kind, format!("`{f}` is not a list"))),
+                    Some(_) => Err(fail(codes::EDIT_FIELD_INVALID, kind, format!("`{f}` is not a list"))),
                 }
             };
             let pins = list("pins")?
                 .iter()
                 .enumerate()
-                .map(|(n, p)| pin_op(p).map_err(|why| fail(kind, format!("pin {n}: {why}"))))
+                .map(|(n, p)| pin_op(p).map_err(|why| fail(codes::EDIT_PIN_INVALID, kind, format!("pin {n}: {why}"))))
                 .collect::<Result<_, _>>()?;
             let prims = list("prims")?
                 .iter()
                 .enumerate()
                 .map(|(n, p)| {
-                    let o = p.as_object().ok_or("not an object".to_string()).and_then(|o| {
-                        match o.keys().find(|f| !["shape", "points", "params", "style"].contains(&f.as_str())) {
-                            Some(f) => Err(format!("unknown field `{f}`")),
-                            None => Ok(o),
-                        }
-                    });
-                    o.and_then(shape_op).map_err(|why| fail(kind, format!("prim {n}: {why}")))
+                    let o =
+                        p.as_object().ok_or_else(|| Refusal::new(codes::EDIT_SHAPE_INVALID, "not an object")).and_then(
+                            |o| match o.keys().find(|f| !["shape", "points", "params", "style"].contains(&f.as_str())) {
+                                Some(f) => Err(Refusal::new(codes::EDIT_SHAPE_INVALID, format!("unknown field `{f}`"))),
+                                None => Ok(o),
+                            },
+                        );
+                    o.and_then(shape_op).map_err(|e| e.context(format!("op {k} ({kind}): prim {n}")))
                 })
                 .collect::<Result<_, _>>()?;
             Op::DefineSymbol { name, bbox, pins, prims }
@@ -343,16 +364,27 @@ pub fn parse(k: usize, value: &Value) -> Result<LevelOp, String> {
         },
         "add-text" => {
             let text = match (obj.get("markup"), obj.get("lines")) {
-                (Some(_), Some(_)) => return Err(fail(kind, "both `markup` and `lines`; give one".into())),
+                (Some(_), Some(_)) => {
+                    return Err(fail(
+                        codes::EDIT_TEXT_MARKUP_AND_LINES,
+                        kind,
+                        "both `markup` and `lines`; give one".into(),
+                    ))
+                }
                 (Some(_), None) => TextContent::Markup(r.string("markup")?),
                 (None, Some(lines)) => TextContent::Lines(
-                    serde_json::from_value(lines.clone()).map_err(|e| fail(kind, format!("`lines`: {e}")))?,
+                    serde_json::from_value(lines.clone())
+                        .map_err(|e| fail(codes::EDIT_FIELD_INVALID, kind, format!("`lines`: {e}")))?,
                 ),
-                (None, None) => return Err(fail(kind, "no `markup` or `lines`".into())),
+                (None, None) => return Err(fail(codes::EDIT_TEXT_NO_CONTENT, kind, "no `markup` or `lines`".into())),
             };
             let (attach, at) = (r.opt_string("attach")?, r.opt_point("at")?);
             if attach.is_none() && at.is_none() {
-                return Err(fail(kind, "neither `attach` nor `at`: the text has no place".into()));
+                return Err(fail(
+                    codes::EDIT_TEXT_NO_PLACE,
+                    kind,
+                    "neither `attach` nor `at`: the text has no place".into(),
+                ));
             }
             Op::AddText {
                 name: r.opt_string("name")?,
@@ -388,11 +420,11 @@ struct Reader<'a> {
 }
 
 impl Reader<'_> {
-    fn fail(&self, field: &str, what: &str) -> String {
-        format!("op {} ({}): `{field}` {what}", self.k, self.kind)
+    fn fail(&self, field: &str, what: &str) -> Refusal {
+        Refusal::new(codes::EDIT_FIELD_INVALID, format!("op {} ({}): `{field}` {what}", self.k, self.kind))
     }
 
-    fn opt_string(&self, f: &str) -> Result<Option<String>, String> {
+    fn opt_string(&self, f: &str) -> Result<Option<String>, Refusal> {
         match self.obj.get(f) {
             None | Some(Value::Null) => Ok(None),
             Some(Value::String(s)) => Ok(Some(s.clone())),
@@ -400,11 +432,13 @@ impl Reader<'_> {
         }
     }
 
-    fn string(&self, f: &str) -> Result<String, String> {
-        self.opt_string(f)?.ok_or_else(|| self.fail(f, "is missing"))
+    fn string(&self, f: &str) -> Result<String, Refusal> {
+        self.opt_string(f)?.ok_or_else(|| {
+            Refusal::new(codes::EDIT_FIELD_MISSING, format!("op {} ({}): `{f}` is missing", self.k, self.kind))
+        })
     }
 
-    fn strings(&self, f: &str) -> Result<Vec<String>, String> {
+    fn strings(&self, f: &str) -> Result<Vec<String>, Refusal> {
         let list = self.obj.get(f).and_then(Value::as_array).ok_or_else(|| self.fail(f, "is not a list of strings"))?;
         let out: Option<Vec<String>> = list.iter().map(|v| v.as_str().map(String::from)).collect();
         match out {
@@ -414,14 +448,14 @@ impl Reader<'_> {
         }
     }
 
-    fn opt_num(&self, f: &str) -> Result<Option<f64>, String> {
+    fn opt_num(&self, f: &str) -> Result<Option<f64>, Refusal> {
         match self.obj.get(f) {
             None | Some(Value::Null) => Ok(None),
             Some(v) => v.as_f64().map(Some).ok_or_else(|| self.fail(f, "is not a number")),
         }
     }
 
-    fn opt_bool(&self, f: &str) -> Result<Option<bool>, String> {
+    fn opt_bool(&self, f: &str) -> Result<Option<bool>, Refusal> {
         match self.obj.get(f) {
             None | Some(Value::Null) => Ok(None),
             Some(Value::Bool(b)) => Ok(Some(*b)),
@@ -429,18 +463,20 @@ impl Reader<'_> {
         }
     }
 
-    fn opt_point(&self, f: &str) -> Result<Option<Point>, String> {
+    fn opt_point(&self, f: &str) -> Result<Option<Point>, Refusal> {
         match self.obj.get(f) {
             None | Some(Value::Null) => Ok(None),
             Some(v) => as_point(v).map(Some).ok_or_else(|| self.fail(f, "is not a point [x, y]")),
         }
     }
 
-    fn point(&self, f: &str) -> Result<Point, String> {
-        self.opt_point(f)?.ok_or_else(|| self.fail(f, "is missing"))
+    fn point(&self, f: &str) -> Result<Point, Refusal> {
+        self.opt_point(f)?.ok_or_else(|| {
+            Refusal::new(codes::EDIT_FIELD_MISSING, format!("op {} ({}): `{f}` is missing", self.k, self.kind))
+        })
     }
 
-    fn attach(&self) -> Result<Vec<(String, Attach)>, String> {
+    fn attach(&self) -> Result<Vec<(String, Attach)>, Refusal> {
         let map = self
             .obj
             .get("attach")
@@ -472,7 +508,7 @@ impl Reader<'_> {
             .collect()
     }
 
-    fn via(&self) -> Result<Vec<Vertex>, String> {
+    fn via(&self) -> Result<Vec<Vertex>, Refusal> {
         let list = self
             .obj
             .get("via")
@@ -497,7 +533,7 @@ impl Reader<'_> {
     /// A usage's parameters: each a string, a number, a truth value or a list of them, as the
     /// snapshot gives them back (`ObjectView.params`). A string with a line break is refused: it
     /// would end the comment that carries the record.
-    fn params(&self) -> Result<Vec<(String, Literal)>, String> {
+    fn params(&self) -> Result<Vec<(String, Literal)>, Refusal> {
         fn value(v: &Value) -> Option<Literal> {
             Some(match v {
                 Value::String(s) if !s.contains(['\n', '\r']) => Literal::Str(s.clone()),
@@ -520,7 +556,7 @@ impl Reader<'_> {
             .collect()
     }
 
-    fn style(&self) -> Result<Vec<(String, Literal)>, String> {
+    fn style(&self) -> Result<Vec<(String, Literal)>, Refusal> {
         let Some(v) = self.obj.get("style") else { return Ok(Vec::new()) };
         let map = v.as_object().ok_or_else(|| self.fail("style", "is not an object"))?;
         map.iter()
@@ -555,17 +591,22 @@ fn literals(v: Option<&Value>, what: &str) -> Result<Vec<(String, Literal)>, Str
 }
 
 /// A graphic, from an add-shape op or a prim of define-symbol.
-fn shape_op(obj: &Map<String, Value>) -> Result<ShapeOp, String> {
-    let shape = obj.get("shape").and_then(Value::as_str).ok_or("no `shape`")?.to_string();
+fn shape_op(obj: &Map<String, Value>) -> Result<ShapeOp, Refusal> {
+    let fail = |message| Refusal::new(codes::EDIT_SHAPE_INVALID, message);
+    let shape = obj.get("shape").and_then(Value::as_str).ok_or_else(|| fail("no `shape`".into()))?.to_string();
     let points: Vec<Point> = match obj.get("points").and_then(Value::as_array) {
-        Some(a) => a.iter().map(as_point).collect::<Option<_>>().ok_or("`points` is not a list of [x, y]")?,
-        None => return Err("no `points`".into()),
+        Some(a) => a
+            .iter()
+            .map(as_point)
+            .collect::<Option<_>>()
+            .ok_or_else(|| fail("`points` is not a list of [x, y]".into()))?,
+        None => return Err(fail("no `points`".into())),
     };
-    let params = literals(obj.get("params"), "params")?;
+    let params = literals(obj.get("params"), "params").map_err(fail)?;
     if let Some((p, _)) =
         params.iter().find(|(p, _)| !["width", "height", "radius", "fill", "arrow"].contains(&p.as_str()))
     {
-        return Err(format!("`params`: `{p}` is not width, height, radius, fill or arrow"));
+        return Err(fail(format!("`params`: `{p}` is not width, height, radius, fill or arrow")));
     }
     let has = |p: &str| params.iter().any(|(q, _)| q == p);
     let n = points.len();
@@ -578,12 +619,15 @@ fn shape_op(obj: &Map<String, Value>) -> Result<ShapeOp, String> {
             (n == 1 && has("width") && has("height")) || (n == 2 && !has("width") && !has("height"))
         }
         "circle" => (n == 1 && has("radius")) || (n == 2 && !has("radius")),
-        _ => return Err(format!("`shape` \"{shape}\" is not line, rectangle, circle, ellipse, arc or bezier")),
+        _ => return Err(fail(format!("`shape` \"{shape}\" is not line, rectangle, circle, ellipse, arc or bezier"))),
     };
     if !ok {
-        return Err(format!("{n} points with these params do not make the shape {shape} (9.2.5)"));
+        return Err(Refusal::new(
+            codes::EDIT_SHAPE_POINTS_COUNT,
+            format!("{n} points with these params do not make the shape {shape} (9.2.5)"),
+        ));
     }
-    Ok(ShapeOp { shape, points, params, style: literals(obj.get("style"), "style")? })
+    Ok(ShapeOp { shape, points, params, style: literals(obj.get("style"), "style").map_err(fail)? })
 }
 
 /// A pin of define-symbol.

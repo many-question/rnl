@@ -4,10 +4,17 @@
 // next to this file.
 
 import type { Catalog } from "./catalog.js";
-import type { Document, FormatInfo, UnplacedDrawing } from "./document.js";
+import type { Diagnostic, Document, FormatInfo, UnplacedDrawing } from "./document.js";
 import type { Snapshot } from "./snapshot.js";
 
 export type { Catalog, Document, FormatInfo, Snapshot, UnplacedDrawing };
+
+/** Error thrown by a draft 0.4 write request. Older requests keep ordinary Errors. */
+export interface EditError extends Error {
+  code: string | null;
+  diagnosticName: string;
+  diagnostics: Diagnostic[];
+}
 
 /** Inspection SVG export styles, independent of RNL language styles. */
 export interface OverlayStyle {
@@ -374,7 +381,7 @@ export interface Core {
   build(request: Request | string): Document;
   /** Build the snapshot of a request with `parts`, as build builds the Document. */
   snapshot(request: Request | string): Snapshot;
-  /** Write the ops into the netlist and build it; throws an Error when an op cannot be written. */
+  /** Write the ops and build them. Draft 0.4 refusals throw EditError with a code and host diagnostics. */
   write(request: WriteRequest | string): Written;
   /**
    * Replace the records of a level of a netlist that has records already, in the file that holds the

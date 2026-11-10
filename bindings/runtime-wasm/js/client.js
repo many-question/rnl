@@ -57,8 +57,15 @@ export function startCore(options = {}) {
     const promise = waiting.get(reply.id);
     if (!promise) return;
     waiting.delete(reply.id);
-    if (reply.error !== undefined) promise.reject(new Error(reply.error));
-    else if (!(promise.part in reply)) promise.reject(new Error(`The core answered with no ${promise.part}.`));
+    if (reply.error !== undefined) {
+      const error = new Error(reply.error);
+      if ("code" in reply) {
+        error.code = reply.code;
+        error.diagnosticName = reply.name;
+        error.diagnostics = reply.diagnostics;
+      }
+      promise.reject(error);
+    } else if (!(promise.part in reply)) promise.reject(new Error(`The core answered with no ${promise.part}.`));
     else promise.resolve(reply[promise.part]);
   }
 
