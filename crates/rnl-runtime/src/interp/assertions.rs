@@ -299,7 +299,10 @@ impl Interp<'_> {
                 let (has, ok) = match cond {
                     "name" => (Some(inst.name.clone()), glob(want, &inst.name, cs)),
                     "model" => (inst.model.clone(), inst.model.as_deref().is_some_and(|x| glob(want, x, cs))),
-                    _ => (inst.mtype.clone(), inst.mtype.as_deref().unwrap_or("") == want.to_lowercase()),
+                    _ => (
+                        self.instance_type(i).map(str::to_string),
+                        self.instance_type(i).unwrap_or("") == want.to_lowercase(),
+                    ),
                 };
                 let of = if kw == "ASSERT-TERMINAL" { "is a terminal of a device with" } else { "has" };
                 (!ok).then(|| match has {
@@ -435,7 +438,7 @@ impl Interp<'_> {
                         (x.clone(), fold(&x))
                     }
                     "type" => {
-                        let x = inst.mtype.clone()?;
+                        let x = self.instance_type(i)?.to_string();
                         (x.clone(), x.to_lowercase())
                     }
                     "value" => {

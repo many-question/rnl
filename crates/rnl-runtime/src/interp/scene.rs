@@ -233,6 +233,7 @@ pub struct Scene {
     pub at_live: Vec<usize>,
     pub orient_live: Vec<usize>,
     pub devices: Option<Vec<DeviceDecl>>,
+    pub(crate) device_info: HashMap<ObjId, super::devices::DeviceInfo>,
     pub busy: HashSet<(ObjId, usize)>,
     pub hinted: HashSet<ObjId>,
     pub dropped: usize,
@@ -347,6 +348,7 @@ impl Scene {
             at_live: Vec::new(),
             orient_live: Vec::new(),
             devices: None,
+            device_info: HashMap::new(),
             busy: HashSet::new(),
             hinted: HashSet::new(),
             dropped: 0,
@@ -396,6 +398,7 @@ impl Interp<'_> {
             self.scenes[s].insts.push(o);
             self.scenes[s].inst_keys.insert(key, o);
         }
+        self.prepare_devices(s);
         let ports = self.doc.levels[level].ports.clone();
         for p in ports {
             self.net_obj(s, &p);
@@ -464,6 +467,9 @@ impl Interp<'_> {
 
     /// Terminal names of a host instance: subcircuit ports or DEVICE (6.4, 6.12).
     pub(crate) fn term_names(&mut self, s: SceneId, inst: ObjId) -> Vec<String> {
+        if let Some(info) = self.scenes[s].device_info.get(&inst) {
+            return info.terminals.clone();
+        }
         let i = self.inst_of(inst).clone();
         if i.is_subckt {
             if let Some(sub) = self.doc.subckt_of(&i) {
@@ -486,17 +492,19 @@ impl Interp<'_> {
                 None => true,
                 Some(m) => inst.model.as_ref().is_some_and(|im| glob(m, im, cs)),
             };
-            if glob(&d.name, &inst.name, cs) && model_ok {
-                found = Some(
-                    d.terminals
-                        .iter()
-                        .map(|t| match t {
-                            Lit::Str(s) => s.as_str().to_string(),
-                            Lit::Num(n) => crate::geom::fmt_num(*n),
-                            other => other.show(),
-                        })
-                        .collect(),
-                );
+            if let Some(terminals) = &d.terminals {
+                if glob(&d.name, &inst.name, cs) && model_ok {
+                    found = Some(
+                        terminals
+                            .iter()
+                            .map(|t| match t {
+                                Lit::Str(s) => s.as_str().to_string(),
+                                Lit::Num(n) => crate::geom::fmt_num(*n),
+                                other => other.show(),
+                            })
+                            .collect(),
+                    );
+                }
             }
         }
         found.or_else(|| self.default_terminals(s, inst))
@@ -507,7 +515,7 @@ impl Interp<'_> {
     /// draft 0.3 the names the draft adds for the SPICE family ([`added_terminals`]). The adapter
     /// reads the host and does not know the language version of a file, so the runtime gives
     /// these by the element letter.
-    fn default_terminals(&self, s: SceneId, inst: &crate::host::Instance) -> Option<Vec<String>> {
+    pub(super) fn default_terminals(&self, s: SceneId, inst: &crate::host::Instance) -> Option<Vec<String>> {
         let file = self.doc.file_level_of(inst).unwrap_or(self.scenes[s].level);
         if self.follows_0_4(self.level_unit[file]) && inst.default_terminals_0_4.is_some() {
             return inst.default_terminals_0_4.clone();
@@ -2084,7 +2092,7 @@ impl Interp<'_> {
             }
         }
         if let Some(t) = p.get("type").and_then(Lit::str) {
-            if inst.mtype.as_deref().unwrap_or("") != t.to_lowercase() {
+            if self.instance_type(o).unwrap_or("") != t.to_lowercase() {
                 return false;
             }
         }

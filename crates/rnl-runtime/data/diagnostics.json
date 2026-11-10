@@ -2610,7 +2610,10 @@
    "name": "role-pin-filled-with-other-kind",
    "severity": "error",
    "message": "pin {pin} of {symbol} binds role {role}, filled with {object} ({kind}); a bound role takes a net, terminal or pin, so this symbol assignment fails (5.2.4, 12.1)",
-   "sections": ["5.2.4", "12.1"]
+   "sections": [
+    "5.2.4",
+    "12.1"
+   ]
   },
   {
    "number": "RNL3517",
@@ -2901,21 +2904,31 @@
    "name": "pin-number-binds-no-role",
    "severity": "warning",
    "message": "pin {pin} of {symbol}: terminal={binding} binds no role of {owner}; this binding is unconnected (11.3)",
-   "sections": ["11.3", "12.1"]
+   "sections": [
+    "11.3",
+    "12.1"
+   ]
   },
   {
    "number": "RNL4111",
    "name": "pin-on-no-net",
    "severity": "error",
    "message": "{pin} is on no net: it binds no connected terminal or role (5.2.4, 6.5)",
-   "sections": ["5.2.4", "6.5", "12.1"]
+   "sections": [
+    "5.2.4",
+    "6.5",
+    "12.1"
+   ]
   },
   {
    "number": "RNL4113",
    "name": "pin-terminal-names-no-role",
    "severity": "warning",
    "message": "pin {pin} of {symbol}: terminal={binding} binds no role of {owner}; this binding is unconnected (11.3)",
-   "sections": ["11.3", "12.1"]
+   "sections": [
+    "11.3",
+    "12.1"
+   ]
   },
   {
    "number": "RNL4114",
@@ -2932,14 +2945,20 @@
    "name": "pin-terminal-not-in-owner",
    "severity": "warning",
    "message": "pin {pin} of {symbol}: terminal={binding} binds no terminal of {owner}; this binding is unconnected (11.3)",
-   "sections": ["11.3"]
+   "sections": [
+    "11.3"
+   ]
   },
   {
    "number": "RNL4120",
    "name": "pin-direction-missing",
    "severity": "error",
    "message": "{pin} has no written pin direction: this {keyword} fails (9.2.4, 11.2, 14.9)",
-   "sections": ["9.2.4", "11.2", "14.9"]
+   "sections": [
+    "9.2.4",
+    "11.2",
+    "14.9"
+   ]
   },
   {
    "number": "RNL4200",
@@ -3376,7 +3395,10 @@
    "name": "constraint-orient-relation-mixed-kinds",
    "severity": "error",
    "message": "ORIENT-RELATION relates two pins or two oriented objects, not a pin to an object (14.9)",
-   "sections": ["5.2.4", "14.9"]
+   "sections": [
+    "5.2.4",
+    "14.9"
+   ]
   },
   {
    "number": "RNL5100",
@@ -4891,6 +4913,33 @@
    "severity": "warning",
    "message": "warning: {file}: {what}, `{name}`, line {line}, has the spelling of a word that 0.3 adds (2.8): raised to 0.3, it may mean something else (16.1)",
    "sections": []
+  },
+  {
+   "number": "RNL2011",
+   "name": "device-terminal-names-invalid",
+   "severity": "error",
+   "message": "the terminal names of @DEVICE must be distinct by the host's case rules and cannot be made only of digits (6.12)",
+   "sections": [
+    "6.12"
+   ]
+  },
+  {
+   "number": "RNL2012",
+   "name": "device-host-type-conflict",
+   "severity": "warning",
+   "message": "@DEVICE cannot change the type of an instance supplied by its host (6.12)",
+   "sections": [
+    "6.12"
+   ]
+  },
+  {
+   "number": "RNL2013",
+   "name": "device-subcircuit-ports-conflict",
+   "severity": "warning",
+   "message": "@DEVICE cannot change the port names of a subcircuit defined by the host (6.12)",
+   "sections": [
+    "6.12"
+   ]
   }
  ]
 }

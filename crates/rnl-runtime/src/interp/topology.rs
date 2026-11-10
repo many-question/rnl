@@ -142,7 +142,7 @@ impl Interp<'_> {
             ObjData::Bundle { members, .. } => members[0],
             _ => return false,
         };
-        let Some(ty) = self.inst_of(inst).mtype.clone() else { return false };
+        let Some(ty) = self.instance_type(inst) else { return false };
         let cs = self.host_case(owner);
         exclude.iter().any(|(xt, key)| {
             *xt == ty.to_lowercase()

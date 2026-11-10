@@ -115,7 +115,7 @@ impl Interp<'_> {
                         "name" => inst.name.clone(),
                         "value" => inst.value.clone().unwrap_or_default(),
                         "model" => inst.model.clone().unwrap_or_default(),
-                        _ => inst.mtype.clone().unwrap_or_default(),
+                        _ => self.instance_type(obj).unwrap_or_default().to_string(),
                     }));
                 }
                 if let Some(v) = inst.param(&key) {
