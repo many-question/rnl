@@ -99,8 +99,24 @@ impl Interp<'_> {
         {
             self.params(kw, seg, ctx, &[], None, false, None)?;
         }
+        // Symbol bodies can resolve forward definitions recursively. Keep the locals of
+        // unrelated keyword handlers out of every active symbol-expansion frame.
+        if kw == "DEFINE-SYMBOL" {
+            self.kw_define_symbol(kw, &args, seg, ctx, member)
+        } else {
+            self.keyword_other(kw, args, seg, ctx, member)
+        }
+    }
+
+    fn keyword_other(
+        &mut self,
+        kw: &str,
+        args: Vec<ArgV>,
+        seg: &Segment,
+        ctx: &Ctx,
+        member: &Rc<Member>,
+    ) -> R<(ObjId, bool)> {
         match kw {
-            "DEFINE-SYMBOL" => self.kw_define_symbol(kw, &args, seg, ctx, member),
             "DEFINE-STYLE" => self.kw_define_style(kw, &args, seg, ctx, member),
             "DEFINE" => self.kw_define(kw, &args, seg, ctx, member),
             "AS" => self.kw_usage_noted(kw, args, seg, ctx, false, member),

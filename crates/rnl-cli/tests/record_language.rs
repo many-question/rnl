@@ -556,3 +556,26 @@ fn usage_language_follows_final_members_of_collection_roles() {
         assert!(!texts(&result).contains(&"excluded".into()), "{:?}", texts(&result));
     }
 }
+
+#[test]
+fn qualified_forward_symbol_expansion_keeps_the_existing_depth_limit() {
+    for levels in [64, 65] {
+        let mut body = format!("#R1 @SET-SYMBOL $S{};\n", levels - 1);
+        for n in (1..levels).rev() {
+            body.push_str(&format!("$S{n} = @DEFINE-SYMBOL {{ $MARK @ATTACH (1,2) => @SET-SYMBOL $S{} }};\n", n - 1));
+        }
+        body.push_str("$S0 = @DEFINE-SYMBOL { (0,0) @CIRCLE(radius=1) }; $MARK = @DEFINE(roles=[\"at\"]) {}; (100,100) @TEXT(\"independent\")");
+        let source = format!(
+            "* deep qualified symbols\n* @RNL(type=\"header\") {{ @VERSION(\"0.4\") }}\nR1 a b 1k\n* @RNL(language=\"spice\") {{\n{}\n* }}\n.end\n",
+            body.lines().map(|line| format!("* {line}")).collect::<Vec<_>>().join("\n")
+        );
+        let result = read("deep.sp", &source);
+        let diagnostics = errors(&result);
+        if levels == 64 {
+            assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        } else {
+            assert!(diagnostics.iter().any(|d| d.contains("limit of 64 active symbol bodies")), "{diagnostics:?}");
+        }
+        assert!(texts(&result).contains(&"independent".into()));
+    }
+}

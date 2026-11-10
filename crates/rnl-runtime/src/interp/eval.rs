@@ -944,7 +944,7 @@ impl<'p> Interp<'p> {
                     continue;
                 }
             }
-            let arg_ctx = ctx.with_dependencies(&[]);
+            let arg_ctx = Self::segment_arg_context(ctx);
             let (obj, sel) = match self.eval_obj(&a.obj, &arg_ctx) {
                 Ok(value) => value,
                 Err(Stop::Fail(diagnostic)) if keeps_input => {
@@ -976,8 +976,7 @@ impl<'p> Interp<'p> {
             return Ok((NOTHING, false));
         };
         let kw = self.kw(&call.kw, ctx.unit);
-        let mut call_ctx = ctx.clone();
-        call_ctx.language_inputs = args.iter().map(|arg| arg.obj).collect();
+        let call_ctx = self.language_call_context(ctx, &args);
         let ctx = &call_ctx;
         if self.follows_0_4(self.source_unit(ctx))
             && !ctx.in_symbol()
@@ -1035,6 +1034,18 @@ impl<'p> Interp<'p> {
         } else {
             self.keyword(&kw, args, seg, ctx, member)
         }
+    }
+
+    fn segment_arg_context(ctx: &Ctx) -> Box<Ctx> {
+        Box::new(ctx.with_dependencies(&[]))
+    }
+
+    // Keep the additional context off the recursive symbol-expansion stack. This also
+    // snapshots inputs of unqualified records, which can depend on qualified ones.
+    fn language_call_context(&self, ctx: &Ctx, args: &[ArgV]) -> Box<Ctx> {
+        let mut call_ctx = Box::new(ctx.clone());
+        call_ctx.language_inputs = args.iter().map(|arg| arg.obj).collect();
+        call_ctx
     }
 
     // Keep diagnostic formatting out of the recursive evaluation frame.
