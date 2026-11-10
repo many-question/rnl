@@ -1350,6 +1350,7 @@ impl Interp<'_> {
         sub.rec = d.rec;
         sub.header = d.header.clone();
         sub.stmt = Some(StmtSpan { rec: d.rec, start: m.start, end: m.end });
+        sub.recursive_selection = false;
         sub.pos = pos_plus(&ctx.pos, "b", k as i64);
         sub.origin = if origin.is_empty() { ctx.origin.clone() } else { origin };
         sub.nested = None;
@@ -1448,6 +1449,7 @@ impl Interp<'_> {
             nested: Some(nested.clone()),
             member_key: ctx.member_key.clone(),
             selected: false,
+            recursive_selection: false,
             defining: Some(defining),
             def_unit: Some(ctx.def_unit.unwrap_or(ctx.unit)),
             scope_in: false,
@@ -2008,11 +2010,18 @@ impl Interp<'_> {
         position: &str,
     ) -> R<(ObjId, bool)> {
         let a = mapped[position].clone();
+        if matches!(op, TargetOp::Symbol { .. }) {
+            if let Some(scene) = ctx.scene {
+                self.check_symbol_selection(scene, a.obj, ctx, seg.start)?;
+            }
+        }
         if let Some(d) = self.failed_obj(a.obj) {
             let id = self.err_cause(ctx, codes::KEYWORD_OBJECT_FAILED, format!("the object of @{kw} failed"), a.off, d);
             return Err(Stop::Fail(Some(id)));
         }
-        if self.is_lazy(a.obj) {
+        let symbol_set =
+            matches!(op, TargetOp::Symbol { .. }) && self.is_set(a.obj) && self.follows_0_4(self.source_unit(ctx));
+        if self.is_lazy(a.obj) || symbol_set {
             if ctx.scene.is_none() {
                 self.rules.insert(ctx.member_key.clone());
                 return Ok((a.obj, true));
@@ -2021,18 +2030,27 @@ impl Interp<'_> {
             let lazy = a.obj;
             let op2 = op.clone();
             let task: Task = Rc::new(move |it: &mut Interp, s: SceneId, ph: usize| {
+                if let TargetOp::Symbol { off, .. } = &op2 {
+                    if it.check_symbol_selection(s, lazy, &c, *off).is_err() {
+                        return;
+                    }
+                }
                 // PRIORITY runs at the geometry phase, when every GROUP of the level is in
                 let members = if matches!(op2, TargetOp::Priority { .. }) && it.scenes[s].grouped(lazy) {
                     vec![InputMember::plain(lazy)]
                 } else {
                     it.flatten_inputs(s, lazy, ph, Some(&c))
                 };
+                let direct = symbol_set && !it.is_lazy(lazy);
                 for (k, m) in members.into_iter().enumerate() {
                     let member_ctx = c.with_dependencies(&m.dependencies);
-                    let _ = it.apply_op(s, &op2, m.object, pos_plus(&c.pos, "g", k as i64), false, &member_ctx);
+                    let _ = it.apply_op(s, &op2, m.object, pos_plus(&c.pos, "g", k as i64), direct, &member_ctx);
                 }
             });
-            if phase == 7
+            if matches!(op, TargetOp::Symbol { .. }) && ctx.frame_generated() && self.follows_0_4(self.source_unit(ctx))
+            {
+                self.scenes[ctx.scene.unwrap()].tasks[6].push((ctx.pos.clone(), task));
+            } else if phase == 7
                 && matches!(op, TargetOp::Priority { .. })
                 && ctx.frame_generated()
                 && self.follows_0_4(self.source_unit(ctx))
@@ -2042,10 +2060,15 @@ impl Interp<'_> {
             } else {
                 self.defer(ctx, phase, task)?;
             }
-            if let TargetOp::Symbol { .. } = op {
+            if matches!(op, TargetOp::Symbol { .. }) && !ctx.frame_generated() {
                 // the same symbol queue runs again over generated objects (8.2 step 6)
                 let c = Rc::new(ctx.clone());
                 let task6: Task = Rc::new(move |it: &mut Interp, s: SceneId, ph: usize| {
+                    if let TargetOp::Symbol { off, .. } = &op {
+                        if it.check_symbol_selection(s, lazy, &c, *off).is_err() {
+                            return;
+                        }
+                    }
                     let members = it.flatten_inputs(s, lazy, ph, Some(&c));
                     for (k, m) in members.into_iter().enumerate() {
                         if it.is_generated(m.object) {
@@ -2058,7 +2081,7 @@ impl Interp<'_> {
                     self.scenes[s].tasks[6].push((ctx.pos.clone(), task6));
                 }
             }
-            return Ok((a.obj, true));
+            return Ok((a.obj, a.sel || self.is_lazy(a.obj)));
         }
         let Some(s) = ctx.scene else {
             if ctx.in_symbol() {
@@ -2150,7 +2173,7 @@ impl Interp<'_> {
                 self.symbol_mut(symbol).labels[index].position = Some((x.unwrap_or(0.0), y.unwrap_or(0.0)));
                 return Ok(obj);
             }
-            ("SET-SYMBOL", ObjData::Usage(u), TargetOp::Symbol { symbol, map, off }) if u.in_symbol => {
+            ("SET-SYMBOL", ObjData::Usage(u), TargetOp::Symbol { symbol, map, off, .. }) if u.in_symbol => {
                 self.check_symbol_pin_names(*symbol, Some(obj), ctx, *off)?;
                 let sym = if let Some(map) = map {
                     let target = super::terminal_maps::MapTarget::roles(self.def(u.definition));
@@ -2194,8 +2217,17 @@ impl Interp<'_> {
                 mapped["symbol"].off,
             );
         }
+        let name = seg.args.iter().find_map(|arg| {
+            if arg.start != mapped["symbol"].off {
+                return None;
+            }
+            let crate::syntax::ObjExpr::Ref(reference) = &arg.obj else { return None };
+            (reference.prefix == '$' && reference.path.is_empty() && reference.places.is_none())
+                .then(|| reference.name.as_ref().map(|name| format!("${name}")))
+                .flatten()
+        });
         if mapped["target"].obj == LEVEL {
-            return Ok((self.block_symbol(sym, map.as_deref(), seg, ctx)?, false));
+            return Ok((self.block_symbol(sym, name, map.as_deref(), seg, ctx)?, false));
         }
         self.target_each_mapped(
             kw,
@@ -2203,7 +2235,7 @@ impl Interp<'_> {
             seg,
             ctx,
             4,
-            TargetOp::Symbol { symbol: sym, map, off: seg.start },
+            TargetOp::Symbol { symbol: sym, name, map, off: seg.start },
             "target",
         )
     }
@@ -2213,6 +2245,7 @@ impl Interp<'_> {
     fn block_symbol(
         &mut self,
         sym: ObjId,
+        symbol_name: Option<String>,
         map: Option<&super::terminal_maps::TerminalMap>,
         seg: &Segment,
         ctx: &Ctx,
@@ -2243,7 +2276,10 @@ impl Interp<'_> {
                     MemberKey::M { rec, k, .. } => (*rec as i64, *k as i64),
                     _ => (0, 0),
                 };
-                self.block_symbols.entry(name).or_default().insert(ctx.member_key.clone(), (pos(&[rec, k]), sym));
+                self.block_symbols.entry(name).or_default().insert(
+                    ctx.member_key.clone(),
+                    super::scene::BlockSymbol { pos: pos(&[rec, k]), symbol: sym, name: symbol_name },
+                );
             }
             _ => {
                 let at = seg.call.as_ref().unwrap().start;
@@ -2306,6 +2342,16 @@ impl Interp<'_> {
             );
         }
         let p = self.params(kw, seg, ctx, &self.sig_params(kw, ctx), None, false, None)?;
+        if let Some(n) = get(&p, "terminals").and_then(Lit::num) {
+            if n < 0.0 || n.fract() != 0.0 {
+                return self.fail(
+                    ctx,
+                    codes::ASSERT_TERMINALS_NOT_WHOLE,
+                    "terminals= is a whole number of terminals (10.1)",
+                    call.start,
+                );
+            }
+        }
         let scope = mapped["scope"].obj;
         let mut dfn = mapped.get("definition").map(|a| a.obj);
         if (kw == "SELECT-USAGE" && dfn.is_some()) || kw == "SELECT-ANCESTOR-USAGE" {
@@ -2346,13 +2392,16 @@ impl Interp<'_> {
         if let Some(&s) = self.node_memo.get(&key) {
             return Ok((s, true));
         }
-        let params: BTreeMap<String, Lit> = p.into_iter().collect();
+        let mut params: BTreeMap<String, Lit> = p.into_iter().collect();
+        if kw == "SELECT-PIN" {
+            params.entry("recursive".into()).or_insert(Lit::Bool(false));
+        }
         let sd = SetData {
             kind: SetKind::Select {
                 keyword: kw.to_string(),
                 scope,
                 params,
-                writer: ctx.unit,
+                writer: self.source_unit(ctx),
                 definition: dfn,
                 site: Some(Rc::new(ctx.clone())),
                 off: seg.start,

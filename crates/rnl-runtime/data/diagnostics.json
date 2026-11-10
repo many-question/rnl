@@ -2292,6 +2292,16 @@
    ]
   },
   {
+   "number": "RNL3311",
+   "name": "select-symbol-dependency",
+   "severity": "error",
+   "message": "a selection of SET-SYMBOL depends on symbols; SELECT-PIN, symbol=, drawn= and scopes through pins cannot be used in the symbol queue (8.2, 10.1)",
+   "sections": [
+    "8.2",
+    "10.1"
+   ]
+  },
+  {
    "number": "RNL3400",
    "name": "define-body-host-ref",
    "severity": "error",

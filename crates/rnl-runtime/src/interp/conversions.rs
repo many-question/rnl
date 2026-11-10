@@ -133,7 +133,7 @@ impl Interp<'_> {
         }
     }
 
-    fn resolve_role_input(&mut self, input: ObjId) {
+    pub(super) fn resolve_role_input(&mut self, input: ObjId) {
         let Some(view) = self.role_inputs.get(&input).cloned() else { return };
         if view.resolved.is_some() {
             return;

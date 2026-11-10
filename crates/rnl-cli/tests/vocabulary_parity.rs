@@ -27,7 +27,6 @@ fn published_0_4() -> Value {
 /// covers it from then on; the list is empty when 0.4 is released.
 const PENDING_0_4: &[&str] = &[
     // pins, as objects and in the slots that take points (9.2.4, 10.1)
-    "SELECT-PIN",
     "TEXT",
     // routing (13.7)
     "ROUTE",
@@ -36,8 +35,6 @@ const PENDING_0_4: &[&str] = &[
     "UNROUTE-NET",
     "UNROUTE-OBJECT",
     "removed",
-    // symbol= and drawn of ASSERT-INSTANCE, which come with those of SELECT-INSTANCE (10.1)
-    "ASSERT-INSTANCE",
     // groups and tables (11.5, 14.11)
     "GROUP",
     "TABLE",
@@ -46,9 +43,6 @@ const PENDING_0_4: &[&str] = &[
     // the rest of the changes of 0.4
     "record",
     "DEVICE",
-    "SELECT-INSTANCE",
-    "SELECT-TERMINAL",
-    "SELECT-USAGE",
     // gathered from the keywords compared, so whole only when none of them is pending
     "pseudo_kinds",
     "takes",
@@ -110,7 +104,14 @@ fn number_normalized(value: &Value) -> Value {
 }
 
 fn parameter(actual: &ParamSpec, expected: &Value) {
-    keys(expected, &["name", "type", "values", "required", "default", "items", "since"]);
+    keys(expected, &["name", "type", "values", "required", "default", "items", "since", "whole"]);
+    if let Some(whole) = expected.get("whole") {
+        // The shared terminal-count condition is enforced by its handlers; pin_selections
+        // and assertions execute positive and fractional/negative probes.
+        assert_eq!(actual.name, "terminals");
+        assert_eq!(whole, &json!(true));
+        assert!(matches!(actual.ty, ParamType::Number));
+    }
     assert_eq!(actual.name, expected["name"].as_str().unwrap());
     let (kind, values) = ty(&actual.ty);
     assert_eq!(kind, expected["type"].as_str().unwrap(), "{} type", actual.name);
