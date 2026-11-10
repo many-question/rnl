@@ -203,12 +203,38 @@ impl Interp<'_> {
             }
             if let Some(&first) = kept.first() {
                 let f = self.inst_of(first).clone();
+                let modern = site.as_ref().is_some_and(|site| self.follows_0_4(self.source_unit(site)));
+                let first_terms = if modern { self.owner_terms(s, first) } else { Vec::new() };
                 for &m in &kept[1..] {
                     let i = self.inst_of(m).clone();
-                    let same = i.letter == f.letter
-                        && i.model.as_ref().map(|x| x.to_lowercase()) == f.model.as_ref().map(|x| x.to_lowercase())
-                        && i.nodes.len() == f.nodes.len()
-                        && i.params == f.params;
+                    let same = if modern {
+                        let names_equal = |a: &str, b: &str| {
+                            if i.case_sensitive || f.case_sensitive {
+                                a == b
+                            } else {
+                                a.eq_ignore_ascii_case(b)
+                            }
+                        };
+                        let same_model = match (&i.model, &f.model) {
+                            (Some(a), Some(b)) => names_equal(a, b),
+                            (None, None) => true,
+                            _ => false,
+                        };
+                        let terms = self.owner_terms(s, m);
+                        i.letter == f.letter
+                            && same_model
+                            && terms.len() == first_terms.len()
+                            && terms.iter().zip(&first_terms).all(|((_, a), (_, b))| match (a, b) {
+                                (Some(a), Some(b)) => names_equal(a, b),
+                                (None, None) => true,
+                                _ => false,
+                            })
+                    } else {
+                        i.letter == f.letter
+                            && i.model.as_ref().map(|x| x.to_lowercase()) == f.model.as_ref().map(|x| x.to_lowercase())
+                            && i.nodes.len() == f.nodes.len()
+                            && i.params == f.params
+                    };
                     if !same {
                         self.diag_site(
                             Severity::Warning,

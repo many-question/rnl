@@ -1,5 +1,7 @@
 # rnl-runtime
 
+In draft 0.4, a bundle's terminals follow the first member's terminal names. Each terminal reaches the terminal with that name in every member, even when its index differs; a member without that name contributes nothing. Unnamed terminals keep their electrical number. Net references, pin connections and net attributes use the same correspondence. When all contributing terminals share a net, the reference and attribute give that one net. Differences in model or subcircuit name, or in terminal count, names or order, give a warning; differences only in parameters do not (11.8). Released versions retain their index correspondence and warning rules.
+
 The language core of RNL 0.3, the language standard in [`spec/`](../../spec/README.md), and of RNL 0.2, which it still reads. It takes a host document that a host adapter read (levels, instances, nets, and the records cut out of comment carriers) and returns an interpretation: the diagnostics and the effective model of every drawing level.
 
 | Module | Content |
