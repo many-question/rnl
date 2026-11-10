@@ -1814,6 +1814,7 @@ fn a_text_is_as_wide_as_it_is_drawn() {
         halign: halign.to_string(),
         valign: "baseline".to_string(),
         rotate,
+        fix_rotate: false,
         style: Vec::new(),
     };
     let text_box =
@@ -2407,4 +2408,28 @@ fn the_series_0_2_and_0_3_give_the_same_structure() {
         (hosts(&s.power.supply), hosts(&s.power.ground), rows, depth, solved.report.inert_objectives.clone())
     };
     assert_eq!(shape("0.2"), shape("0.3"));
+}
+
+#[test]
+fn fixed_rotation_text_boxes_move_the_anchor_without_turning_the_extent() {
+    use rnl_runtime::problem::{Filler, TextInfo};
+    for rotate in [0.0, 90.0, 180.0, 270.0] {
+        let text = TextInfo {
+            attach: Filler::Other(String::new()),
+            key: None,
+            lines: rnl_runtime::markup::parse("asymmetric ink"),
+            halign: "end".into(),
+            valign: "top".into(),
+            rotate,
+            fix_rotate: true,
+            style: Vec::new(),
+        };
+        for turn in Orient::ALL {
+            let at = turn.apply((2.0, 3.0));
+            let want =
+                crate::structure::text_box(&text, &(from_f64(at.0).unwrap(), from_f64(at.1).unwrap()), Orient::R0);
+            let got = crate::structure::text_box(&text, &(int(2), int(3)), turn);
+            assert_eq!(got, want, "{turn:?} rotate={rotate}");
+        }
+    }
 }

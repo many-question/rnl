@@ -124,6 +124,9 @@ pub fn write(request: &WriteRequest) -> Result<String, String> {
 
     if version != "0.4" {
         for op in &ops {
+            if matches!(&op.op, Op::AddText { fix_rotate: Some(_), .. }) {
+                return Err("fix_rotate requires language_version 0.4".into());
+            }
             if let Op::DefineSymbol { pins, .. } = &op.op {
                 if pins.iter().any(|p| p.terminals.is_empty() || !p.names.is_empty() || p.bus && p.terminals.len() == 1)
                 {

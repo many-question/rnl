@@ -949,7 +949,8 @@ pub(crate) fn text_box(t: &TextInfo, at: &(Q, Q), turn: Orient) -> Option<[Q; 4]
     // which way the text reads, `u`, and its glyphs stand, `v`, turned by its rotate and then
     // with its owner, as rnl_render's text() has them: a text that would read down reads up, one
     // that would read leftwards reads rightwards, each from the other end of its box
-    let (u0, v0, u1, v1) = quarter.then(turn).matrix();
+    let text_turn = if t.fix_rotate { Orient::R0 } else { turn };
+    let (u0, v0, u1, v1) = quarter.then(text_turn).matrix();
     let (u, v) = ((u0, u1), (v0, v1));
     let vertical = u.0 == 0;
     let backwards = if vertical { u.1 < 0 } else { u.0 < 0 };

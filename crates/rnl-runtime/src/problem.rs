@@ -269,6 +269,8 @@ pub struct TextInfo {
     pub halign: String,
     pub valign: String,
     pub rotate: f64,
+    /// Rotate in scene axes while the anchor still follows its owner (13.3).
+    pub fix_rotate: bool,
     /// The style properties that decide its extent and that some RNL gives it: `size`, `font`,
     /// `bold`, `italic` (9.3). The renderer's defaults fill in the rest.
     pub style: Vec<(String, Lit)>,
@@ -894,6 +896,9 @@ pub fn canonical_sig1(p: &LevelProblem) -> String {
             c.str(&t.halign);
             c.str(&t.valign);
             c.num(t.rotate);
+            if t.fix_rotate {
+                c.word("fix-rotate");
+            }
             for (k, v) in &t.style {
                 c.str(k);
                 c.word(&written_lit(v));

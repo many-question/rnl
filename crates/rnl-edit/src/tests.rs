@@ -1106,3 +1106,36 @@ fn pin_editing_rejects_unwriteable_vertices_and_invalid_metadata() {
     );
     assert!(write(&req).is_err());
 }
+
+#[test]
+fn fixed_rotation_round_trips_explicit_false_over_a_symbol_label() {
+    let net = "* text\nR1 a b 1k\n.end\n";
+    let symbol = r#"* @RNL {
+* $S = @DEFINE-SYMBOL { ? @TEXT("old", key="name", fix_rotate=true) => @PLACE(2,3) };
+* #R1 @SET-SYMBOL $S => @PLACE(10,20) => @ORIENT("R90")
+* }
+.end"#;
+    for fixed in [true, false] {
+        let ops = json!([{"level":"file", "op":"add-text", "attach":"#R1", "key":"name", "markup":"new", "fix_rotate":fixed}]);
+        let mut req = request("spice", net, ops.clone());
+        assert!(write(&req).unwrap_err().contains("language_version 0.4"));
+        req.language_version = Some("0.4".into());
+        let out = write(&req).unwrap();
+        assert!(out.contains(&format!("fix_rotate={fixed}")), "{out}");
+        // The writer creates records in a bare netlist. Supply a symbol afterwards to verify
+        // that an explicit false also overrides the earlier symbol-label layer (13.3).
+        let out = out.replace(".end", symbol);
+        let files = MemoryProvider::new().with(entry("spice"), &out);
+        let r =
+            rnl_view::interpret(entry("spice"), Some("spice"), &files, &Options { std: false, ..Options::default() })
+                .unwrap();
+        assert!(!r.diagnostics().iter().any(|d| d.severity == Severity::Error), "{out}");
+        let text = &r.model.levels[0].texts[0];
+        assert_eq!(text.fix_rotate, Some(fixed));
+        assert_eq!(text.anchor, (7.0, 22.0));
+        assert_eq!(text.orient, if fixed { rnl_runtime::geom::Orient::R0 } else { rnl_runtime::geom::Orient::R90 });
+        assert_eq!(text.markup, "new");
+    }
+    assert!(ops::parse(0, &json!({"level":"file", "op":"add-text", "at":[0,0], "markup":"bad", "fix_rotate":"true"}))
+        .is_err());
+}

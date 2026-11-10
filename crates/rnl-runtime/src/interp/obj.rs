@@ -173,6 +173,7 @@ pub struct TextItems {
     pub halign: Option<String>,
     pub valign: Option<String>,
     pub rotate: Option<f64>,
+    pub fix_rotate: Option<bool>,
     pub dx: Option<f64>,
     pub dy: Option<f64>,
 }
@@ -190,6 +191,9 @@ impl TextItems {
         }
         if o.rotate.is_some() {
             self.rotate = o.rotate;
+        }
+        if o.fix_rotate.is_some() {
+            self.fix_rotate = o.fix_rotate;
         }
         if o.dx.is_some() {
             self.dx = o.dx;

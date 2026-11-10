@@ -136,6 +136,9 @@ pub fn level(p: &LevelProblem, solver_options: &str) -> Value {
                     "halign": t.halign, "valign": t.valign, "rotate": t.rotate,
                     "style": t.style.iter().map(|(k, v)| (k.clone(), lit(v))).collect::<serde_json::Map<_, _>>(),
                 }));
+                if t.fix_rotate {
+                    m.get_mut("text").unwrap().as_object_mut().unwrap().insert("fix_rotate".into(), json!(true));
+                }
             }
             v
         }).collect::<Vec<_>>(),

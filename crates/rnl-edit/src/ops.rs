@@ -60,6 +60,7 @@ pub enum Op {
         halign: Option<String>,
         valign: Option<String>,
         rotate: Option<f64>,
+        fix_rotate: Option<bool>,
         size: Option<f64>,
         style: Vec<(String, Literal)>,
     },
@@ -210,9 +211,21 @@ pub fn parse(k: usize, value: &Value) -> Result<LevelOp, String> {
         "add-usage" => &["name", "definition", "attach", "params", "symbol", "style", "at", "orient"],
         "add-point" => &["name", "at", "junction"],
         "add-wire" => &["name", "nets", "via", "mode", "style"],
-        "add-text" => {
-            &["name", "attach", "key", "markup", "lines", "at", "offset", "halign", "valign", "rotate", "size", "style"]
-        }
+        "add-text" => &[
+            "name",
+            "attach",
+            "key",
+            "markup",
+            "lines",
+            "at",
+            "offset",
+            "halign",
+            "valign",
+            "rotate",
+            "fix_rotate",
+            "size",
+            "style",
+        ],
         "add-to" | "remove-from" => &["items", "set"],
         "use-package" => &["name", "version", "path"],
         "add-shape" => &["name", "shape", "points", "params", "style", "layer"],
@@ -345,6 +358,7 @@ pub fn parse(k: usize, value: &Value) -> Result<LevelOp, String> {
                 halign: r.opt_string("halign")?,
                 valign: r.opt_string("valign")?,
                 rotate: r.opt_num("rotate")?,
+                fix_rotate: r.opt_bool("fix_rotate")?,
                 size: r.opt_num("size")?,
                 style: r.style()?,
             }
