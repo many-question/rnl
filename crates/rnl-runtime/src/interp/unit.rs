@@ -362,19 +362,69 @@ pub(crate) fn version_key(v: &str) -> (i64, i64) {
     }
 }
 
-fn same_major(a: &str, b: &str) -> bool {
-    let (ka, kb) = (version_key(a), version_key(b));
-    if ka.0 == 0 || kb.0 == 0 {
-        ka == kb
+/// Decimal parts compared by length and digits, without a machine-integer limit (16.1).
+type DecimalVersion<'a> = ((usize, &'a str), (usize, &'a str));
+
+fn decimal_version(v: &str) -> Option<DecimalVersion<'_>> {
+    let (a, b) = v.split_once('.')?;
+    if [a, b].iter().any(|s| s.is_empty() || !s.bytes().all(|c| c.is_ascii_digit())) {
+        return None;
+    }
+    fn part(s: &str) -> (usize, &str) {
+        let digits = s.trim_start_matches('0');
+        (digits.len(), digits)
+    }
+    Some((part(a), part(b)))
+}
+
+/// The same numeric draft version denotes one package reading, whatever its leading zeroes.
+pub(super) fn package_cache_key(name: String, version: String, modern: bool) -> (String, String, bool) {
+    let version = if modern {
+        decimal_version(&version).map_or_else(
+            || version.clone(),
+            |(a, b)| format!("{}.{}", if a.1.is_empty() { "0" } else { a.1 }, if b.1.is_empty() { "0" } else { b.1 }),
+        )
     } else {
-        ka.0 == kb.0
+        version
+    };
+    (name, version, modern)
+}
+
+pub(super) fn valid_package_version(v: &str) -> bool {
+    decimal_version(v).is_some()
+}
+
+pub(super) fn package_version_cmp(a: &str, b: &str, modern: bool) -> std::cmp::Ordering {
+    if modern {
+        decimal_version(a).cmp(&decimal_version(b))
+    } else {
+        version_key(a).cmp(&version_key(b))
     }
 }
 
-pub(super) fn version_ok(want: Option<&str>, have: &str) -> bool {
+pub(super) fn same_package_major(a: &str, b: &str, modern: bool) -> bool {
+    if modern {
+        let (Some(ka), Some(kb)) = (decimal_version(a), decimal_version(b)) else { return false };
+        if ka.0 .0 == 0 || kb.0 .0 == 0 {
+            ka == kb
+        } else {
+            ka.0 == kb.0
+        }
+    } else {
+        let (ka, kb) = (version_key(a), version_key(b));
+        if ka.0 == 0 || kb.0 == 0 {
+            ka == kb
+        } else {
+            ka.0 == kb.0
+        }
+    }
+}
+
+pub(super) fn version_ok(want: Option<&str>, have: &str, modern: bool) -> bool {
     match want {
-        None => true,
-        Some(w) => w == have || (same_major(w, have) && version_key(have) > version_key(w)),
+        None => !modern || valid_package_version(have),
+        Some(w) if modern => same_package_major(w, have, true) && !package_version_cmp(have, w, true).is_lt(),
+        Some(w) => w == have || (same_package_major(w, have, false) && version_key(have) > version_key(w)),
     }
 }
 
@@ -382,8 +432,8 @@ pub(super) fn version_ok(want: Option<&str>, have: &str) -> bool {
 /// its VERSION, the language version it is written in (16.1). The header record is the file's
 /// first record, and its statements count as reading the file counts them (`Interp::read_header`):
 /// a PACKAGE or a VERSION written in a comment or a string, such as an example in the file's header
-/// comment, declares nothing; the first VERSION stands; and a PACKAGE takes the place of one before
-/// it.
+/// comment, declares nothing; the first VERSION stands. In draft 0.4 the first PACKAGE
+/// stands too; released versions keep their last declaration.
 fn header_decls(text: &str) -> (Option<(String, String)>, Option<String>) {
     let recs = scan_run(&package_lines(text), "", &mut crate::diag::Sink::new());
     let Some(first) = recs.first() else { return (None, None) };
@@ -398,6 +448,7 @@ fn header_decls(text: &str) -> (Option<(String, String)>, Option<String>) {
         _ => None,
     };
     let (mut package, mut version, mut versions) = (None, None, 0);
+    let (mut first_package, mut packages) = (None, 0);
     for m in &body.members {
         if m.error.is_some() || m.segments.len() != 1 || m.bind().is_some() {
             continue;
@@ -407,6 +458,8 @@ fn header_decls(text: &str) -> (Option<(String, String)>, Option<String>) {
         let kw = call.kw.as_str();
         if kw == "VERSION" {
             versions += 1;
+        } else if kw == "PACKAGE" {
+            packages += 1;
         }
         if !(kw == "PACKAGE" || (kw == "VERSION" && versions == 1)) {
             continue;
@@ -419,7 +472,13 @@ fn header_decls(text: &str) -> (Option<(String, String)>, Option<String>) {
             version = text_of(p.get("version"));
         } else {
             package = text_of(p.get("name")).zip(text_of(p.get("version")));
+            if packages == 1 {
+                first_package = package.clone();
+            }
         }
+    }
+    if version.as_deref().is_some_and(keeps_0_4) {
+        package = first_package.filter(|(_, v)| valid_package_version(v));
     }
     (package, version)
 }
@@ -1311,8 +1370,24 @@ impl Interp<'_> {
                         self.sink.error(codes::PACKAGE_DECL_OUTSIDE_PACKAGE_FILE, message, Some(loc));
                         continue;
                     }
+                    if self.follows_0_4(u) && self.units[u].header_kws.iter().filter(|k| *k == "PACKAGE").count() > 1 {
+                        self.diag_in(
+                            Severity::Error,
+                            codes::PACKAGE_DECLARED_TWICE,
+                            "a package file declares PACKAGE only once; the first declaration stands (2.7, 16.2)",
+                            Some(loc),
+                            &pkg,
+                        );
+                        continue;
+                    }
                     let name = str_val(p.get("name")).unwrap_or_default();
                     let version = str_val(p.get("version")).unwrap_or_default();
+                    if self.follows_0_4(u) && !valid_package_version(&version) {
+                        self.diag_in(Severity::Error, codes::PACKAGE_VERSION_MALFORMED,
+                            format!("@PACKAGE version={version:?} must be two unsigned decimal integers separated by a dot; this file is not a package (16.1, 16.2)"), Some(loc), &pkg);
+                        self.units[u].ok = false;
+                        continue;
+                    }
                     self.units[u].pkg_name = name.clone();
                     self.units[u].pkg_version = version.clone();
                     // a package checked on its own is the one that its references, and the
@@ -1320,7 +1395,7 @@ impl Interp<'_> {
                     // or a reference found is there already (16.2)
                     if !name.is_empty() {
                         let language = self.version_of(Some(u));
-                        self.packages.entry((name, version, language == "0.4")).or_insert(u);
+                        self.packages.entry(package_cache_key(name, version, language == "0.4")).or_insert(u);
                     }
                 }
                 "USE-ALIASES" => self.use_aliases(u, &p, &loc),
@@ -1954,6 +2029,18 @@ impl Interp<'_> {
             offset: call.start,
             pkg: None,
         };
+        if self.follows_0_4(self.use_writer(&decl))
+            && decl.version.as_deref().is_some_and(|v| !valid_package_version(v))
+        {
+            decl.pkg =
+                self.resolve_package(&decl, loc.clone(), None, if reference { "reference" } else { "USE-PACKAGE" });
+            if reference {
+                self.units[u].refs.push(decl);
+            } else {
+                self.units[u].uses.push(decl);
+            }
+            return;
+        }
         if self.follows_0_4(u) && in_header {
             let previous = if reference { &self.units[u].refs } else { &self.units[u].uses };
             let previous = previous.iter().position(|old| old.in_header && old.name == name && old.rec != rec);
@@ -1986,7 +2073,12 @@ impl Interp<'_> {
                     let Some(p) = decl.pkg else { return };
                     Some(self.units[p].pkg_version.clone())
                 };
-                if (old_version.is_some() && new_version.is_some() && old_version != new_version) || !same_body {
+                if (old_version
+                    .as_ref()
+                    .zip(new_version.as_ref())
+                    .is_some_and(|(a, b)| !package_version_cmp(a, b, true).is_eq()))
+                    || !same_body
+                {
                     self.diag_in(Severity::Error, codes::HEADER_PACKAGE_LANGUAGE_CONFLICT,
                         format!("package {name} has different versions or inline content in header records; this language-qualified reference fails (2.8)"),
                         Some(loc), &pkg);
@@ -2076,6 +2168,13 @@ impl Interp<'_> {
         let kind = if what == "USE-ALIASES" { "alias package" } else { "package" };
         // a reference in the header record of a package file is reported in that package (7.6)
         let pkg = if what == "reference" { self.units[decl.unit].pkg_name.clone() } else { String::new() };
+        let modern = self.follows_0_4(self.use_writer(decl));
+        if modern && decl.version.as_deref().is_some_and(|v| !valid_package_version(v)) {
+            let version = decl.version.as_deref().unwrap();
+            self.diag_in(Severity::Error, codes::PACKAGE_VERSION_MALFORMED,
+                format!("@{what} version={version:?} must be two unsigned decimal integers separated by a dot; this reference fails without lookup (16.1, 16.2)"), Some(loc), &pkg);
+            return None;
+        }
         if let Some(body) = &decl.body {
             let mut u = Unit::new(UnitKind::Package, &format!("{} (embedded)", decl.name));
             u.pkg_name = decl.name.clone();
@@ -2088,13 +2187,15 @@ impl Interp<'_> {
             self.read_embedded(id, body.clone(), decl.rec);
             return Some(id);
         }
-        self.scan_packages(&decl.name);
+        if !modern {
+            self.scan_packages(&decl.name);
+        }
         let mut cand: Option<(String, String, String)> = None;
         if let Some(path) = &decl.path {
             let target = join(&base.unwrap_or_else(|| self.file_dir(decl.unit)), path);
             if let Some(text) = self.provider.read(&target) {
                 if let Some((n, v)) = scan_package_decl(&text) {
-                    if n == decl.name && version_ok(decl.version.as_deref(), &v) {
+                    if n == decl.name && version_ok(decl.version.as_deref(), &v, modern) {
                         if let Some(want) = &decl.version {
                             if *want != v {
                                 self.diag_in(
@@ -2107,6 +2208,10 @@ impl Interp<'_> {
                         }
                         cand = Some((n, v, target));
                     }
+                } else if modern {
+                    self.diag_in(Severity::Error, codes::PACKAGE_PATH_NOT_PACKAGE,
+                        format!("{path} has no valid PACKAGE declaration; this {what} fails without looking up another file (2.7, 16.2)"), Some(loc), &pkg);
+                    return None;
                 }
             }
             if cand.is_none() {
@@ -2119,6 +2224,9 @@ impl Interp<'_> {
             }
         }
         if cand.is_none() {
+            if modern {
+                self.scan_packages(&decl.name);
+            }
             let same: Vec<(String, String, String)> =
                 self.pkg_files[&decl.name].iter().filter(|c| c.0 == decl.name).cloned().collect();
             let reader = self.version_of(Some(self.use_writer(decl)));
@@ -2126,14 +2234,19 @@ impl Interp<'_> {
                 finds_unnamed(self.pkg_languages.get(&c.2).map_or(DEFAULT_VERSION, String::as_str), &reader)
             };
             if let Some(want) = &decl.version {
-                if let Some(c) = same.iter().find(|c| c.1 == *want) {
+                if let Some(c) =
+                    same.iter()
+                        .find(|c| if modern { package_version_cmp(&c.1, want, true).is_eq() } else { c.1 == *want })
+                {
                     cand = Some(c.clone());
                 } else {
                     let mut newer: Vec<&(String, String, String)> = same
                         .iter()
-                        .filter(|c| same_major(&c.1, want) && version_key(&c.1) > version_key(want))
+                        .filter(|c| {
+                            same_package_major(&c.1, want, modern) && package_version_cmp(&c.1, want, modern).is_gt()
+                        })
                         .collect();
-                    newer.sort_by_key(|c| version_key(&c.1));
+                    newer.sort_by(|a, b| package_version_cmp(&a.1, &b.1, modern));
                     if let Some(c) = newer.first() {
                         self.diag_in(
                             Severity::Warning,
@@ -2145,7 +2258,7 @@ impl Interp<'_> {
                     }
                 }
             } else if let Some(c) =
-                same.iter().filter(found).min_by_key(|c| std::cmp::Reverse(version_key(&c.1))).or_else(|| {
+                same.iter().filter(found).min_by(|a, b| package_version_cmp(&b.1, &a.1, modern)).or_else(|| {
                     same.iter()
                         .filter(|c| {
                             !package_languages_match(
@@ -2153,7 +2266,7 @@ impl Interp<'_> {
                                 &reader,
                             )
                         })
-                        .min_by_key(|c| std::cmp::Reverse(version_key(&c.1)))
+                        .min_by(|a, b| package_version_cmp(&b.1, &a.1, modern))
                 })
             {
                 // the newest found, and of its copies the one of the first package directory, as
@@ -2198,7 +2311,7 @@ impl Interp<'_> {
         if self.reject_package_language(&n, &reader, &language, Some(loc), &pkg, what) {
             return None;
         }
-        if let Some(&u) = self.packages.get(&(n.clone(), v.clone(), language == "0.4")) {
+        if let Some(&u) = self.packages.get(&package_cache_key(n.clone(), v.clone(), language == "0.4")) {
             return Some(u);
         }
         Some(self.load_package_file(&path, Some((n, v))))
@@ -2254,7 +2367,7 @@ impl Interp<'_> {
         let id = self.units.len();
         self.units.push(u);
         if let Some((name, version)) = key {
-            self.packages.insert((name, version, language == "0.4"), id);
+            self.packages.insert(package_cache_key(name, version, language == "0.4"), id);
         }
         let rec_ids: Vec<RecId> = recs.into_iter().map(|r| self.add_record(r, id)).collect();
         self.unit_recs.push(rec_ids);

@@ -85,8 +85,8 @@ fn target_errors_are_reported_and_prevent_success() {
 fn explicit_custom_packages_are_upgraded_with_the_group() {
     let files = MemoryProvider::new()
         .with("/w/top.sp", "* title\n* @RNL(type=\"header\") { @VERSION(\"0.3\"); @USE-PACKAGE(name=\"custom\", path=\"custom.rnl\") }\n.end\n")
-        .with("/w/custom.rnl", "@RNL(type=\"header\") { @VERSION(\"0.3\"); @PACKAGE(name=\"custom\", version=\"1\"); @USE-PACKAGE(name=\"nested\", path=\"nested.rnl\") }\n")
-        .with("/w/nested.rnl", "@RNL(type=\"header\") { @VERSION(\"0.2\"); @PACKAGE(name=\"nested\", version=\"1\") }\n");
+        .with("/w/custom.rnl", "@RNL(type=\"header\") { @VERSION(\"0.3\"); @PACKAGE(name=\"custom\", version=\"1.0\"); @USE-PACKAGE(name=\"nested\", path=\"nested.rnl\") }\n")
+        .with("/w/nested.rnl", "@RNL(type=\"header\") { @VERSION(\"0.2\"); @PACKAGE(name=\"nested\", version=\"1.0\") }\n");
     let result = upgrade("/w/top.sp", &files, &options()).unwrap();
     assert_eq!(result.files.len(), 3);
     assert!(result.files["/w/custom.rnl"].contains("@VERSION(\"0.4\")"));
@@ -118,7 +118,7 @@ fn a_second_upgrade_has_no_changes() {
 
 #[test]
 fn a_package_entry_uses_its_own_header() {
-    let source = "@RNL(type=\"header\") { @VERSION(\"0.3\"); @PACKAGE(name=\"custom\", version=\"1\") }\n";
+    let source = "@RNL(type=\"header\") { @VERSION(\"0.3\"); @PACKAGE(name=\"custom\", version=\"1.0\") }\n";
     let result = upgrade("custom.rnl", &MemoryProvider::new().with("custom.rnl", source), &options()).unwrap();
     assert_eq!(result.files["custom.rnl"], source.replace("0.3", "0.4"));
     assert!(result.report.successful(), "{:?}", result.report);
@@ -137,4 +137,13 @@ fn solver_records_are_discarded_and_request_solving_without_a_conversion_failure
     assert!(result.report.files[0].needs_solve);
     assert!(result.report.files[0].changes.iter().any(|c| c.rule == "discard-solver-record" && c.line == 4));
     assert!(result.report.successful(), "{:?}", result.report);
+}
+
+#[test]
+fn a_malformed_legacy_package_version_is_not_reported_as_a_successful_upgrade() {
+    let source = r#"@RNL(type="header") { @VERSION("0.3"); @PACKAGE(name="custom", version="1") }"#;
+    let result = upgrade("custom.rnl", &MemoryProvider::new().with("custom.rnl", source), &options()).unwrap();
+    assert!(!result.report.successful());
+    assert!(result.report.diagnostics.iter().any(|d| d.code.as_deref() == Some("RNL2219")));
+    assert!(result.files["custom.rnl"].contains(r#"version="1""#));
 }

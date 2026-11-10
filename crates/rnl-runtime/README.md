@@ -31,6 +31,8 @@ In a level of a file of the draft 0.3, the hint of a fact discarded in a conflic
 
 ## Packages
 
+Draft 0.4 package versions are two unsigned decimal integers, with no machine-integer limit. Invalid declarations or references fail before lookup; an existing `path=` without a valid package declaration fails without falling back to another file. The first PACKAGE declaration stands and later declarations are errors. Numeric spellings with leading zeroes share a package cache identity. `interp::catalog::package_version_key` provides the same version order to catalogs while preserving released-version ordering.
+
 A USE-PACKAGE finds a package by `path=`, relative to the file that writes it, or by its name and version in the package directories of the `Provider` (16.2). The header record of a package file may reference other packages with USE-PACKAGE, a `path=` there relative to the package file. A reference has no body; USE-PACKAGE in a package's other records, and in an inline package, is an error.
 
 - **What a package brings in.** Used, a package brings in what it references first, in the order written and each expanded the same way, then itself; within one USE-PACKAGE each package is placed once, at its first place. Its statements take the position of that USE-PACKAGE, in the order of what it brings in (`unit::Place`), so the rules of a package collection keep their order.

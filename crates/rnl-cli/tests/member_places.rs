@@ -176,8 +176,8 @@ fn a_place_that_depends_on_its_own_edit_fails_as_a_cycle() {
 #[test]
 fn package_place_bindings_are_evaluated_separately_in_each_level() {
     let files = MemoryProvider::new()
-        .with("p.rnl", "@RNL(type=\"header\") { @VERSION(\"0.4\"); @PACKAGE(name=\"p\",version=\"1\") }\n@RNL { $MEMBERS = {}; $PICK = $MEMBERS{end:1}; $ALIAS = $PICK }")
-        .with("t.sp", "* t\n* @RNL(type=\"header\") { @VERSION(\"0.4\"); @USE-PACKAGE(name=\"p\",version=\"1\",path=\"p.rnl\") }\nR1 a b 1k\nR2 b 0 1k\n* @RNL { $ALIAS @ORDER(\"left-to-right\"); {#R1 #R2} @ADD-TO $MEMBERS }\n.subckt child a b\nR3 a b 1k\nR4 b 0 1k\n* @RNL { $ALIAS @ORDER(\"left-to-right\"); {#R3 #R4} @ADD-TO $MEMBERS }\n.ends\n.end\n");
+        .with("p.rnl", "@RNL(type=\"header\") { @VERSION(\"0.4\"); @PACKAGE(name=\"p\",version=\"1.0\") }\n@RNL { $MEMBERS = {}; $PICK = $MEMBERS{end:1}; $ALIAS = $PICK }")
+        .with("t.sp", "* t\n* @RNL(type=\"header\") { @VERSION(\"0.4\"); @USE-PACKAGE(name=\"p\",version=\"1.0\",path=\"p.rnl\") }\nR1 a b 1k\nR2 b 0 1k\n* @RNL { $ALIAS @ORDER(\"left-to-right\"); {#R1 #R2} @ADD-TO $MEMBERS }\n.subckt child a b\nR3 a b 1k\nR4 b 0 1k\n* @RNL { $ALIAS @ORDER(\"left-to-right\"); {#R3 #R4} @ADD-TO $MEMBERS }\n.ends\n.end\n");
     let r = interpret_file(Path::new("t.sp"), None, &files, &Options { std: false, ..Options::solver() }).unwrap();
     assert_eq!(errors(&r), Vec::new());
     let orders: Vec<Vec<String>> = r

@@ -103,6 +103,35 @@ pub fn version_key(version: &str) -> (i64, i64) {
     super::unit::version_key(version)
 }
 
+/// A total order for package versions, retaining released parsing and supporting arbitrary
+/// unsigned decimal components for packages written in draft 0.4 (16.1, 16.2).
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PackageVersionKey {
+    major: (i128, String),
+    minor: (i128, String),
+}
+
+pub fn package_version_key(version: &str, language: &str) -> PackageVersionKey {
+    fn digits(s: &str) -> (i128, String) {
+        let s = s.trim_start_matches('0');
+        (s.len() as i128, s.to_string())
+    }
+    fn released(n: i64) -> (i128, String) {
+        if n < 0 {
+            (i128::from(n), String::new())
+        } else {
+            digits(&n.to_string())
+        }
+    }
+    if super::unit::keeps_0_4(language) && super::unit::valid_package_version(version) {
+        let (a, b) = version.split_once('.').unwrap();
+        PackageVersionKey { major: digits(a), minor: digits(b) }
+    } else {
+        let (a, b) = version_key(version);
+        PackageVersionKey { major: released(a), minor: released(b) }
+    }
+}
+
 /// What the package file at `path` defines, read as it is when it is checked on its own with
 /// `options` ([`crate::check_package`], 2.7), the packages it references and the standard package
 /// of its language version brought in. None when the file is not a package.

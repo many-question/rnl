@@ -167,7 +167,7 @@ fn released_versions_keep_the_old_signature_and_name_validation() {
 
 #[test]
 fn packages_precede_file_items_and_check_names_without_case() {
-    let package = r#"@RNL(type="header") { @VERSION("0.4"); @PACKAGE(name="devices", version="1"); @DEVICE(model="cell", terminals=["package","return"], type="pmos"); @DEVICE(model="cell", terminals=["d","D"], type="bad") }"#;
+    let package = r#"@RNL(type="header") { @VERSION("0.4"); @PACKAGE(name="devices", version="1.0"); @DEVICE(model="cell", terminals=["package","return"], type="pmos"); @DEVICE(model="cell", terminals=["d","D"], type="bad") }"#;
     let main = spice(
         "0.4",
         r#"@DEVICE(name="X*", terminals=["file","return"]); @USE-PACKAGE(name="devices", path="devices.rnl")"#,
