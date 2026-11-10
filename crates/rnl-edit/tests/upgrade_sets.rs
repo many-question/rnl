@@ -2,6 +2,17 @@ use rnl_edit::upgrade::{upgrade, UpgradeOptions};
 use rnl_runtime::source::MemoryProvider;
 
 #[test]
+fn default_net_labels_stay_off_and_explicit_whole_net_routes_win() {
+    let source = "* title\n* @RNL(type=\"header\") { @VERSION(\"0.3\") }\nR1 a b 1k\nR2 a b 2k\n* @RNL { {&a &b} @REMOVE-FROM $WIRE_NET_SET; &b @ROUTE; # @SELECT-TERMINAL(wired=false) => @TEXT(\"${net}\", key=\"netname\") }\n.end\n";
+    let r = upgrade("t.sp", &MemoryProvider::new().with("t.sp", source), &UpgradeOptions::default()).unwrap();
+    let text = &r.files["t.sp"];
+    assert!(text.contains("# @SELECT-PIN(recursive=true) => @REMOVE-FROM $LABEL_TERMINAL_SET"));
+    assert!(text.contains("{&a} @UNROUTE-NET(priority=\"high\")"), "{text}");
+    assert!(text.contains("&b @ROUTE-NET"));
+    assert!(text.contains("@TEXT(\"${net}\", key=\"netname\")"));
+}
+
+#[test]
 fn removed_routing_set_retains_its_selection_and_user_edits() {
     let source="* title\n* @RNL(type=\"header\") { @VERSION(\"0.3\") }\nR1 a 0 1k\n* @RNL { &a @REMOVE-FROM $WIRE_NET_SET; $WIRE_NET_SET @ROUTE }\n.end\n";
     let result = upgrade("t.sp", &MemoryProvider::new().with("t.sp", source), &UpgradeOptions::default()).unwrap();
@@ -52,7 +63,9 @@ fn new_policy_without_a_header_keeps_host_lines_and_crlf() {
     let source = "* title\r\n.subckt child a\r\nR1 a 0 1k\r\n.ends\r\n.end\r\n";
     let result = upgrade("t.sp", &MemoryProvider::new().with("t.sp", source), &UpgradeOptions::default()).unwrap();
     let text = &result.files["t.sp"];
-    assert!(text.contains("\r\n* @RNL { $RNL_UPGRADE_PORT_FILL_SET"), "{text}");
+    let policy = text.split("\r\n").find(|line| line.starts_with("* @RNL {")).unwrap();
+    assert!(policy.contains("$RNL_UPGRADE_PORT_FILL_SET"), "{text}");
+    assert!(policy.contains("@REMOVE-FROM $LABEL_TERMINAL_SET"), "{text}");
     assert!(!text.replace("\r\n", "").contains('\n'));
     let host = |s: &str| s.lines().filter(|l| !l.starts_with("* @RNL")).collect::<Vec<_>>().join("\n");
     assert_eq!(host(source), host(text));
