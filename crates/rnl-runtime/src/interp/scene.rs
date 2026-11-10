@@ -1435,6 +1435,16 @@ impl Interp<'_> {
     // ------------------------------------------------------------------ selections (10.1)
 
     pub(super) fn select(&mut self, s: SceneId, sel: ObjId, phase: usize, ctx: Option<&Ctx>) -> Vec<ObjId> {
+        let mut selected = self.select_unfiltered(s, sel, phase, ctx);
+        if let SetKind::Select { site: Some(site), .. } = &self.set(sel).kind {
+            let mut site = (**site).clone();
+            site.scene = Some(s);
+            selected.retain(|object| self.language_reaches_object(*object, &site));
+        }
+        selected
+    }
+
+    fn select_unfiltered(&mut self, s: SceneId, sel: ObjId, phase: usize, ctx: Option<&Ctx>) -> Vec<ObjId> {
         let SetKind::Select { keyword, scope, params, writer, definition, site, off } = self.set(sel).kind.clone()
         else {
             unreachable!()

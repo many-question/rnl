@@ -26,7 +26,10 @@ impl Interp<'_> {
             let effective = self.effective_packages(level);
             let mut declarations = Vec::new();
             for entry in &effective.entries {
-                declarations.extend(self.units[entry.unit].devices.clone());
+                declarations.extend(self.units[entry.unit].devices.iter().cloned().map(|mut declaration| {
+                    declaration.languages = declaration.languages.intersect(entry.languages);
+                    declaration
+                }));
             }
             // Includes may put their host lines into an outer circuit. Their header DEVICE
             // declarations still act on those lines, without affecting the outer file's lines.
@@ -48,6 +51,9 @@ impl Interp<'_> {
                 mtype: inst.mtype.clone(),
             };
             for decl in declarations {
+                if !decl.languages.overlaps(self.doc.language_at(&inst.file, inst.line)) {
+                    continue;
+                }
                 if !glob(&decl.name, &inst.name, inst.case_sensitive)
                     || decl.model.as_ref().is_some_and(|pattern| {
                         !inst.model.as_ref().is_some_and(|name| glob(pattern, name, inst.case_sensitive))

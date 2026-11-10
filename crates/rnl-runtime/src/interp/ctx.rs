@@ -131,6 +131,8 @@ pub struct Ctx {
     /// Objects traversed by a sub-object reference in this segment. A role filler can remain
     /// valid even when the usage through which it was reached fails after symbol assignment.
     pub reference_dependencies: Rc<RefCell<Vec<ObjId>>>,
+    /// Complete input of this description, checked as one language-scoped operation (2.8).
+    pub language_inputs: Vec<ObjId>,
 }
 
 impl Ctx {

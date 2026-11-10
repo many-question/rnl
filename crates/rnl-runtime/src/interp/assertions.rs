@@ -228,7 +228,7 @@ impl Interp<'_> {
         if self.scenes[s].phase >= 8 {
             task(self, s, 8);
         } else {
-            self.scenes[s].tasks[8].push((ctx.pos.clone(), task));
+            self.queue_task(s, 8, ctx, task);
         }
         if lazy {
             self.note_rule(ctx);

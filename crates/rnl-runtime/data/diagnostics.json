@@ -311,6 +311,24 @@
    ]
   },
   {
+   "number": "RNL1017",
+   "name": "record-header-language-unknown",
+   "severity": "warning",
+   "message": "unknown record language {value:?}; this record acts on nothing (2.8), did you mean {close}?",
+   "sections": [
+    "2.8"
+   ]
+  },
+  {
+   "number": "RNL1018",
+   "name": "record-header-language-generated",
+   "severity": "error",
+   "message": "record header field language is not written with type=\"generated\"; treated as not written (2.8)",
+   "sections": [
+    "2.8"
+   ]
+  },
+  {
    "number": "RNL1100",
    "name": "syntax-angle-point",
    "severity": "error",
@@ -919,6 +937,43 @@
    "message": "@{kw} takes no objects (2.8)",
    "sections": [
     "5.2.1"
+   ]
+  },
+  {
+   "number": "RNL2011",
+   "name": "device-terminal-names-invalid",
+   "severity": "error",
+   "message": "the terminal names of @DEVICE must be distinct by the host's case rules and cannot be made only of digits (6.12)",
+   "sections": [
+    "6.12"
+   ]
+  },
+  {
+   "number": "RNL2012",
+   "name": "device-host-type-conflict",
+   "severity": "warning",
+   "message": "@DEVICE cannot change the type of an instance supplied by its host (6.12)",
+   "sections": [
+    "6.12"
+   ]
+  },
+  {
+   "number": "RNL2013",
+   "name": "device-subcircuit-ports-conflict",
+   "severity": "warning",
+   "message": "@DEVICE cannot change the port names of a subcircuit defined by the host (6.12)",
+   "sections": [
+    "6.12"
+   ]
+  },
+  {
+   "number": "RNL2014",
+   "name": "header-package-language-conflict",
+   "severity": "error",
+   "message": "package {name} has different versions or inline content in header records; this language-qualified reference fails (2.8)",
+   "sections": [
+    "2.8",
+    "16.2"
    ]
   },
   {
@@ -4913,33 +4968,6 @@
    "severity": "warning",
    "message": "warning: {file}: {what}, `{name}`, line {line}, has the spelling of a word that 0.3 adds (2.8): raised to 0.3, it may mean something else (16.1)",
    "sections": []
-  },
-  {
-   "number": "RNL2011",
-   "name": "device-terminal-names-invalid",
-   "severity": "error",
-   "message": "the terminal names of @DEVICE must be distinct by the host's case rules and cannot be made only of digits (6.12)",
-   "sections": [
-    "6.12"
-   ]
-  },
-  {
-   "number": "RNL2012",
-   "name": "device-host-type-conflict",
-   "severity": "warning",
-   "message": "@DEVICE cannot change the type of an instance supplied by its host (6.12)",
-   "sections": [
-    "6.12"
-   ]
-  },
-  {
-   "number": "RNL2013",
-   "name": "device-subcircuit-ports-conflict",
-   "severity": "warning",
-   "message": "@DEVICE cannot change the port names of a subcircuit defined by the host (6.12)",
-   "sections": [
-    "6.12"
-   ]
   }
  ]
 }

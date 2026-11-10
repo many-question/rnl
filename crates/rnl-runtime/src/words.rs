@@ -652,6 +652,20 @@ pub fn draft_header_fields() -> &'static [HeaderField] {
     F.get_or_init(|| vec![HeaderField { name: "numbering".into(), values: None, affects: true }])
 }
 
+/// Record fields added by the drafts through 0.4 (2.8).
+pub fn draft_0_4_header_fields() -> &'static [HeaderField] {
+    static F: OnceLock<Vec<HeaderField>> = OnceLock::new();
+    F.get_or_init(|| {
+        let mut fields = draft_header_fields().to_vec();
+        fields.push(HeaderField {
+            name: "language".into(),
+            values: Some(vec!["spice".into(), "spectre".into()]),
+            affects: true,
+        });
+        fields
+    })
+}
+
 /// The word list of the language version this runtime supports.
 pub fn words() -> &'static Words {
     static W: OnceLock<Words> = OnceLock::new();

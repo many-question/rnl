@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::diag::{codes, Code, Extra, Loc, Severity};
+use crate::host::language::Languages;
 use crate::host::{file_name, Level, LevelId, LevelKind};
 use crate::records::{package_lines, scan_run};
 use crate::source::{dirname, join, normalize};
@@ -71,11 +72,13 @@ pub struct Header {
     /// The check of the numbers that the record of the solver uses, as written: a field of the
     /// draft 0.3, only with `type="generated"` (5.9).
     pub numbering: Option<String>,
+    /// Host sections on which this record acts (2.8); ALL when no field is written.
+    pub languages: Languages,
 }
 
 impl Default for Header {
     fn default() -> Header {
-        Header { type_: "authored".into(), priority: None, scope: None, numbering: None }
+        Header { type_: "authored".into(), priority: None, scope: None, numbering: None, languages: Languages::ALL }
     }
 }
 
@@ -133,6 +136,7 @@ pub struct UseDecl {
     pub body: Option<Rc<SetExpr>>,
     pub unit: UnitId,
     pub in_header: bool,
+    pub languages: Languages,
     /// (record, member index): its place in the text.
     pub pos: (usize, usize),
     pub rec: Option<RecId>,
@@ -160,6 +164,7 @@ pub struct DeviceDecl {
     pub mtype: Option<String>,
     pub loc: Loc,
     pub package: String,
+    pub languages: Languages,
 }
 
 #[derive(Clone, Debug)]
@@ -189,6 +194,7 @@ pub struct Unit {
     /// A package file: the packages its header record references, in order (16.2).
     pub refs: Vec<UseDecl>,
     pub header_record: Option<RecId>,
+    pub header_records: Vec<RecId>,
     /// alias -> original: keywords with "@", `$` names with "$", other standard words bare.
     pub aliases: HashMap<String, String>,
     pub alias_decls: Vec<AliasDecl>,
@@ -235,6 +241,7 @@ impl Unit {
             uses: Vec::new(),
             refs: Vec::new(),
             header_record: None,
+            header_records: Vec::new(),
             aliases: HashMap::new(),
             alias_decls: Vec::new(),
             alias_pending: Vec::new(),
@@ -284,6 +291,7 @@ pub struct EffPackage {
     pub decl: Option<UseDecl>,
     pub unit: UnitId,
     pub place: Place,
+    pub languages: Languages,
 }
 
 /// The option most like `word`, ignoring case, when it is like enough; of options equally like it,
@@ -670,7 +678,24 @@ impl Interp<'_> {
                 // a solver does not read the solver's records, nor what they would report (2.8, 14.8)
                 continue;
             }
-            for note in &ast.notes {
+            let early_header = if self.follows_0_4(u) {
+                let header = Rc::new(self.read_header_fields(&ast, rec, u));
+                self.rec_header.insert(rec, header.clone());
+                if header.languages == Languages::NONE {
+                    self.units[u].other_records += 1;
+                    continue;
+                }
+                Some(header)
+            } else {
+                None
+            };
+            let deferred =
+                self.units[u].kind == UnitKind::Package && self.checking_path.is_none() && early_header.is_some();
+            if deferred {
+                self.pending_language_records.push(rec);
+            }
+            let dormant = deferred || early_header.as_ref().is_some_and(|header| !self.record_has_language(u, header));
+            for note in ast.notes.iter().filter(|_| !dormant) {
                 if let Some(kw) = &note.kw {
                     let k = self.kw(kw, u);
                     if k == "AS" || k == "ATTACH" {
@@ -681,6 +706,10 @@ impl Interp<'_> {
                 self.diag_in(Severity::Warning, note.code, note.message.clone(), Some(loc), &pkg);
             }
             if let Some((e, pos)) = &ast.error {
+                if dormant {
+                    self.units[u].other_records += 1;
+                    continue;
+                }
                 let loc = self.recs[rec].loc(*pos);
                 self.diag_in(Severity::Error, e.code, e.message.clone(), Some(loc), &pkg);
                 let n = self.recs[rec].text.chars().count();
@@ -688,7 +717,7 @@ impl Interp<'_> {
                 self.units[u].other_records += 1;
                 continue;
             }
-            let header = Rc::new(self.read_header_fields(&ast, rec, u));
+            let header = early_header.unwrap_or_else(|| Rc::new(self.read_header_fields(&ast, rec, u)));
             self.rec_header.insert(rec, header.clone());
             // the record of the solver whose numbering does not match the level: its statements
             // that use a number are left out, as if they were not written, with one hint (5.9)
@@ -709,21 +738,35 @@ impl Interp<'_> {
                 );
             }
             if header.type_ == "header" {
-                // at the file level, the first record of the whole file, and at most one (2.8)
+                let modern = self.follows_0_4(u);
+                let same_header =
+                    self.units[u].header_records.iter().any(|r| self.rec_header[r].languages == header.languages);
                 let wrong = if !is_file_level {
-                    Some((
-                        codes::HEADER_RECORD_IN_SUBCIRCUIT,
-                        "a header record is written at the file level, not inside a subcircuit (2.8); this one is ignored",
-                    ))
-                } else if self.units[u].header_record.is_some() {
+                    Some((codes::HEADER_RECORD_IN_SUBCIRCUIT,
+                        "a header record is written at the file level, not inside a subcircuit (2.8); this one is ignored"))
+                } else if (!modern && self.units[u].header_record.is_some()) || (modern && same_header) {
                     Some((
                         codes::HEADER_RECORD_SECOND,
-                        "a file has at most one header record (2.8); this one is ignored",
+                        if modern {
+                            "a file has at most one header record without language and one per language (2.8); this one is ignored"
+                        } else {
+                            "a file has at most one header record (2.8); this one is ignored"
+                        },
                     ))
-                } else if index != 0 || self.after_a_record_of_its_file(u, rec) {
+                } else if (if modern {
+                    self.units[u].other_records != 0
+                        || (header.languages == Languages::ALL && !self.units[u].header_records.is_empty())
+                } else {
+                    index != 0
+                }) || self.after_a_record_of_its_file(u, rec)
+                {
                     Some((
                         codes::HEADER_RECORD_NOT_FIRST,
-                        "a header record is the first record of a file, and a record comes before this one (2.8); this one is ignored",
+                        if modern {
+                            "header records precede all other records, with the one without language first (2.8); this one is ignored"
+                        } else {
+                            "a header record is the first record of a file, and a record comes before this one (2.8); this one is ignored"
+                        },
                     ))
                 } else {
                     None
@@ -734,8 +777,11 @@ impl Interp<'_> {
                     self.units[u].other_records += 1;
                     continue;
                 }
-                self.units[u].header_record = Some(rec);
-                self.read_header(u, rec, &ast);
+                if header.languages == Languages::ALL {
+                    self.units[u].header_record = Some(rec);
+                }
+                self.units[u].header_records.push(rec);
+                self.read_header(u, rec, &ast, false);
                 continue;
             }
             self.units[u].other_records += 1;
@@ -760,7 +806,7 @@ impl Interp<'_> {
             if let Some(target) = &header.scope {
                 // a syntax error fails its member, as in the target's own records, and is reported
                 // at its place in this file (7.4); the other members go to the target
-                for m in ast_body.members.iter().filter(|m| m.error.is_some()) {
+                for m in ast_body.members.iter().filter(|m| m.error.is_some() && !dormant) {
                     let loc = self.recs[rec].loc(m.error_pos);
                     let e = m.error.as_ref().unwrap();
                     self.diag_in(Severity::Error, e.code, e.message.clone(), Some(loc), &pkg);
@@ -775,6 +821,9 @@ impl Interp<'_> {
             }
             for (k, m) in ast_body.members.iter().enumerate() {
                 if let Some(err) = &m.error {
+                    if dormant {
+                        continue;
+                    }
                     let loc = self.recs[rec].loc(m.error_pos);
                     self.diag_in(Severity::Error, err.code, err.message.clone(), Some(loc), &pkg);
                     self.note_failed(Some(rec), m.start, m.end, false);
@@ -838,6 +887,11 @@ impl Interp<'_> {
                 && lv.records.iter().any(|o| {
                     let p = o.loc(0);
                     (p.line, p.col) < (at.line, at.col)
+                        && !(self.follows_0_4(u)
+                            && self.units[u].header_records.iter().any(|r| {
+                                let accepted = self.recs[*r].loc(0);
+                                accepted.file == p.file && accepted.line == p.line && accepted.col == p.col
+                            }))
                 })
         })
     }
@@ -862,6 +916,9 @@ impl Interp<'_> {
             }
             let members: Vec<_> = self.units[u].members.iter().chain(&self.units[u].scope_members).cloned().collect();
             for m in members {
+                if !self.record_has_language(u, &m.header) {
+                    continue;
+                }
                 if let Some(rec) = m.rec {
                     self.free_word_warnings(u, rec, &m.m, &HashSet::new(), &HashSet::new());
                 }
@@ -991,9 +1048,14 @@ impl Interp<'_> {
             );
         }
         // `numbering` is a field of the draft 0.3 only (2.8, 5.9)
-        let draft: &[crate::words::HeaderField] =
-            if self.follows_0_3(u) { crate::words::draft_header_fields() } else { &[] };
-        let (mut numbering_at, mut scope_at) = (None, None);
+        let draft: &[crate::words::HeaderField] = if self.follows_0_4(u) {
+            crate::words::draft_0_4_header_fields()
+        } else if self.follows_0_3(u) {
+            crate::words::draft_header_fields()
+        } else {
+            &[]
+        };
+        let (mut numbering_at, mut scope_at, mut language_value) = (None, None, None);
         for n in &params.named {
             let loc = self.recs[rec].loc(n.off);
             let fields = || words().header_fields.iter().chain(draft);
@@ -1036,6 +1098,10 @@ impl Interp<'_> {
                 );
                 continue;
             };
+            if n.name == "language" {
+                language_value = Some((v.clone(), loc));
+                continue;
+            }
             if let Some(vals) = &spec.values {
                 if !vals.contains(v) {
                     self.diag_in(
@@ -1069,6 +1135,25 @@ impl Interp<'_> {
                     numbering_at = Some(loc);
                 }
                 _ => {}
+            }
+        }
+        if let Some((value, loc)) = language_value {
+            if h.type_ == "generated" {
+                self.diag_in(
+                    Severity::Error,
+                    codes::RECORD_HEADER_LANGUAGE_GENERATED,
+                    "record header field language is not written with type=\"generated\"; treated as not written (2.8)",
+                    Some(loc),
+                    &pkg,
+                );
+            } else {
+                h.languages = Languages::parse(&value).unwrap_or_else(|| {
+                    let close = closest(&value, ["spice", "spectre"]).unwrap_or("spice".into());
+                    self.diag_in(Severity::Warning, codes::RECORD_HEADER_LANGUAGE_UNKNOWN,
+                        format!("unknown record language {value:?}; this record acts on nothing (2.8), did you mean {close}?"),
+                        Some(loc), &pkg);
+                    Languages::NONE
+                });
             }
         }
         // the RNL of a subcircuit covers only itself: scope written inside one is an error, and the
@@ -1110,15 +1195,39 @@ impl Interp<'_> {
     }
 
     /// The header record is always read in the standard form, without aliases (16.5).
-    fn read_header(&mut self, u: UnitId, rec: RecId, ast: &RecordAst) {
+    fn read_header(&mut self, u: UnitId, rec: RecId, ast: &RecordAst, complete: bool) {
         let pkg = self.units[u].pkg().to_string();
         let body = ast.body.clone().unwrap();
+        let deferred = self.pending_language_records.contains(&rec);
+        let dormant = !self.record_has_language(u, &self.rec_header[&rec]);
         for (k, m) in body.members.iter().enumerate() {
+            if !complete {
+                let kw = if m.error.is_none() && m.segments.len() == 1 && m.bind().is_none() {
+                    m.segments[0].call.as_ref().map(|call| call.kw.as_str()).unwrap_or("?")
+                } else {
+                    "?"
+                };
+                // Package classification depends on the written header, even when a
+                // DEVICE declaration waits for a matching language section.
+                self.units[u].header_kws.push(kw.into());
+            }
+            let early_declaration = m.error.is_none()
+                && m.segments.len() == 1
+                && m.bind().is_none()
+                && m.segments[0].call.as_ref().is_some_and(|call| {
+                    call.kw == "USE-PACKAGE"
+                        || (self.rec_header[&rec].languages == Languages::ALL
+                            && matches!(call.kw.as_str(), "VERSION" | "PACKAGE" | "ALIAS" | "USE-ALIASES"))
+                });
+            // Package names remain visible across sections. Read those dependencies now;
+            // DEVICE and other checks wait for a matching host section, if there is one.
+            if (complete && early_declaration) || (!complete && (deferred || dormant) && !early_declaration) {
+                continue;
+            }
             if let Some(err) = &m.error {
                 let loc = self.recs[rec].loc(m.error_pos);
                 self.diag_in(Severity::Error, err.code, err.message.clone(), Some(loc), &pkg);
                 self.note_failed(Some(rec), m.start, m.end, false);
-                self.units[u].header_kws.push("?".into());
                 continue;
             }
             if m.segments.len() != 1 || m.segments[0].call.is_none() || m.bind().is_some() {
@@ -1130,14 +1239,18 @@ impl Interp<'_> {
                     Some(loc),
                     &pkg,
                 );
-                self.units[u].header_kws.push("?".into());
                 continue;
             }
             let seg = m.segments[0].clone();
             let call = seg.call.clone().unwrap();
             let kw = call.kw.clone();
-            self.units[u].header_kws.push(kw.clone());
             let loc = self.recs[rec].loc(call.start);
+            if self.rec_header[&rec].languages != Languages::ALL && !matches!(kw.as_str(), "USE-PACKAGE" | "DEVICE") {
+                self.diag_in(Severity::Error, codes::HEADER_KEYWORD_NOT_ALLOWED,
+                    format!("@{kw} cannot be written in a header record with language; only USE-PACKAGE and DEVICE are allowed (2.8)"),
+                    Some(loc), &pkg);
+                continue;
+            }
             if !HEADER_KW.contains(&kw.as_str()) && kw != "USE-PACKAGE" {
                 self.diag_in(
                     Severity::Error,
@@ -1303,12 +1416,57 @@ impl Interp<'_> {
                         mtype,
                         loc,
                         package: pkg.clone(),
+                        languages: self.rec_header[&rec].languages,
                     });
                 }
                 _ => {}
             }
         }
         self.finish_aliases(u);
+    }
+
+    /// The graph is now known, so qualified package records can be checked in their
+    /// actual nominal scope. Inactive records retain declarations but no failed spans.
+    pub(crate) fn check_language_records(&mut self) {
+        for rec in std::mem::take(&mut self.pending_language_records) {
+            let u = self.rec_unit[rec];
+            if !self.record_has_language(u, &self.rec_header[&rec]) {
+                continue;
+            }
+            let ast = self.parse(rec);
+            let pkg = self.units[u].pkg().to_string();
+            for note in &ast.notes {
+                if note.kw.as_ref().is_some_and(|kw| matches!(self.kw(kw, u).as_str(), "AS" | "ATTACH")) {
+                    continue;
+                }
+                self.diag_in(
+                    Severity::Warning,
+                    note.code,
+                    note.message.clone(),
+                    Some(self.recs[rec].loc(note.off)),
+                    &pkg,
+                );
+            }
+            if let Some((error, off)) = &ast.error {
+                self.diag_in(Severity::Error, error.code, error.message.clone(), Some(self.recs[rec].loc(*off)), &pkg);
+                self.note_failed(Some(rec), 0, self.recs[rec].text.chars().count(), false);
+            } else if self.units[u].header_records.contains(&rec) {
+                self.read_header(u, rec, &ast, true);
+            } else if let Some(body) = &ast.body {
+                for member in &body.members {
+                    if let Some(error) = &member.error {
+                        self.diag_in(
+                            Severity::Error,
+                            error.code,
+                            error.message.clone(),
+                            Some(self.recs[rec].loc(member.error_pos)),
+                            &pkg,
+                        );
+                        self.note_failed(Some(rec), member.start, member.end, false);
+                    }
+                }
+            }
+        }
     }
 
     /// Is this package the document being checked on its own (2.7)?
@@ -1572,6 +1730,7 @@ impl Interp<'_> {
             body: None,
             unit: u,
             in_header: true,
+            languages: Languages::ALL,
             pos: (0, 0),
             rec: None,
             offset: 0,
@@ -1789,13 +1948,60 @@ impl Interp<'_> {
             body: body.clone(),
             unit: u,
             in_header,
+            languages: rec.and_then(|r| self.rec_header.get(&r)).map_or(Languages::ALL, |h| h.languages),
             pos: (rec.unwrap_or(0), k),
             rec,
             offset: call.start,
             pkg: None,
         };
+        if self.follows_0_4(u) && in_header {
+            let previous = if reference { &self.units[u].refs } else { &self.units[u].uses };
+            let previous = previous.iter().position(|old| old.in_header && old.name == name && old.rec != rec);
+            if let Some(index) = previous {
+                let old = if reference { self.units[u].refs[index].clone() } else { self.units[u].uses[index].clone() };
+                let body_tokens = |decl: &UseDecl| {
+                    decl.body.as_ref().and_then(|body| {
+                        decl.rec.map(|rec| {
+                            let chars: Vec<char> = self.recs[rec].text.chars().collect();
+                            syntax::statement_tokens_features(&chars, body.start, body.end, true)
+                        })
+                    })
+                };
+                let same_body = body_tokens(&old) == body_tokens(&decl);
+                let old_version = old.version.clone().or_else(|| old.pkg.map(|p| self.units[p].pkg_version.clone()));
+                let new_version = if decl.version.is_some() || decl.body.is_some() {
+                    decl.version.clone()
+                } else if old.path == decl.path
+                    && (old.path.is_some() || old.version == decl.version)
+                    && old.pkg.is_some()
+                {
+                    old_version.clone()
+                } else {
+                    decl.pkg = self.resolve_package(
+                        &decl,
+                        loc.clone(),
+                        None,
+                        if reference { "reference" } else { "USE-PACKAGE" },
+                    );
+                    let Some(p) = decl.pkg else { return };
+                    Some(self.units[p].pkg_version.clone())
+                };
+                if (old_version.is_some() && new_version.is_some() && old_version != new_version) || !same_body {
+                    self.diag_in(Severity::Error, codes::HEADER_PACKAGE_LANGUAGE_CONFLICT,
+                        format!("package {name} has different versions or inline content in header records; this language-qualified reference fails (2.8)"),
+                        Some(loc), &pkg);
+                    return;
+                } else if old.pkg.is_some() {
+                    let declarations = if reference { &mut self.units[u].refs } else { &mut self.units[u].uses };
+                    declarations[index].languages = old.languages.union(decl.languages);
+                    return;
+                }
+            }
+        }
         let what = if reference { "reference" } else { "USE-PACKAGE" };
-        decl.pkg = self.resolve_package(&decl, loc.clone(), None, what);
+        if decl.pkg.is_none() {
+            decl.pkg = self.resolve_package(&decl, loc.clone(), None, what);
+        }
         // a package of the series 0.2 that the series 0.3 merged into another: found among the
         // series 0.2's, or written inline, it brings in nothing of the series 0.3 (16.3); one not
         // found says so in its error

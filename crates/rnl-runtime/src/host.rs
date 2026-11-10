@@ -8,6 +8,7 @@
 //! be of several dialects; names compare by the rules of the file they are written in.
 
 pub mod format;
+pub mod language;
 pub mod package;
 pub mod text;
 
@@ -244,6 +245,8 @@ pub struct HostDocument {
     /// The global nets declared in files of another dialect: the key by that dialect, and whether
     /// it compares names by case.
     pub foreign_globals: Vec<(String, bool)>,
+    /// Locations of explicit global declarations, for record language sections (2.8).
+    pub global_sites: Vec<(String, Loc)>,
     /// File name -> text, for display and writeback.
     pub sources: Vec<(String, String)>,
     /// The regions written to be encrypted, SPICE's `.prot … .unprot` and Spectre's `protect …
@@ -284,6 +287,7 @@ impl HostDocument {
             foreign_subckts: Vec::new(),
             globals: HashSet::new(),
             foreign_globals: Vec::new(),
+            global_sites: Vec::new(),
             sources: Vec::new(),
             protected: Vec::new(),
             excluded: Vec::new(),
@@ -405,6 +409,12 @@ impl HostDocument {
             let entry = (dialect_key(rules, name), rules.case_sensitive);
             self.foreign_globals.push(entry);
         }
+    }
+
+    /// Register a global declaration with the adapter's source location (2.8).
+    pub fn add_global_at(&mut self, name: &str, file: &str, line: u32) {
+        self.add_global(name, file);
+        self.global_sites.push((name.to_string(), Loc::line(file, line)));
     }
 
     /// Register the subcircuit `level` by its name, as the dialect of its file compares names: a

@@ -897,7 +897,7 @@ impl Reader<'_, '_> {
             "endsection" => return Some(section.is_some()),
             "global" => {
                 for t in toks.iter().skip(1) {
-                    self.cx.doc.add_global(t, fname);
+                    self.cx.doc.add_global_at(t, fname, no);
                 }
                 return None;
             }
@@ -1038,7 +1038,7 @@ impl Reader<'_, '_> {
         }
         if first == ".global" {
             for t in body.split_whitespace().skip(1) {
-                self.cx.doc.add_global(t, fname);
+                self.cx.doc.add_global_at(t, fname, no);
             }
             return;
         }

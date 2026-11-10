@@ -20,6 +20,7 @@ pub mod eval;
 mod export;
 mod islands;
 pub mod kw;
+mod languages;
 mod modifier_handles;
 mod numbers;
 pub mod obj;
@@ -67,6 +68,7 @@ pub enum Memo {
     Val(ObjId),
     LocalRef,
     OwnLevel,
+    Language,
 }
 
 /// The members of a unit that are rules, in order, with the unit's numbers of members and rules
@@ -184,6 +186,7 @@ pub struct Interp<'p> {
     pub sink: Sink,
     pub(crate) objs: Vec<Obj>,
     /// Late failures retain object data needed by earlier phases (7.2, 8.2).
+    pub(crate) inactive_objects: HashSet<(SceneId, ObjId)>,
     pub(crate) late_failures: HashMap<ObjId, DiagId>,
     /// Per-input views for typed roles; original objects and written set handles are unchanged.
     pub(crate) role_inputs: HashMap<ObjId, conversions::RoleInput>,
@@ -284,6 +287,9 @@ pub struct Interp<'p> {
     pub(crate) failed_seen: HashSet<FailedSpan>,
     /// The header of each record read, other than the header record (2.8).
     pub(crate) rec_header: HashMap<RecId, Rc<Header>>,
+    /// Qualified package records whose checks need the final effective package graph (2.8).
+    pub(crate) pending_language_records: Vec<RecId>,
+    pub(crate) host_languages: languages::HostLanguages,
     /// The objects that may be numbered, as they were made, and each one's index there (5.9).
     pub(crate) births: Vec<Birth>,
     pub(crate) birth_of: HashMap<ObjId, usize>,
@@ -331,6 +337,7 @@ impl<'p> Interp<'p> {
             sink,
             objs: Vec::new(),
             late_failures: HashMap::new(),
+            inactive_objects: HashSet::new(),
             role_inputs: HashMap::new(),
             units: Vec::new(),
             level_unit: vec![0; nlevels],
@@ -393,6 +400,8 @@ impl<'p> Interp<'p> {
             package_main: None,
             checking_path: None,
             rec_header: HashMap::new(),
+            pending_language_records: Vec::new(),
+            host_languages: languages::HostLanguages::default(),
             births: Vec::new(),
             birth_of: HashMap::new(),
             named: HashSet::new(),
@@ -482,6 +491,7 @@ impl<'p> Interp<'p> {
             // checked on its own (2.7): the package and what its references bring in (16.2)
             let chain = EffKey::Alone(pm);
             self.set_home(chain);
+            self.check_language_records();
             self.check_free_words();
             let eff = self.eff(chain);
             let name = self.units[pm].pkg_name.clone();
@@ -502,6 +512,7 @@ impl<'p> Interp<'p> {
                 self.set_home(EffKey::Level(lv));
             }
         }
+        self.check_language_records();
         self.check_free_words();
         let packages: Vec<UnitId> = (0..self.units.len())
             .filter(|&i| self.units[i].kind == UnitKind::Package && !self.units[i].embedded)
@@ -570,9 +581,15 @@ impl<'p> Interp<'p> {
         }
         self.units[u].classified = true;
         for m in self.units[u].members.clone() {
+            if !self.record_has_language(u, &m.header) {
+                continue;
+            }
             self.register_place_root(u, &m, None);
         }
         for m in self.units[u].members.clone() {
+            if !self.record_has_language(u, &m.header) {
+                continue;
+            }
             let _ = self.eval_member_at(u, m.rec, m.k, m.embedded, &m.m, None, m.header.clone(), None, "");
         }
     }
@@ -611,6 +628,17 @@ impl<'p> Interp<'p> {
         // members are its own as well, evaluated in its unit
         let own = self.units[unit].members.iter().chain(&self.units[unit].scope_members);
         work.extend(own.map(|m| Work { u: unit, m: m.clone() }));
+        let languages = self.doc.level_languages(lv);
+        work.retain(|w| {
+            let active = w.m.header.languages == crate::host::language::Languages::ALL
+                || w.m.header.languages.overlaps(languages);
+            if !active {
+                // A section absent here can still exist below. Keep the record available
+                // for inherited rules without checking or evaluating it in this scene.
+                self.rules.insert(w.m.key(w.u));
+            }
+            active
+        });
         for w in &work {
             self.register_place_root(w.u, &w.m, Some(s));
         }

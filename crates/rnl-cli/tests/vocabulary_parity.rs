@@ -10,7 +10,9 @@ use rnl_cli::interpret_file;
 use rnl_runtime::diag::Severity;
 use rnl_runtime::interp::unit::READ_VERSIONS;
 use rnl_runtime::source::MemoryProvider;
-use rnl_runtime::words::{draft_header_fields, words, Literal, ParamSpec, ParamType, ParamsSpec, Positions, Takes};
+use rnl_runtime::words::{
+    draft_0_4_header_fields, draft_header_fields, words, Literal, ParamSpec, ParamType, ParamsSpec, Positions, Takes,
+};
 use rnl_runtime::{Interpretation, Options};
 use serde_json::{json, Value};
 
@@ -38,8 +40,6 @@ const PENDING_0_4: &[&str] = &[
     "TABLE",
     // the settings of the solver (5.9)
     "SOLVER-CONFIG",
-    // the rest of the changes of 0.4
-    "record",
     // gathered from the keywords compared, so whole only when none of them is pending
     "pseudo_kinds",
     "takes",
@@ -205,8 +205,8 @@ fn compare(p: &Value, version: &str, pending: &[&str]) {
     // Exercise the marker as syntax, not a duplicated expected string.
     assert!(rnl_runtime::syntax::parse_record(&format!("{} {{}}", record["marker"].as_str().unwrap())).error.is_none());
     assert_eq!(record["section"], "2.8");
-    let headers: BTreeMap<_, _> =
-        w.header_fields.iter().chain(draft_header_fields()).map(|f| (f.name.as_str(), f)).collect();
+    let draft = if version == "0.4" { draft_0_4_header_fields() } else { draft_header_fields() };
+    let headers: BTreeMap<_, _> = w.header_fields.iter().chain(draft).map(|f| (f.name.as_str(), f)).collect();
     if !pending("record") {
         assert_eq!(headers.len(), record_fields.len());
     }
@@ -217,7 +217,11 @@ fn compare(p: &Value, version: &str, pending: &[&str]) {
         assert_eq!(field["type"], if actual.values.is_some() { "enum" } else { "string" });
         assert_eq!(field["values"], json!(actual.values));
         assert_eq!(field["affects_interpretation"], actual.affects);
-        let since = if w.header_field(name).is_some() { &w.language_version } else { p["version"].as_str().unwrap() };
+        let since = match name {
+            "numbering" => "0.3",
+            "language" => "0.4",
+            _ => &w.language_version,
+        };
         assert_eq!(field["since"], since);
     }
     assert_eq!(w.style_props.len(), p["style_properties"].as_array().unwrap().len());
