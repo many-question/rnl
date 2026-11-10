@@ -628,12 +628,12 @@ impl Interp<'_> {
                 let p = self.doc.levels[lv].ports[index as usize - 1].clone();
                 return Ok(self.net_obj(s, &p));
             }
-            ObjData::Bundle { members, .. } => {
+            ObjData::Bundle { .. } => {
                 let mut nets = Vec::new();
-                for m in members {
+                for (m, member_index) in self.bundle_member_terminals(s, owner, index) {
                     // A heterogeneous bundle is still valid (11.8). A shorter member has no
                     // corresponding terminal, so it contributes no net to this bundle pin.
-                    if let Some(node) = self.inst_of(m).nodes.get(index as usize - 1).cloned() {
+                    if let Some(node) = self.inst_of(m).nodes.get(member_index as usize - 1).cloned() {
                         nets.push(self.inst_net(s, m, &node));
                     }
                 }
@@ -668,13 +668,22 @@ impl Interp<'_> {
     pub(crate) fn tnets(&mut self, s: SceneId, t: ObjId) -> Vec<ObjId> {
         let ObjData::Term { owner, index, .. } = self.o(t).clone() else { return Vec::new() };
         match self.o(owner).clone() {
-            ObjData::Bundle { members, .. } => members
-                .iter()
-                .filter_map(|m| {
-                    let node = self.inst_of(*m).nodes.get(index as usize - 1).cloned()?;
-                    Some(self.inst_net(s, *m, &node))
-                })
-                .collect(),
+            ObjData::Bundle { site, .. } => {
+                let mut nets: Vec<_> = self
+                    .bundle_member_terminals(s, owner, index)
+                    .into_iter()
+                    .filter_map(|(member, member_index)| {
+                        let node = self.inst_of(member).nodes.get(member_index as usize - 1).cloned()?;
+                        Some(self.inst_net(s, member, &node))
+                    })
+                    .collect();
+                if site.as_ref().is_some_and(|site| self.follows_0_4(self.source_unit(site)))
+                    && nets.first().is_some_and(|first| nets.iter().all(|net| net == first))
+                {
+                    nets.truncate(1);
+                }
+                nets
+            }
             ObjData::Inst { .. } => {
                 let node = self.inst_of(owner).nodes[index as usize - 1].clone();
                 vec![self.inst_net(s, owner, &node)]
@@ -686,6 +695,41 @@ impl Interp<'_> {
             }
             _ => Vec::new(),
         }
+    }
+
+    /// A draft bundle terminal denotes the same name in each member (11.8).
+    /// A terminal with no name still has its electrical number (6.4).
+    fn bundle_member_terminals(&mut self, scene: SceneId, bundle: ObjId, index: u32) -> Vec<(ObjId, u32)> {
+        let ObjData::Bundle { members, site, .. } = self.o(bundle).clone() else { return Vec::new() };
+        let modern = site.as_ref().is_some_and(|site| self.follows_0_4(self.source_unit(site)));
+        let name = modern
+            .then(|| {
+                self.owner_terms(scene, bundle)
+                    .into_iter()
+                    .find(|(number, _)| *number == index)
+                    .and_then(|(_, name)| name)
+            })
+            .flatten();
+        members
+            .into_iter()
+            .filter_map(|member| {
+                let Some(name) = &name else { return Some((member, index)) };
+                let case_sensitive = self.inst_of(member).case_sensitive;
+                self.owner_terms(scene, member).into_iter().find_map(|(number, candidate)| {
+                    candidate
+                        .filter(
+                            |candidate| {
+                                if case_sensitive {
+                                    candidate == name
+                                } else {
+                                    candidate.eq_ignore_ascii_case(name)
+                                }
+                            },
+                        )
+                        .map(|_| (member, number))
+                })
+            })
+            .collect()
     }
 
     pub(crate) fn scene_pos_of(&mut self, s: SceneId, obj: ObjId) -> ObjId {
