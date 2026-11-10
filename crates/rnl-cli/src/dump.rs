@@ -24,8 +24,13 @@ fn runs(rs: &[Run]) -> Value {
     Value::Array(
         rs.iter()
             .map(|r| match r {
-                Run::Text { text, style } => json!({"text": text, "level": style.level, "bold": style.bold, "italic": style.italic, "overline": style.overline}),
+                Run::Text { text, style } => {
+                    let mut value = json!({"text": text, "level": style.level, "bold": style.bold, "italic": style.italic, "overline": style.overline});
+                    if style.upright { value["upright"] = json!(true); }
+                    value
+                },
                 Run::Frac { num, den, .. } => json!({"frac": [runs(num), runs(den)]}),
+                Run::Sqrt { radicand, .. } => json!({"sqrt": runs(radicand)}),
             })
             .collect(),
     )

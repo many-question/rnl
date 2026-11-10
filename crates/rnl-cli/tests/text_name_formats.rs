@@ -30,7 +30,7 @@ fn runs(line: &Line) -> Vec<(&str, i8)> {
     line.iter()
         .map(|r| match r {
             Run::Text { text, style } => (text.as_str(), style.level),
-            Run::Frac { .. } => panic!("unexpected fraction"),
+            Run::Frac { .. } | Run::Sqrt { .. } => panic!("unexpected stacked markup"),
         })
         .collect()
 }

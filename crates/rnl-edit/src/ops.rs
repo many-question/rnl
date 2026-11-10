@@ -169,6 +169,11 @@ pub enum TextContent {
 #[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Run {
+    Sqrt {
+        radicand: Vec<Run>,
+        #[serde(default)]
+        style: RunStyle,
+    },
     Text {
         text: String,
         #[serde(default)]
@@ -189,6 +194,7 @@ pub struct RunStyle {
     pub level: i32,
     pub bold: bool,
     pub italic: bool,
+    pub upright: bool,
     pub overline: bool,
 }
 

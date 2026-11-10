@@ -247,11 +247,12 @@ struct Piece {
     fallback: bool,
 }
 
-/// A bar in the text's frame, from `u0` to `u1` at `v`, `width` wide.
+/// A straight stroke in the text's frame, `width` wide.
 struct Bar {
     u0: f64,
     u1: f64,
-    v: f64,
+    v0: f64,
+    v1: f64,
     width: f64,
 }
 
@@ -270,6 +271,15 @@ struct Frac {
     den: f64,
     bar: f64,
     /// How far below and above its baseline the em boxes and overlines of its runs reach.
+    reach: (f64, f64),
+}
+
+/// A radical sized to enclose its radicand, including nested scripts and fractions.
+struct Root {
+    bottom: f64,
+    inner: f64,
+    width: f64,
+    bar: f64,
     reach: (f64, f64),
 }
 
@@ -315,6 +325,10 @@ impl Lay {
                     let (size, _) = script(i32::from(style.level) - base, s);
                     Self::parts(self.face(style.bold), text, size, self.mono).map(|(_, _, width)| width).sum::<f64>()
                 }
+                Run::Sqrt { radicand, style } => {
+                    let (size, _) = script(i32::from(style.level) - base, s);
+                    self.width(radicand, i32::from(style.level), size) + (0.7 + BAR_INSET) * size
+                }
                 Run::Frac { num, den, style } => {
                     let (size, _) = script(i32::from(style.level) - base, s);
                     let small = size * FRAC_SIZE;
@@ -328,6 +342,22 @@ impl Lay {
     /// How far above the baseline of a run of size `size` in `face` the middle of its overline is.
     fn overline(face: Face, size: f64) -> f64 {
         (face.em_box().1 + OVER) * size
+    }
+
+    fn root(&self, radicand: &[Run], style: &RunStyle, size: f64) -> Root {
+        let base = i32::from(style.level);
+        let (lo, hi) = self.reach(radicand, base, size);
+        let bar = hi + FRAC_CLEAR * size;
+        // Draw the radical with the same strokes as its bar. Scaling a font glyph creates a
+        // seam where its own short bar meets ours, and changes with fallback fonts.
+        let inner = 0.7 * size;
+        Root {
+            bottom: lo,
+            inner,
+            width: inner + self.width(radicand, base, size) + BAR_INSET * size,
+            bar,
+            reach: (lo - self.bar(size) / 2.0, bar + self.bar(size) / 2.0),
+        }
     }
 
     /// Lay out a fraction of size `size` in `style`.
@@ -365,6 +395,11 @@ impl Lay {
                         if style.overline { Self::overline(face, size) + self.bar(size) / 2.0 } else { top * size };
                     (shift + bottom * size, shift + top)
                 }
+                Run::Sqrt { radicand, style } => {
+                    let (size, shift) = script(i32::from(style.level) - base, s);
+                    let r = self.root(radicand, style, size);
+                    (shift + r.reach.0, shift + r.reach.1)
+                }
                 Run::Frac { num, den, style } => {
                     let (size, shift) = script(i32::from(style.level) - base, s);
                     let f = self.frac(num, den, style, size);
@@ -383,7 +418,7 @@ impl Lay {
                 Run::Text { text, style } => {
                     let (size, shift) = script(i32::from(style.level) - base, s);
                     let face = self.face(style.bold);
-                    let (bold, italic) = (self.bold || style.bold, self.italic || style.italic);
+                    let (bold, italic) = (self.bold || style.bold, !style.upright && (self.italic || style.italic));
                     let start = u;
                     for (part, fallback, width) in Self::parts(face, text, size, self.mono) {
                         let text = part.to_string();
@@ -392,8 +427,30 @@ impl Lay {
                     }
                     if style.overline {
                         let at = v + shift + Self::overline(face, size);
-                        self.bars.push(Bar { u0: start, u1: u, v: at, width: self.bar(size) });
+                        self.bars.push(Bar { u0: start, u1: u, v0: at, v1: at, width: self.bar(size) });
                     }
+                }
+                Run::Sqrt { radicand, style } => {
+                    let (size, shift) = script(i32::from(style.level) - base, s);
+                    let root = self.root(radicand, style, size);
+                    self.place(radicand, i32::from(style.level), u + root.inner, v + shift, size);
+                    let points = [
+                        (u, v + shift + root.bottom + 0.22 * size),
+                        (u + 0.12 * size, v + shift + root.bottom + 0.34 * size),
+                        (u + 0.27 * size, v + shift + root.bottom),
+                        (u + root.inner - BAR_INSET * size, v + shift + root.bar),
+                        (u + root.width, v + shift + root.bar),
+                    ];
+                    for pair in points.windows(2) {
+                        self.bars.push(Bar {
+                            u0: pair[0].0,
+                            v0: pair[0].1,
+                            u1: pair[1].0,
+                            v1: pair[1].1,
+                            width: self.bar(size),
+                        });
+                    }
+                    u += root.width;
                 }
                 Run::Frac { num, den, style } => {
                     let (size, shift) = script(i32::from(style.level) - base, s);
@@ -402,7 +459,8 @@ impl Lay {
                     let bar = Bar {
                         u0: u + BAR_INSET * size,
                         u1: u + f.width - BAR_INSET * size,
-                        v: v + f.bar,
+                        v0: v + f.bar,
+                        v1: v + f.bar,
                         width: self.bar(size),
                     };
                     self.bars.push(bar);
@@ -479,7 +537,13 @@ pub fn lay_out(t: &mut TextPrim, scale: f64) -> [f64; 4] {
         cover(p.u + lean * lo, p.v + lo, p.u + p.width + lean * hi, p.v + hi);
     }
     for b in &lay.bars {
-        cover(b.u0, b.v - b.width / 2.0, b.u1, b.v + b.width / 2.0);
+        let pad = if b.v0 == b.v1 { 0.0 } else { b.width / 2.0 };
+        cover(
+            b.u0.min(b.u1) - pad,
+            b.v0.min(b.v1) - b.width / 2.0,
+            b.u0.max(b.u1) + pad,
+            b.v0.max(b.v1) + b.width / 2.0,
+        );
     }
     if lay.pieces.is_empty() && lay.bars.is_empty() {
         bbox = [a.0, a.1, a.0, a.1];
@@ -501,8 +565,8 @@ pub fn lay_out(t: &mut TextPrim, scale: f64) -> [f64; 4] {
         .bars
         .iter()
         .map(|b| TextBar {
-            a: at(b.u0, b.v),
-            b: at(b.u1, b.v),
+            a: at(b.u0, b.v0),
+            b: at(b.u1, b.v1),
             stroke: Stroke {
                 color: t.color.clone(),
                 width: b.width,
@@ -797,5 +861,24 @@ mod tests {
         let (t, _) = text("\\frac{a}{\\frac{b}{c}}", "start", "baseline", false);
         let (outer, inner) = (t.bars[0].a.1, t.bars[1].a.1);
         close(&[outer - em(&t.runs[1]).1, inner - em(&t.runs[2]).1], &[0.2, 0.2 * 0.8]);
+    }
+    #[test]
+    fn nested_radicals_have_continuous_bars_and_bounds_in_both_directions() {
+        for vertical in [false, true] {
+            let (mut t, _) = text("", "start", "baseline", vertical);
+            t.lines = rnl_runtime::markup::parse_with_name_formats(r"\(\sqrt{\frac{x^2}{y_1}}\)", true);
+            let bbox = lay_out(&mut t, 16.0);
+            assert_eq!(t.bars.len(), 5);
+            let radical = &t.bars[1..];
+            for pair in radical.windows(2) {
+                assert_eq!(pair[0].b, pair[1].a);
+            }
+            for bar in &t.bars {
+                for p in [bar.a, bar.b] {
+                    assert!(p.0 >= bbox[0] && p.0 <= bbox[2] && p.1 >= bbox[1] && p.1 <= bbox[3], "{bbox:?} {p:?}");
+                }
+            }
+            assert!(bbox[2] > bbox[0] && bbox[3] > bbox[1]);
+        }
     }
 }

@@ -60,7 +60,11 @@ fn runs(list: &[Run], outer: RunStyle) -> String {
     list.iter()
         .map(|run| {
             let (mut body, style) = match run {
-                Run::Text { text, style } => (escape(text), *style),
+                Run::Text { text, style } => {
+                    let body = escape(text);
+                    (if style.upright { format!("\\(\\mathrm{{{body}}}\\)") } else { body }, *style)
+                }
+                Run::Sqrt { radicand, style } => (format!("\\(\\sqrt{{{}}}\\)", math_runs(radicand, *style)), *style),
                 Run::Frac { num, den, style } => {
                     (format!("\\frac{{{}}}{{{}}}", runs(num, *style), runs(den, *style)), *style)
                 }
@@ -83,6 +87,98 @@ fn runs(list: &[Run], outer: RunStyle) -> String {
             body
         })
         .collect()
+}
+
+/// Inside a root, the language's math subset applies; callers validate that this representation
+/// reads back without changing any run, including literal attributes that cannot be reconstructed.
+fn math_runs(list: &[Run], outer: RunStyle) -> String {
+    list.iter()
+        .map(|run| {
+            let (mut body, style) = match run {
+                Run::Text { text, style } => {
+                    let text = escape(text);
+                    (if style.italic && !style.upright { text } else { format!("\\mathrm{{{text}}}") }, *style)
+                }
+                Run::Frac { num, den, style } => {
+                    (format!("\\frac{{{}}}{{{}}}", math_runs(num, *style), math_runs(den, *style)), *style)
+                }
+                Run::Sqrt { radicand, style } => (format!("\\sqrt{{{}}}", math_runs(radicand, *style)), *style),
+            };
+            if style.bold && !outer.bold {
+                body = format!("\\textbf{{{body}}}");
+            }
+            if style.overline && !outer.overline {
+                body = format!("\\overline{{{body}}}");
+            }
+            for _ in outer.level..style.level {
+                body = format!("^{{{body}}}");
+            }
+            for _ in style.level..outer.level {
+                body = format!("_{{{body}}}");
+            }
+            body
+        })
+        .collect()
+}
+
+/// A structured formula must have an exact textual representation. For example, an expanded
+/// attribute with spaces needs its original markup; silently dropping its spaces is not an edit.
+pub(crate) fn check_math_content(content: &TextContent, version: &str) -> Result<(), String> {
+    fn has_math(runs: &[Run]) -> bool {
+        runs.iter().any(|run| match run {
+            Run::Text { style, .. } => style.upright,
+            Run::Frac { num, den, .. } => has_math(num) || has_math(den),
+            Run::Sqrt { .. } => true,
+        })
+    }
+    fn normalize(runs: &[Run]) -> Vec<Run> {
+        runs.iter()
+            .flat_map(|run| match run {
+                Run::Text { text, style } => {
+                    text.chars().map(|c| Run::Text { text: c.to_string(), style: *style }).collect()
+                }
+                Run::Frac { num, den, style } => {
+                    vec![Run::Frac { num: normalize(num), den: normalize(den), style: *style }]
+                }
+                Run::Sqrt { radicand, style } => vec![Run::Sqrt { radicand: normalize(radicand), style: *style }],
+            })
+            .collect()
+    }
+    fn from_runtime(runs: &[rnl_runtime::markup::Run]) -> Vec<Run> {
+        use rnl_runtime::markup as m;
+        let style = |s: &m::RunStyle| RunStyle {
+            level: i32::from(s.level),
+            bold: s.bold,
+            italic: s.italic,
+            upright: s.upright,
+            overline: s.overline,
+        };
+        runs.iter()
+            .map(|run| match run {
+                m::Run::Text { text, style: s } => Run::Text { text: text.clone(), style: style(s) },
+                m::Run::Frac { num, den, style: s } => {
+                    Run::Frac { num: from_runtime(num), den: from_runtime(den), style: style(s) }
+                }
+                m::Run::Sqrt { radicand, style: s } => Run::Sqrt { radicand: from_runtime(radicand), style: style(s) },
+            })
+            .collect()
+    }
+    let TextContent::Lines(lines) = content else { return Ok(()) };
+    if !lines.iter().any(|line| has_math(line)) {
+        return Ok(());
+    }
+    if version != "0.4" {
+        return Err("structured math requires language_version 0.4".into());
+    }
+    let text = markup(lines);
+    let parsed = rnl_runtime::markup::parse_with_name_formats(&text, true);
+    if !rnl_runtime::markup::problems_with_name_formats(&text, true).is_empty()
+        || parsed.len() != lines.len()
+        || parsed.iter().zip(lines).any(|(actual, wanted)| normalize(&from_runtime(actual)) != normalize(wanted))
+    {
+        return Err("these formula runs cannot be written without changing their content or style; provide the original markup instead of lines".into());
+    }
+    Ok(())
 }
 
 /// Plain text as markup: the characters the reader takes as markup escaped, a backslash as

@@ -281,6 +281,7 @@ pub enum VAlign {
 pub enum Run {
     Text { text: String, style: RunStyle },
     Frac { num: Vec<Run>, den: Vec<Run>, style: RunStyle },
+    Sqrt { radicand: Vec<Run>, style: RunStyle },
 }
 
 /// The style the markup gives a run (13.6).
@@ -294,6 +295,10 @@ pub struct RunStyle {
     pub level: i8,
     pub bold: bool,
     pub italic: bool,
+    /// Force upright math content even when the whole text is italic.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(as = "Option<bool>", optional))]
+    pub upright: bool,
     pub overline: bool,
 }
 
@@ -417,6 +422,9 @@ fn text_run(r: &rnl_render::TextRun) -> TextRun {
 pub(crate) fn run(r: &markup::Run) -> Run {
     match r {
         markup::Run::Text { text, style } => Run::Text { text: text.clone(), style: run_style(style) },
+        markup::Run::Sqrt { radicand, style } => {
+            Run::Sqrt { radicand: radicand.iter().map(run).collect(), style: run_style(style) }
+        }
         markup::Run::Frac { num, den, style } => Run::Frac {
             num: num.iter().map(run).collect(),
             den: den.iter().map(run).collect(),
@@ -426,7 +434,7 @@ pub(crate) fn run(r: &markup::Run) -> Run {
 }
 
 fn run_style(s: &markup::RunStyle) -> RunStyle {
-    RunStyle { level: s.level, bold: s.bold, italic: s.italic, overline: s.overline }
+    RunStyle { level: s.level, bold: s.bold, italic: s.italic, upright: s.upright, overline: s.overline }
 }
 
 #[cfg(test)]
@@ -548,10 +556,18 @@ mod tests {
     }
 
     fn markup_run(r: &Run) -> markup::Run {
-        let style =
-            |s: &RunStyle| markup::RunStyle { level: s.level, bold: s.bold, italic: s.italic, overline: s.overline };
+        let style = |s: &RunStyle| markup::RunStyle {
+            level: s.level,
+            bold: s.bold,
+            italic: s.italic,
+            upright: s.upright,
+            overline: s.overline,
+        };
         match r {
             Run::Text { text, style: s } => markup::Run::Text { text: text.clone(), style: style(s) },
+            Run::Sqrt { radicand, style: s } => {
+                markup::Run::Sqrt { radicand: radicand.iter().map(markup_run).collect(), style: style(s) }
+            }
             Run::Frac { num, den, style: s } => markup::Run::Frac {
                 num: num.iter().map(markup_run).collect(),
                 den: den.iter().map(markup_run).collect(),
