@@ -4,16 +4,30 @@ use crate::diag::codes;
 use crate::geom::Pt;
 
 use super::ctx::{Ctx, Nested};
-use super::obj::{ObjData, ObjId, SymbolDef};
+use super::obj::{ObjData, ObjId, Shape, SymbolDef};
 use super::Interp;
 
 impl Interp<'_> {
     /// A local pin can stand for its point without losing the pin's identity.
-    pub(crate) fn symbol_point(&self, object: ObjId) -> Option<Pt> {
+    pub(crate) fn symbol_point(&self, object: ObjId, positions: bool) -> Option<Pt> {
         match self.o(object) {
+            ObjData::Pos { parent } if positions => self.symbol_position(*parent),
             ObjData::Point { x: Some(x), y: Some(y), local: true } => Some((*x, *y)),
             ObjData::SymbolPin { symbol, index } => Some(self.symbol(*symbol).pins[*index].pos),
             _ => None,
+        }
+    }
+
+    fn symbol_position(&self, object: ObjId) -> Option<Pt> {
+        match self.o(object) {
+            ObjData::Prim {
+                shape: Shape::Rectangle | Shape::Circle | Shape::Ellipse | Shape::Text, points, ..
+            } if points.len() == 1 => self.symbol_point(points[0], true),
+            ObjData::SymLabel { symbol, index } => self.symbol(*symbol).labels[*index].position,
+            ObjData::Usage(usage) if usage.in_symbol => {
+                usage.roles.first().and_then(|(_, point)| self.symbol_point(*point, true))
+            }
+            _ => self.symbol_point(object, true),
         }
     }
 

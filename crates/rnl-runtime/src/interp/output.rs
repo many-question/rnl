@@ -798,7 +798,8 @@ impl Interp<'_> {
                 if !matches!(self.o(inner), ObjData::Symbol(_)) {
                     return None;
                 }
-                let point = self.symbol_point(*pt)?;
+                let modern = u.site.as_ref().is_some_and(|ctx| self.follows_0_4(self.source_unit(ctx)));
+                let point = self.symbol_point(*pt, modern)?;
                 Some((index, inner, point, u.sym_orient))
             })
             .collect()

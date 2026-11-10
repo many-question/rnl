@@ -1402,7 +1402,7 @@ impl Interp<'_> {
         let d = self.def(app.dfn).clone();
         let first = d.roles.first().map(|r| r.name.clone());
         let pt = first.as_ref().and_then(|f| app.filled.iter().find(|(n, _)| n == f).map(|(_, a)| a.obj));
-        let Some(pt) = pt.filter(|p| self.symbol_point(*p).is_some()) else {
+        let Some(pt) = pt.filter(|p| self.symbol_point(*p, self.follows_0_4(self.source_unit(ctx))).is_some()) else {
             return self.fail(
                 ctx,
                 codes::USAGE_IN_SYMBOL_FIRST_ROLE_NOT_POINT,
@@ -1544,7 +1544,7 @@ impl Interp<'_> {
         let mapped = self.map_args(kw, args, seg, ctx, sig_positions(kw))?;
         let p = self.params(kw, seg, ctx, &self.sig_params(kw, ctx), None, false, None)?;
         let pt = mapped["position"].obj;
-        let Some((x, y)) = self.symbol_point(pt) else {
+        let Some((x, y)) = self.symbol_point(pt, self.follows_0_4(self.source_unit(ctx))) else {
             return self.fail(ctx, codes::KEYWORD_PIN_NOT_A_POINT, "PIN takes one point (9.2.4)", seg.start);
         };
         let raw = match get(&p, "terminal").cloned() {
@@ -1758,7 +1758,7 @@ impl Interp<'_> {
         if ctx.in_symbol() {
             let mut local = Vec::new();
             for q in &pts {
-                match self.symbol_point(*q) {
+                match self.symbol_point(*q, self.follows_0_4(self.source_unit(ctx))) {
                     Some(p) => local.push(p),
                     _ => {
                         return self.fail(
@@ -1865,7 +1865,7 @@ impl Interp<'_> {
                 let index = sm.labels.len() - 1;
                 return Ok((self.new_obj(ObjData::SymLabel { symbol, index }), false));
             }
-            if let Some((x, y)) = self.symbol_point(att.obj) {
+            if let Some((x, y)) = self.symbol_point(att.obj, self.follows_0_4(self.source_unit(ctx))) {
                 if key.is_some() {
                     return self.fail(
                         ctx,
@@ -1884,10 +1884,11 @@ impl Interp<'_> {
                 });
                 if self.follows_0_4(self.source_unit(ctx)) {
                     // Naming this graphic must not add a name to the pin it uses (5.1).
+                    let text_point = self.new_obj(ObjData::Point { x: Some(x + d.0), y: Some(y + d.1), local: true });
                     return Ok((
                         self.new_obj(ObjData::Prim {
                             shape: Shape::Text,
-                            points: vec![att.obj],
+                            points: vec![text_point],
                             params: PrimParams::default(),
                             style,
                             site: Some(Rc::new(ctx.clone())),

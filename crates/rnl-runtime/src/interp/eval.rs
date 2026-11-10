@@ -1555,6 +1555,9 @@ impl<'p> Interp<'p> {
         }
         let name = self.subobject_name(obj, &p.name, ctx);
         if name == "position" {
+            if self.follows_0_4(self.source_unit(ctx)) {
+                return self.position_subobject(obj, ctx, e.start);
+            }
             return Ok(match ctx.scene {
                 Some(s) => self.scene_pos_of(s, obj),
                 None => self.new_obj(ObjData::Pos { parent: obj }),
