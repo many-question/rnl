@@ -224,6 +224,13 @@ applied (16.5), including imported and shadowing definitions. This check does no
 evaluate missing definitions or validate unused original names, and aliases remain
 local to the declaring file. Released versions keep their original diagnostics.
 
+Draft 0.4 GROUP members follow nested sets and the roles of usages without a
+symbol down to their objects; usages with a symbol remain members themselves
+(11.5). Problem groups and model groups use the same expansion, retaining order
+and repeated members after final set changes. Failed expansions contribute no
+groups, including when a role holds a shared external set. The solver still
+decides the tree of groups; the public formats are unchanged.
+
 Draft 0.4 text fractions require two complete braced groups (13.6). A missing
 group produces a warning and keeps the malformed command visible as written;
 other text remains valid. Complete groups accept whitespace after the command,

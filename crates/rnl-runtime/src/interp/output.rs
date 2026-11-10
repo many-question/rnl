@@ -569,7 +569,7 @@ impl Interp<'_> {
     fn groups(&mut self, s: SceneId, ids: &HashMap<ObjId, String>) -> Vec<GroupInfo> {
         let mut facts = self.scenes[s].groups.clone();
         let mut seen = HashSet::new();
-        facts.retain(|g| seen.insert(g.set));
+        facts.retain(|g| !self.failed_group(g) && seen.insert(g.set));
         let mut taken: HashMap<String, usize> = ids.values().map(|v| (v.clone(), 1)).collect();
         let base: Vec<String> = facts
             .iter()
@@ -596,7 +596,7 @@ impl Interp<'_> {
             } else {
                 id
             };
-            let members = self.flatten(s, g.set, 7, None).into_iter().map(|m| self.attached(s, m, ids)).collect();
+            let members = self.group_members(s, &g).into_iter().map(|m| self.attached(s, m, ids)).collect();
             let site = &g.site;
             let source = site.stmt.as_ref().and_then(|st| {
                 Some((self.rec_loc(st.rec, st.start)?, self.rec_loc(st.rec, st.end.saturating_sub(1))?))
