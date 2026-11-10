@@ -6,7 +6,7 @@ use crate::diag::{codes, Code};
 
 use super::ctx::Ctx;
 use super::eval::Stop;
-use super::obj::{InputMember, ObjData, ObjId, SceneId, TermKey};
+use super::obj::{InputMember, ObjData, ObjId, SceneId, SetData, TermKey};
 use super::Interp;
 
 impl Interp<'_> {
@@ -33,15 +33,7 @@ impl Interp<'_> {
                         let Some(role) = usage.role(&name) else { continue };
                         let members = self.flatten(scene, role, self.scenes[scene].phase, None);
                         for member in members {
-                            let member = self.scene_value(member);
-                            match self.o(member).clone() {
-                                ObjData::Net { .. } => nets.push(member),
-                                ObjData::Term { .. } => nets.extend(self.term_nets(scene, member)),
-                                ObjData::ScenePin { owner, index } => {
-                                    nets.extend(self.scene_pin_nets_inner(scene, owner, index, visiting))
-                                }
-                                _ => {}
-                            }
+                            nets.extend(self.scene_member_nets(scene, member, visiting));
                         }
                     }
                 }
@@ -55,6 +47,71 @@ impl Interp<'_> {
         }
         visiting.remove(&(owner, index));
         nets
+    }
+
+    fn scene_member_nets(
+        &mut self,
+        scene: SceneId,
+        member: ObjId,
+        visiting: &mut std::collections::HashSet<(ObjId, usize)>,
+    ) -> Vec<ObjId> {
+        // A role may refer to another pin's net before that reference has been resolved.
+        // Follow its written parent, so resolution order does not change the result.
+        if let ObjData::NamedSubobject { parent, name, .. } = self.o(member) {
+            if name == "net" {
+                return self.scene_member_nets(scene, *parent, visiting);
+            }
+        }
+        let member = self.scene_value(member);
+        match self.o(member).clone() {
+            ObjData::Net { .. } => vec![member],
+            ObjData::Term { .. } => self.term_nets(scene, member),
+            ObjData::ScenePin { owner, index } => self.scene_pin_nets_inner(scene, owner, index, visiting),
+            ObjData::Set(_) => {
+                let mut nets = Vec::new();
+                for child in self.flatten(scene, member, self.scenes[scene].phase, None) {
+                    nets.extend(self.scene_member_nets(scene, child, visiting));
+                }
+                nets
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn scene_pin_is_bus(&self, scene: SceneId, owner: ObjId, index: usize) -> bool {
+        let Some(symbol) = self.scenes[scene].symbol.get(&owner) else { return false };
+        let Some(pin) = self.symbol(*symbol).pins.get(index) else { return false };
+        pin.bus
+            || pin.terms.len() > 1
+            || matches!(self.o(owner), ObjData::Usage(usage) if pin.terms.iter().any(|term|
+                matches!(term, TermKey::Name(name) if usage.role_sets.contains(name))))
+    }
+
+    /// Expand resolved set values only for a consumer after symbol assignment. The written
+    /// members used for UNION, member places and earlier creation keep their handles (8.2).
+    pub(crate) fn scene_input_members(
+        &mut self,
+        scene: SceneId,
+        object: ObjId,
+        site: Option<&Ctx>,
+    ) -> Vec<InputMember> {
+        if !self.is_set(object) && !self.is_set(self.scene_value(object)) {
+            return vec![InputMember::plain(object)];
+        }
+        let mut out = Vec::new();
+        for member in self.flatten_inputs(scene, object, 7, site) {
+            let value = self.scene_value(member.object);
+            if value != member.object && self.is_set(value) {
+                for mut child in self.scene_input_members(scene, value, site) {
+                    child.depend_on(&member.dependencies);
+                    child.depend_on(&[member.object]);
+                    out.push(child);
+                }
+            } else {
+                out.push(member);
+            }
+        }
+        out
     }
 
     /// Only the symbol-dependent input kinds need this later check. Ordinary terminals keep
@@ -91,6 +148,10 @@ impl Interp<'_> {
             if self.is_failed(wire) {
                 continue;
             }
+            self.resolve_scene_wire_nets(scene, wire);
+            if self.is_failed(wire) {
+                continue;
+            }
             let rewrites = self.scenes[scene].rewrites.get(&wire).cloned().unwrap_or_default();
             for (index, rewrite) in rewrites.iter().enumerate() {
                 if !self.follows_0_4(self.source_unit(&rewrite.site)) {
@@ -118,6 +179,58 @@ impl Interp<'_> {
             return Some((codes::REF_FAILED, "an object used by this wire rewrite failed (7.3, 13.1)".into()));
         }
         points.iter().find_map(|point| self.wire_vertex_error(*point))
+    }
+
+    fn resolve_scene_wire_nets(&mut self, scene: SceneId, wire: ObjId) {
+        let ObjData::Wire { nets, bus, site: Some(site), off, .. } = self.o(wire).clone() else { return };
+        if !self.follows_0_4(self.source_unit(&site))
+            || !nets.iter().any(|net| matches!(self.o(*net), ObjData::NamedSubobject { .. }))
+        {
+            return;
+        }
+        let mut resolved = Vec::new();
+        let mut is_bus = bus;
+        for net in nets {
+            is_bus |= self.is_set(self.scene_value(net));
+            for member in self.scene_input_members(scene, net, Some(&site)) {
+                let value = self.scene_value(member.object);
+                let failure = self.failed_obj(member.object);
+                if failure.is_some() || !matches!(self.o(value), ObjData::Net { .. }) {
+                    let diagnostic = self.err_cause(
+                        &site,
+                        if failure.is_some() { codes::WIRE_NET_FAILED } else { codes::WIRE_NET_WRONG_KIND },
+                        format!("a net of the wire, {}, failed or is not a net (13.1)", self.label(member.object)),
+                        off,
+                        failure.flatten(),
+                    );
+                    self.late_failures.insert(wire, diagnostic);
+                    self.set_failed(wire);
+                    return;
+                }
+                resolved.push(value);
+            }
+        }
+        if resolved.is_empty() {
+            let diagnostic =
+                self.err(&site, codes::WIRE_NET_EMPTY_SET, "the net of a wire is an empty set (13.1)", off);
+            self.late_failures.insert(wire, diagnostic);
+            self.set_failed(wire);
+            return;
+        }
+        // Index the actual nets for connectivity, labels and routing; creation already happened.
+        for wires in self.scenes[scene].wires_by_net.values_mut() {
+            wires.retain(|candidate| *candidate != wire);
+        }
+        for net in &resolved {
+            let wires = self.scenes[scene].wires_by_net.entry(*net).or_default();
+            if !wires.contains(&wire) {
+                wires.push(wire);
+            }
+        }
+        if let ObjData::Wire { nets, bus, .. } = self.om(wire) {
+            *nets = resolved;
+            *bus = is_bus;
+        }
     }
 
     pub(crate) fn failed_body(&self, ctx: &Ctx) -> bool {
@@ -164,8 +277,22 @@ impl Interp<'_> {
                 let definition = self.def(data.definition).clone();
                 'roles: for role in &definition.roles {
                     let Some(object) = data.role(&role.name) else { continue };
+                    if !role.is_set && self.is_set(self.scene_value(object)) {
+                        let diagnostic = self.err(
+                            site,
+                            codes::USAGE_ROLE_WRONG_KIND,
+                            format!(
+                                "the role {} takes a single object, but {} resolves to a set (5.2.4, 9.4)",
+                                role.name,
+                                self.label(object)
+                            ),
+                            data.off,
+                        );
+                        self.fail_scene_usage(scene, usage, diagnostic);
+                        break 'roles;
+                    }
                     let members = if role.is_set {
-                        self.flatten_inputs(scene, object, 7, Some(site))
+                        self.scene_input_members(scene, object, Some(site))
                     } else {
                         vec![InputMember::plain(object)]
                     };
@@ -217,7 +344,7 @@ impl Interp<'_> {
 
     fn check_scene_pin_graphics(&mut self, scene: SceneId) {
         let objects: Vec<_> = self.scenes[scene].prims.iter().chain(&self.scenes[scene].texts).copied().collect();
-        for object in objects {
+        for &object in &objects {
             if self.is_obj_failed(object) {
                 continue;
             }
@@ -239,7 +366,14 @@ impl Interp<'_> {
                 if !matches!(self.o(input), ObjData::NamedSubobject { .. }) {
                     continue;
                 }
-                if self.is_failed(input) || !matches!(self.o(self.scene_value(input)), ObjData::ScenePin { .. }) {
+                let value = self.scene_value(input);
+                let valid = match self.o(object) {
+                    ObjData::Text { .. } | ObjData::KeyText { .. } => {
+                        matches!(self.o(value), ObjData::ScenePin { .. } | ObjData::Net { .. })
+                    }
+                    _ => matches!(self.o(value), ObjData::ScenePin { .. }),
+                };
+                if self.is_failed(input) || !valid {
                     let diagnostic = self.err_cause(
                         &site,
                         code,
@@ -250,6 +384,20 @@ impl Interp<'_> {
                     self.late_failures.insert(object, diagnostic);
                     self.set_failed(object);
                     break;
+                }
+                if matches!(self.o(value), ObjData::Net { .. }) {
+                    let items = self.text_items(object);
+                    if items.dx.is_some() || items.dy.is_some() {
+                        let diagnostic = self.err(
+                            &site,
+                            codes::TEXT_WIRE_NET_NO_OFFSET,
+                            "a text attached to a wire or a net takes no dx, dy (13.3)",
+                            off,
+                        );
+                        self.late_failures.insert(object, diagnostic);
+                        self.set_failed(object);
+                        break;
+                    }
                 }
             }
         }
@@ -339,11 +487,14 @@ impl Interp<'_> {
     pub(crate) fn resolve_scene_subobjects(&mut self, scene: SceneId) {
         let mut objects: Vec<_> = self.scenes[scene].named_subobjects.values().copied().collect();
         objects.sort();
-        for object in objects {
+        for &object in &objects {
             if self.is_failed(object) {
                 continue;
             }
             let ObjData::NamedSubobject { parent, name, .. } = self.o(object).clone() else { continue };
+            if name == "net" {
+                continue;
+            }
             let pin = self.scenes[scene]
                 .symbol
                 .get(&parent)
@@ -358,6 +509,29 @@ impl Interp<'_> {
                 }
             } else {
                 self.scenes[scene].keytexts.get(&(parent, name)).copied()
+            };
+            if let ObjData::NamedSubobject { resolved, .. } = self.om(object) {
+                *resolved = value;
+            }
+        }
+        // Resolve named pins first, including pins of later-created usages. Net references
+        // can then follow role bindings independently of the order of the references.
+        for object in objects {
+            let ObjData::NamedSubobject { parent, name, .. } = self.o(object).clone() else { continue };
+            if name != "net" || self.is_failed(object) {
+                continue;
+            }
+            let ObjData::ScenePin { owner, index } = *self.o(self.scene_value(parent)) else { continue };
+            let nets = self.scene_pin_nets(scene, owner, index);
+            let value = if nets.is_empty() {
+                None
+            } else if nets.iter().all(|net| *net == nets[0]) && !self.scene_pin_is_bus(scene, owner, index) {
+                Some(nets[0])
+            } else {
+                Some(self.new_obj(ObjData::Set(Box::new(SetData::plain(
+                    nets.into_iter().map(|net| (net, true)).collect(),
+                    false,
+                )))))
             };
             if let ObjData::NamedSubobject { resolved, .. } = self.om(object) {
                 *resolved = value;

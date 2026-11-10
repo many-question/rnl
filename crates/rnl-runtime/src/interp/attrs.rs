@@ -194,7 +194,7 @@ impl Interp<'_> {
                 Ok(out.join(","))
             }
             AVal::Obj(o) => {
-                let o = *o;
+                let o = self.scene_value(*o);
                 match self.o(o).clone() {
                     ObjData::Set(_) => {
                         let mut out = Vec::new();

@@ -1558,6 +1558,14 @@ impl<'p> Interp<'p> {
                 };
                 return self.term_net(s, obj, ctx, e.start);
             }
+            if self.follows_0_4(self.source_unit(ctx))
+                && matches!(self.o(obj), ObjData::NamedSubobject { .. } | ObjData::ScenePin { .. })
+            {
+                let Some(scene) = ctx.scene else {
+                    return self.fail(ctx, codes::REF_NO_CIRCUIT, "there is no circuit here", e.start);
+                };
+                return Ok(self.scene_named_subobject(scene, obj, &name, ctx, e.start));
+            }
             let written = if p.name == "net" { "net".to_string() } else { format!("{} (net)", p.name) };
             let l = self.label(obj);
             return self.fail(ctx, codes::REF_NO_SUBOBJECT, format!("{l} has no sub-object {written} (6.5)"), e.start);

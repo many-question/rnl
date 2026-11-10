@@ -207,6 +207,8 @@ pub struct Pin {
     pub names: Vec<String>,
     /// Terminals: numbers or names; several for a bus pin.
     pub terms: Vec<TermKey>,
+    /// An array binding in 0.4 stays a bus even when it has just one element.
+    pub bus: bool,
     pub pos: (f64, f64),
     pub label: Option<String>,
     /// The label was written in a file that reads the name formats of 0.4 (13.6).

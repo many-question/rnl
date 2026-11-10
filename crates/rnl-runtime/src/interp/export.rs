@@ -454,12 +454,12 @@ impl Interp<'_> {
             // objects of the statement that writes it out, numbered after those of its body (5.9)
             let mut role_points = 0;
             for (role, filler) in &u.roles {
-                let members = if self.is_set(*filler) { self.flatten(s, *filler, 7, None) } else { vec![*filler] };
+                let members = self.scene_input_members(s, *filler, None);
                 let written = self.written_filler(s, &ix, *filler);
                 role_points += written.as_ref().map_or(0, |(_, n)| *n);
                 roles.push(RoleFill {
                     role: role.clone(),
-                    members: members.iter().map(|m| self.filler(s, &ix, *m)).collect(),
+                    members: members.iter().map(|m| self.filler(s, &ix, m.object)).collect(),
                     written: written.map(|(w, _)| w),
                 });
             }

@@ -516,6 +516,7 @@ impl Interp<'_> {
                 sym.pins.push(Pin {
                     names: Vec::new(),
                     terms: vec![TermKey::Num(*idx)],
+                    bus: false,
                     pos: (x0, y),
                     label: name.clone(),
                     label_name_formats: false,
@@ -1055,7 +1056,7 @@ impl Interp<'_> {
     }
 
     pub(crate) fn net_display(&self, n: ObjId) -> String {
-        match self.o(n) {
+        match self.o(self.scene_value(n)) {
             ObjData::Net { display, .. } => display.clone(),
             _ => self.label(n),
         }
@@ -1516,6 +1517,7 @@ impl Interp<'_> {
     /// on the point it is attached to, beside the object, on the first wire of the net, or above the
     /// middle of the wire (13.3).
     fn text_default_place(&mut self, s: SceneId, att: ObjId, base: Option<Pt>) -> Option<Pt> {
+        let att = self.scene_value(att);
         if matches!(self.o(att), ObjData::Point { .. } | ObjData::Pos { .. }) {
             return base;
         }
@@ -1568,6 +1570,7 @@ impl Interp<'_> {
     /// that is drawn (13.3: next to one of its wires or terminals); beside the first point of a
     /// graphic, as beside the origin of an object. None when nothing of it is drawn.
     fn drawn_default_place(&mut self, s: SceneId, att: ObjId) -> Option<Pt> {
+        let att = self.scene_value(att);
         match self.o(att).clone() {
             ObjData::Wire { .. } => {
                 let pts = self.wire_path(s, att);

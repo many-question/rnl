@@ -1583,7 +1583,8 @@ impl Interp<'_> {
             "left" => 180,
             _ => 270,
         });
-        let pin = Pin { names: Vec::new(), terms: terms.clone(), pos: (x, y), label, label_name_formats, dir };
+        let bus = self.follows_0_4(self.source_unit(ctx)) && matches!(get(&p, "terminal"), Some(Lit::Arr(_)));
+        let pin = Pin { names: Vec::new(), terms: terms.clone(), bus, pos: (x, y), label, label_name_formats, dir };
         let symbol = ctx.frame.as_ref().unwrap().borrow().symbol.unwrap();
         let independent = self.symbol(symbol).independent_pins;
         let index = self.symbol(symbol).pins.len();
@@ -2399,7 +2400,9 @@ impl Interp<'_> {
                 );
                 return Err(Stop::Fail(Some(id)));
             }
-            if !matches!(self.o(*n), ObjData::Net { .. }) {
+            let deferred_net =
+                self.follows_0_4(self.source_unit(ctx)) && matches!(self.o(*n), ObjData::NamedSubobject { .. });
+            if !deferred_net && !matches!(self.o(*n), ObjData::Net { .. }) {
                 let l = self.label(*n);
                 return self.fail(
                     ctx,
