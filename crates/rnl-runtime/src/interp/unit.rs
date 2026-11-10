@@ -9,13 +9,38 @@ use std::rc::Rc;
 use crate::diag::{codes, Code, Extra, Loc, Severity};
 use crate::host::language::Languages;
 use crate::host::{file_name, Level, LevelId, LevelKind};
-use crate::records::{package_lines, scan_run};
+use crate::records::{package_lines, scan_package_run};
 use crate::source::{dirname, join, normalize};
 use crate::syntax::{self, Member, ObjExpr, Params, RecordAst, SetExpr, Value};
 use crate::words::{words, ParamType};
 
 use super::obj::{Lit, MemberKey, Priority, RecId, UnitId};
 use super::Interp;
+
+/// The first correctly formed VERSION declaration of a header, without reporting diagnostics.
+/// Carrier scanning uses the same declaration rules before interpreting a file's members.
+pub(crate) fn declared_record_version(text: &str) -> Option<(String, usize)> {
+    let ast = syntax::parse_record(text);
+    if ast.error.is_some() || ast.header.as_ref().and_then(|h| h.get("type")) != Some(&Value::Str("header".into())) {
+        return None;
+    }
+    let body = ast.body?;
+    let (segment, call) = body.members.iter().find_map(|member| {
+        if member.error.is_some() || member.segments.len() != 1 || member.bind().is_some() {
+            return None;
+        }
+        let segment = &member.segments[0];
+        segment.call.as_ref().filter(|call| call.kw == "VERSION").map(|call| (segment, call))
+    })?;
+    let params = params_by_name("VERSION", call.params.as_ref(), true, str::to_string).ok()?;
+    if !segment.args.is_empty() {
+        return None;
+    }
+    match params.get("version") {
+        Some(Value::Str(version)) => Some((version.clone(), call.start)),
+        _ => None,
+    }
+}
 
 /// The versions of the language this implementation reads (16.1): 0.2, 0.3, and 0.4, whose text
 /// is still a draft. Every rule that 0.3 changes applies to the files of 0.3 and of the
@@ -435,7 +460,7 @@ pub(super) fn version_ok(want: Option<&str>, have: &str, modern: bool) -> bool {
 /// comment, declares nothing; the first VERSION stands. In draft 0.4 the first PACKAGE
 /// stands too; released versions keep their last declaration.
 fn header_decls(text: &str) -> (Option<(String, String)>, Option<String>) {
-    let recs = scan_run(&package_lines(text), "", &mut crate::diag::Sink::new());
+    let recs = scan_package_run(&package_lines(text), "", &mut crate::diag::Sink::new());
     let Some(first) = recs.first() else { return (None, None) };
     let ast = syntax::parse_record(&first.text);
     let header = ast.header.as_ref().and_then(|h| h.get("type"));
@@ -675,30 +700,9 @@ impl Interp<'_> {
             if self.after_a_record_of_its_file(u, rec) {
                 continue;
             }
-            // This scan is deliberately not cached: the remaining record is later parsed
-            // with the file's discovered version, not the including file's syntax rules.
-            let ast = syntax::parse_record(&self.recs[rec].text);
-            if ast.error.is_some()
-                || ast.header.as_ref().and_then(|h| h.get("type")) != Some(&Value::Str("header".into()))
-            {
-                continue;
-            }
-            let Some(body) = &ast.body else { continue };
-            let call = body.members.iter().find_map(|m| {
-                if m.error.is_some() || m.segments.len() != 1 || m.bind().is_some() {
-                    return None;
-                }
-                let seg = &m.segments[0];
-                seg.call.as_ref().filter(|c| c.kw == "VERSION").map(|c| (seg, c))
-            });
-            let Some((seg, call)) = call else { continue };
-            let Ok(params) = params_by_name("VERSION", call.params.as_ref(), true, str::to_string) else { continue };
-            if !seg.args.is_empty() {
-                continue;
-            }
-            if let Some(Value::Str(version)) = params.get("version") {
-                self.units[u].version = version.clone();
-                declarations.insert(lv, self.recs[rec].loc(call.start));
+            if let Some((version, offset)) = declared_record_version(&self.recs[rec].text) {
+                self.units[u].version = version;
+                declarations.insert(lv, self.recs[rec].loc(offset));
             }
         }
         for lv in files {
@@ -2348,7 +2352,7 @@ impl Interp<'_> {
         let language = scan_language_decl(&text).unwrap_or_else(|| DEFAULT_VERSION.to_string());
         let fname = file_name(path).to_string();
         let mut lv = Level::new(LevelKind::Package, &fname, &fname, normalize(path));
-        let recs = scan_run(&package_lines(&text), &fname, &mut self.sink);
+        let recs = scan_package_run(&package_lines(&text), &fname, &mut self.sink);
         lv.records = recs.clone();
         let pl = self.pkg_levels.len();
         self.pkg_levels.push(lv);

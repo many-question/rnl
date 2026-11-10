@@ -106,6 +106,8 @@ pub struct Reading<'a> {
     cards: HashMap<String, Vec<Card>>,
     /// Each format's own state across its files.
     state: HashMap<TypeId, Box<dyn Any>>,
+    /// Alternative record boundaries, selected after file versions and includes are known.
+    pub(crate) pending_records: Vec<crate::records::PendingRun>,
 }
 
 impl<'a> Reading<'a> {
@@ -141,6 +143,7 @@ impl<'a> Reading<'a> {
             used: Vec::new(),
             cards: HashMap::new(),
             state: HashMap::new(),
+            pending_records: Vec::new(),
         };
         cx.note_format(&fname, k, default);
         let stack = [format!("{path}#")];
@@ -154,6 +157,7 @@ impl<'a> Reading<'a> {
         for k in cx.used.clone() {
             formats.list[k].finish(&mut cx);
         }
+        cx.finish_record_scans();
         cx.not_unique_subckts();
         Some(cx.doc)
     }

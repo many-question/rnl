@@ -199,3 +199,13 @@ mode and style in place. Creation-phase selection snapshots are unchanged.
 The source statement's language version controls this exception, including in
 mixed-version includes; independent text layers from released languages survive.
 An explicitly assigned symbol that lacks a required pin still produces an error.
+
+
+Draft 0.4 carrier scanning keeps a complete record even when a member leaves
+parameter, point, role or list parentheses unclosed: that member fails and reading
+continues at the next member (2.4, 7.4). Unclosed strings, comments and record braces
+still make the record fail as a whole. Host adapters retain alternative record
+boundaries until file versions are known, so includes inherit the right version even
+when an include precedes its parent's header. Two readings of one physical file may
+use different inherited versions. Released versions retain their original boundaries
+and diagnostics. Packages apply the same rule using their own declared version.

@@ -7,6 +7,9 @@
 use crate::diag::{codes, Code, Loc, Sink};
 use crate::host::{Record, Seg};
 
+mod scanning;
+pub(crate) use scanning::PendingRun;
+
 /// One carrier line: its number, its content after the comment marker, and the 0-based column
 /// of the content's first character in the host line.
 #[derive(Clone, Debug)]
@@ -22,6 +25,21 @@ fn name_char(c: char) -> bool {
 
 /// Cut the records out of a run of consecutive carrier lines of `file`.
 pub fn scan_run(run: &[CarrierLine], file: &str, sink: &mut Sink) -> Vec<Record> {
+    scan_run_with(run, file, sink, false)
+}
+
+/// Scan a package with the language declared by its first header record (16.1).
+/// A missing declaration keeps the released default version.
+pub fn scan_package_run(run: &[CarrierLine], file: &str, sink: &mut Sink) -> Vec<Record> {
+    let candidate = scan_run_with(run, file, &mut Sink::new(), true);
+    let modern = candidate
+        .first()
+        .and_then(|record| crate::interp::unit::declared_record_version(&record.text))
+        .is_some_and(|(version, _)| crate::interp::unit::keeps_0_4(&version));
+    scan_run_with(run, file, sink, modern)
+}
+
+fn scan_run_with(run: &[CarrierLine], file: &str, sink: &mut Sink, modern: bool) -> Vec<Record> {
     let mut segs = Vec::new();
     let mut chars: Vec<char> = Vec::new();
     for (k, cl) in run.iter().enumerate() {
@@ -88,7 +106,7 @@ pub fn scan_run(run: &[CarrierLine], file: &str, sink: &mut Sink) -> Vec<Record>
                 i += 4;
                 continue;
             }
-            match record_extent(&t, i, &mut unclosed) {
+            match record_extent(&t, i, &mut unclosed, modern) {
                 Err((code, msg, pos)) => {
                     sink.error(code, msg, Some(line_of(pos)));
                     if pos > i {
@@ -156,7 +174,7 @@ pub fn scan_run(run: &[CarrierLine], file: &str, sink: &mut Sink) -> Vec<Record>
 /// The end of the record starting at `start`, or why it is incomplete (2.4). No `*/` starts at
 /// `unclosed` or after it; a comment found not closed moves `unclosed` back to that comment, so
 /// that the records of a run that each leave a comment open do not each look to its end.
-fn record_extent(t: &[char], start: usize, unclosed: &mut usize) -> Result<usize, (Code, String, usize)> {
+fn record_extent(t: &[char], start: usize, unclosed: &mut usize, modern: bool) -> Result<usize, (Code, String, usize)> {
     let n = t.len();
     let mut i = start + 4;
     let mut depth = 0i64;
@@ -213,11 +231,11 @@ fn record_extent(t: &[char], start: usize, unclosed: &mut usize) -> Result<usize
         match c {
             '(' => paren += 1,
             ')' => paren = (paren - 1).max(0),
-            '{' if paren == 0 => {
+            '{' if paren == 0 || modern && seen_brace => {
                 depth += 1;
                 seen_brace = true;
             }
-            '}' if paren == 0 => {
+            '}' if paren == 0 || modern && seen_brace => {
                 depth -= 1;
                 if depth == 0 && seen_brace {
                     return Ok(i + 1);
