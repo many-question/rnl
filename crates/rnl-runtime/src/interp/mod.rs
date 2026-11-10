@@ -523,6 +523,7 @@ impl<'p> Interp<'p> {
             for &u in &brought {
                 self.check_package_refs(u);
             }
+            self.check_unused_scoped_aliases();
             return;
         }
         // a package's statements read without a level take the packages in effect on the first
@@ -563,6 +564,7 @@ impl<'p> Interp<'p> {
                 self.build_scene(lv);
             }
         }
+        self.check_unused_scoped_aliases();
     }
 
     /// Run, and run again from the start as long as a run finds a statement that closes a cycle of
@@ -611,6 +613,9 @@ impl<'p> Interp<'p> {
                 continue;
             }
             let _ = self.eval_member_at(u, m.rec, m.k, m.embedded, &m.m, None, m.header.clone(), None, "");
+        }
+        if self.follows_0_4(u) {
+            self.check_unit_duplicates(u, None);
         }
     }
 
@@ -688,34 +693,45 @@ impl<'p> Interp<'p> {
         if self.restart.is_some() {
             return;
         }
-        // a name bound twice in the same level (6.6)
+        self.check_unit_duplicates(unit, Some(s));
+        self.run_scene(s);
+    }
+
+    /// Check already evaluated bindings without forcing failed or inactive statements (6.6).
+    fn check_unit_duplicates(&mut self, unit: UnitId, scene: Option<SceneId>) {
+        // Keep released scene diagnostics unchanged; new package checks carry their package.
+        let package = if scene.is_none() { self.units[unit].pkg().to_string() } else { String::new() };
         for b in self.units[unit].dups.clone() {
             let first = self.units[unit].names[&(b.prefix, b.name.clone())].clone();
             let k1 = first.key();
             let k2 = b.key();
-            let v1 = match self.memo.get(&(k1.clone(), Some(s))) {
-                Some(Memo::Val(v)) => Some(self.bound_value(&k1, Some(s), b.prefix, &b.name, *v)),
+            let v1 = match self.memo.get(&(k1.clone(), scene)) {
+                Some(Memo::Val(v)) => Some(self.bound_value(&k1, scene, b.prefix, &b.name, *v)),
                 _ => None,
             };
-            let v2 = match self.memo.get(&(k2.clone(), Some(s))) {
-                Some(Memo::Val(v)) => Some(self.bound_value(&k2, Some(s), b.prefix, &b.name, *v)),
+            let v2 = match self.memo.get(&(k2.clone(), scene)) {
+                Some(Memo::Val(v)) => Some(self.bound_value(&k2, scene, b.prefix, &b.name, *v)),
                 _ => None,
             };
             if let (Some(a), Some(c)) = (v1, v2) {
+                if self.follows_0_4(unit) && (self.is_failed(a) || self.is_failed(c)) {
+                    continue;
+                }
                 if a != c {
                     let loc = self.rec_loc(b.rec, b.member.start);
-                    self.sink.error(
+                    self.diag_in(
+                        crate::diag::Severity::Error,
                         codes::NAME_BOUND_TWICE,
                         format!(
                             "{}{} is already bound to another object in this level; the first binding is kept (6.6)",
                             b.prefix, b.name
                         ),
                         loc,
+                        &package,
                     );
                 }
             }
         }
-        self.run_scene(s);
     }
 
     /// The members of a unit that are rules, in order, those of the records written into it with

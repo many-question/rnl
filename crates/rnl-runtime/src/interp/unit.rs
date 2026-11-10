@@ -1766,10 +1766,16 @@ impl Interp<'_> {
         if !name.starts_with('$') {
             return Vec::new();
         }
-        let Some(table) = self.units[fu].scoped.get(&name).cloned() else { return Vec::new() };
         if let Some(v) = self.scoped_memo.get(&(fu, dfn)) {
             return v.clone();
         }
+        let out = self.checked_scoped_aliases(fu, dfn, &name);
+        self.scoped_memo.insert((fu, dfn), out.clone());
+        out
+    }
+
+    fn checked_scoped_aliases(&mut self, fu: UnitId, dfn: super::obj::ObjId, name: &str) -> Vec<(String, String)> {
+        let Some(table) = self.units[fu].scoped.get(name).cloned() else { return Vec::new() };
         let d = self.def(dfn).clone();
         let mut taken: Vec<String> = d.roles.iter().map(|r| r.name.clone()).collect();
         taken.extend(d.params.iter().map(|(n, _)| n.clone()));
@@ -1777,16 +1783,45 @@ impl Interp<'_> {
         let mut out = Vec::new();
         for (alias, (orig, loc)) in table {
             if taken.contains(&alias) {
-                self.sink.error(codes::ALIAS_SCOPED_LIKE_OWN_NAME,
+                let package = if self.follows_0_4(fu) { self.units[fu].pkg().to_string() } else { String::new() };
+                self.diag_in(
+                    Severity::Error,
+                    codes::ALIAS_SCOPED_LIKE_OWN_NAME,
                     format!("the alias {alias} is spelled like a role, parameter or local name of the definition {name} itself; its meaning is not unique and the alias is not used (16.5)"),
                     Some(loc),
+                    &package,
                 );
                 continue;
             }
             out.push((alias, orig));
         }
-        self.scoped_memo.insert((fu, dfn), out.clone());
         out
+    }
+
+    /// A declaration must not hide an own name even when the definition is never applied
+    /// (16.5). Inspect values that evaluation already produced; a missing definition or
+    /// original is not looked up eagerly, and this check never creates usages.
+    pub(crate) fn check_unused_scoped_aliases(&mut self) {
+        for u in 0..self.units.len() {
+            if !self.units[u].ok || !self.follows_0_4(u) {
+                continue;
+            }
+            let Some(fu) = self.file_unit(u) else { continue };
+            let mut names: Vec<_> = self.units[fu].scoped.keys().cloned().collect();
+            names.sort();
+            let scene = self.home_scene(u);
+            for name in names {
+                let Some(bare) = name.strip_prefix('$') else { continue };
+                let Some(binding) = self.lookup_unit('$', bare, u, false, scene) else { continue };
+                let key = binding.key();
+                let home = if self.places.rules.contains(&key) { scene } else { self.home_scene(binding.owner) };
+                let Some(super::Memo::Val(value)) = self.memo.get(&(key.clone(), home)) else { continue };
+                let value = self.bound_value(&key, home, '$', bare, *value);
+                if matches!(self.objs[value.0 as usize].data, super::obj::ObjData::Definition(_)) {
+                    self.checked_scoped_aliases(fu, value, &name);
+                }
+            }
+        }
     }
 
     /// `@USE-ALIASES` in a header: load an alias package and add its aliases to this file's (16.5).
