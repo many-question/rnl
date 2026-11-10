@@ -225,6 +225,7 @@ impl Interp<'_> {
                     }
                     let u = self.new_obj(ObjData::Set(Box::new(SetData {
                         kind: SetKind::Union { source: src },
+                        reach_site: Some(Rc::new(ctx.clone())),
                         ..SetData::plain(Vec::new(), false)
                     })));
                     self.note_made(u, ctx, seg.start);
@@ -233,6 +234,7 @@ impl Interp<'_> {
                 }
                 let u = self.new_obj(ObjData::Set(Box::new(SetData {
                     kind: SetKind::Union { source: src },
+                    reach_site: Some(Rc::new(ctx.clone())),
                     ..SetData::plain(Vec::new(), false)
                 })));
                 self.note_made(u, ctx, seg.start);
@@ -1049,13 +1051,18 @@ impl Interp<'_> {
             );
         }
         let app = Rc::new(Application { dfn, filled, params, given, priority, seg_start: seg.start, seg: seg.clone() });
-        if let Some(rname) = lazy_roles.first().cloned() {
+        let collection_rule =
+            self.follows_0_4(self.source_unit(ctx)) && app.filled.iter().any(|(_, arg)| self.is_lazy(arg.obj));
+        let rname = lazy_roles.first().or_else(|| collection_rule.then(|| multi.first()).flatten()).cloned();
+        if rname.is_some() || collection_rule {
             let key = ("gen", ptr_seg(seg), self.frame_key(ctx), 0usize);
             let gen = match self.node_memo.get(&key) {
                 Some(&g) => g,
                 None => {
                     let g = self.new_obj(ObjData::Set(Box::new(SetData {
                         kind: SetKind::Gen { by_scene: HashMap::new() },
+                        reach_site: Some(Rc::new(ctx.clone())),
+                        reach_sources: app.filled.iter().map(|(_, arg)| arg.obj).collect(),
                         ..SetData::plain(Vec::new(), false)
                     })));
                     self.node_memo.insert(key, g);
@@ -1066,16 +1073,19 @@ impl Interp<'_> {
                 self.rules.insert(ctx.member_key.clone());
                 return Ok((gen, true));
             }
-            let lazy = app.filled.iter().find(|(n, _)| *n == rname).unwrap().1.obj;
+            let lazy = rname.as_ref().map(|role| app.filled.iter().find(|(n, _)| n == role).unwrap().1.obj);
             let c = Rc::new(ctx.clone());
             let task: Task = Rc::new(move |it: &mut Interp, s: SceneId, phase: usize| {
-                let members = it.flatten_inputs(s, lazy, phase, Some(&c));
+                let members = match lazy {
+                    Some(lazy) => it.flatten_inputs(s, lazy, phase, Some(&c)),
+                    None => vec![InputMember::plain(NOTHING)],
+                };
                 let mut out = Vec::new();
                 for (k, member) in members.into_iter().enumerate() {
                     let mobj = member.object;
                     let mut f2 = app.filled.clone();
                     for e in f2.iter_mut() {
-                        if e.0 == rname {
+                        if rname.as_ref() == Some(&e.0) {
                             e.1 = ArgV {
                                 obj: mobj,
                                 dependencies: member.dependencies.clone(),
@@ -1360,6 +1370,7 @@ impl Interp<'_> {
         sub.header = d.header.clone();
         sub.stmt = Some(StmtSpan { rec: d.rec, start: m.start, end: m.end });
         sub.recursive_selection = false;
+        sub.written_selection = false;
         sub.pos = pos_plus(&ctx.pos, "b", k as i64);
         sub.origin = if origin.is_empty() { ctx.origin.clone() } else { origin };
         sub.nested = None;
@@ -1459,6 +1470,7 @@ impl Interp<'_> {
             member_key: ctx.member_key.clone(),
             selected: false,
             recursive_selection: false,
+            written_selection: false,
             defining: Some(defining),
             def_unit: Some(ctx.def_unit.unwrap_or(ctx.unit)),
             scope_in: false,
@@ -2306,6 +2318,12 @@ impl Interp<'_> {
         let mapped = self.map_args(kw, args, seg, ctx, sig_positions(kw))?;
         let items = mapped["items"].obj;
         let target = mapped["target"].clone();
+        if self.follows_0_4(self.source_unit(ctx)) && self.is_set(items) && !self.is_lazy(items) {
+            self.rule_input(items, seg.start, 0, ctx)?;
+        }
+        if self.follows_0_4(self.source_unit(ctx)) && !self.rule_reaches(ctx, [items]) {
+            return Err(Stop::OwnLevel);
+        }
         let plain_set = matches!(self.o(target.obj), ObjData::Set(s) if
             self.follows_0_4(self.source_unit(ctx)) || matches!(s.kind, SetKind::Plain | SetKind::Select { .. }));
         if !plain_set {
@@ -2404,7 +2422,7 @@ impl Interp<'_> {
             return Ok((s, true));
         }
         let mut params: BTreeMap<String, Lit> = p.into_iter().collect();
-        if kw == "SELECT-PIN" {
+        if self.follows_0_4(self.source_unit(ctx)) {
             params.entry("recursive".into()).or_insert(Lit::Bool(false));
         }
         let sd = SetData {

@@ -334,7 +334,7 @@ impl<'p> Interp<'p> {
 
     /// A selection or generated set, or a set that holds one: evaluated where and when used (10.3).
     pub(crate) fn is_lazy(&self, id: ObjId) -> bool {
-        if id == LEVEL || self.pending_constraints.contains_key(&id) {
+        if id == LEVEL || self.pending_constraints.contains_key(&id) || self.selected_by_draft_edit(id) {
             return true;
         }
         match self.o(id) {
@@ -372,7 +372,7 @@ impl<'p> Interp<'p> {
     /// Is a value not lazy now and never so later? Only the edits of a set change with time, and
     /// they can only make a plain set not lazy (`SetData::not_lazy`).
     pub(crate) fn stays_not_lazy(&self, id: ObjId) -> bool {
-        if id == LEVEL {
+        if id == LEVEL || self.selected_by_draft_edit(id) {
             return false;
         }
         match self.o(id) {
@@ -738,6 +738,7 @@ impl<'p> Interp<'p> {
             member_key: mkey,
             selected: false,
             recursive_selection: false,
+            written_selection: false,
             defining: None,
             def_unit: None,
             scope_in: rec.is_some_and(|r| self.units[u].scope_places.contains_key(&r)),
@@ -781,6 +782,8 @@ impl<'p> Interp<'p> {
         let mut statement_ctx = ctx.clone();
         statement_ctx.recursive_selection = self.follows_0_4(self.source_unit(ctx))
             && (ctx.recursive_selection || self.writes_recursive_selection(m, ctx));
+        statement_ctx.written_selection =
+            self.follows_0_4(self.source_unit(ctx)) && (ctx.written_selection || self.writes_selection(m, ctx));
         let ctx = &statement_ctx;
         let mut val = NOTHING;
         let mut sel = false;
@@ -876,7 +879,8 @@ impl<'p> Interp<'p> {
         // a rule whose selection takes effect only in its own level does nothing below it (10.4),
         // before what else it names, which may be host objects of that level
         let own_level = |it: &Self, args: &[ArgV]| {
-            ctx.scene.is_some_and(|s| args.iter().any(|a| it.own_level_only(a.obj, s, &mut HashSet::new())))
+            !it.follows_0_4(it.source_unit(ctx))
+                && ctx.scene.is_some_and(|s| args.iter().any(|a| it.own_level_only(a.obj, s, &mut HashSet::new())))
         };
         if seg.call.is_some() && own_level(self, &args) {
             return Err(Stop::OwnLevel);
@@ -932,6 +936,32 @@ impl<'p> Interp<'p> {
             return Ok((NOTHING, false));
         };
         let kw = self.kw(&call.kw, ctx.unit);
+        if self.follows_0_4(self.source_unit(ctx))
+            && !ctx.in_symbol()
+            && !matches!(
+                kw.as_str(),
+                "ADD-TO" | "REMOVE-FROM" | "DEFINE" | "DEFINE-SYMBOL" | "DEFINE-STYLE" | "USE-PACKAGE"
+            )
+        {
+            // A later selection edit turns a plain set into a rule input (10.4).
+            // Settle those edits before choosing between immediate and deferred execution.
+            for (index, arg) in args.iter_mut().enumerate() {
+                if self.is_set(arg.obj) && !self.is_lazy(arg.obj) {
+                    self.rule_input(arg.obj, seg.start, index, ctx)?;
+                    arg.sel |= self.is_lazy(arg.obj);
+                }
+            }
+        }
+        if self.follows_0_4(self.source_unit(ctx))
+            && !kw.starts_with("SELECT-")
+            && !matches!(
+                kw.as_str(),
+                "UNION" | "ADD-TO" | "REMOVE-FROM" | "DEFINE" | "DEFINE-SYMBOL" | "DEFINE-STYLE" | "USE-PACKAGE"
+            )
+            && !self.rule_reaches(ctx, args.iter().map(|a| a.obj))
+        {
+            return Err(Stop::OwnLevel);
+        }
         let independent_args = words().keyword(&kw).is_some_and(|signature| {
             matches!(&signature.positions, crate::words::Positions::List(slots) if slots.len() == 1 && matches!(slots[0].takes, Takes::One | Takes::Shape))
         });
@@ -1145,6 +1175,7 @@ impl<'p> Interp<'p> {
         }
         self.check_closing(ctx, e.start)?;
         let mut sd = SetData::plain(items, true);
+        sd.reach_site = Some(Rc::new(ctx.clone()));
         sd.item_dependencies = item_dependencies;
         if ctx.scene.is_some() && ctx.frame.is_none() {
             sd.writer = Some(ctx.unit);
