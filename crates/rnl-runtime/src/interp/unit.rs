@@ -156,7 +156,10 @@ pub type ScopedAliases = Vec<(String, (String, Loc))>;
 pub struct DeviceDecl {
     pub name: String,
     pub model: Option<String>,
-    pub terminals: Vec<Lit>,
+    pub terminals: Option<Vec<Lit>>,
+    pub mtype: Option<String>,
+    pub loc: Loc,
+    pub package: String,
 }
 
 #[derive(Clone, Debug)]
@@ -435,8 +438,19 @@ pub(crate) fn params_by_name(
     std_form: bool,
     word: impl Fn(&str) -> String,
 ) -> Result<HashMap<String, Value>, (Code, String)> {
+    params_by_name_in(kw, p, std_form, word, DEFAULT_VERSION)
+}
+
+fn params_by_name_in(
+    kw: &str,
+    p: Option<&Params>,
+    std_form: bool,
+    word: impl Fn(&str) -> String,
+    version: &str,
+) -> Result<HashMap<String, Value>, (Code, String)> {
     let spec = words().keyword(kw).unwrap();
-    let names: Vec<&str> = spec.param_list().iter().map(|q| q.name.as_str()).collect();
+    let params = spec.params_in(version);
+    let names: Vec<&str> = params.iter().map(|q| q.name.as_str()).collect();
     let order = &spec.positional;
     let mut out = HashMap::new();
     if let Some(p) = p {
@@ -488,7 +502,7 @@ pub(crate) fn params_by_name(
             out.insert(std, n.value.clone());
         }
     }
-    for q in spec.param_list() {
+    for q in &params {
         if q.required && !out.contains_key(&q.name) {
             return Err((codes::PARAM_MISSING_REQUIRED, format!("@{kw} lacks the parameter {} (5.3)", q.name)));
         }
@@ -1229,22 +1243,26 @@ impl Interp<'_> {
                     }
                 }
                 "DEVICE" => {
+                    let modern = self.follows_0_4(u);
                     let name = str_val(p.get("name"));
+                    let model = str_val(p.get("model"));
+                    let mtype = str_val(p.get("type")).map(|s| s.to_lowercase());
                     let terms = match p.get("terminals") {
                         Some(Value::Arr(items)) => Some(items.clone()),
                         _ => None,
                     };
-                    let (Some(name), Some(terms)) = (name, terms) else {
-                        self.diag_in(
-                            Severity::Error,
-                            codes::DEVICE_MISSING_PARAMS,
-                            "@DEVICE takes name and terminals (6.12)",
-                            Some(loc),
-                            &pkg,
-                        );
+                    if (modern && ((name.is_none() && model.is_none()) || (terms.is_none() && mtype.is_none())))
+                        || (!modern && (name.is_none() || terms.is_none()))
+                    {
+                        let message = if modern {
+                            "@DEVICE needs name or model, and terminals or type (6.12)"
+                        } else {
+                            "@DEVICE takes name and terminals (6.12)"
+                        };
+                        self.diag_in(Severity::Error, codes::DEVICE_MISSING_PARAMS, message, Some(loc), &pkg);
                         continue;
-                    };
-                    if terms.iter().any(|t| !matches!(t, Value::Str(_))) {
+                    }
+                    if terms.as_ref().is_some_and(|a| a.iter().any(|t| !matches!(t, Value::Str(_)))) {
                         self.diag_in(
                             Severity::Error,
                             codes::DEVICE_TERMINALS_NOT_NAMES,
@@ -1254,15 +1272,38 @@ impl Interp<'_> {
                         );
                         continue;
                     }
-                    let model = str_val(p.get("model"));
-                    let terminals = terms
-                        .iter()
-                        .filter_map(|x| match x {
-                            Value::Str(s) => Some(Lit::Str(super::obj::WStr::new(s, None))),
-                            _ => None,
-                        })
-                        .collect();
-                    self.units[u].devices.push(DeviceDecl { name, model, terminals });
+                    if modern {
+                        let cs = self.units[u].kind != UnitKind::Package && self.doc.rules(&loc.file).case_sensitive;
+                        let mut seen = HashSet::new();
+                        let invalid = terms.as_ref().is_some_and(|a| {
+                            a.iter().any(|v| {
+                                let Value::Str(n) = v else { return false };
+                                let key = if cs { n.clone() } else { n.to_lowercase() };
+                                (!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())) || !seen.insert(key)
+                            })
+                        });
+                        if invalid {
+                            self.diag_in(Severity::Error, codes::DEVICE_TERMINAL_NAMES_INVALID,
+                                "the terminal names of @DEVICE must be distinct by the host's case rules and cannot be made only of digits (6.12)", Some(loc), &pkg);
+                            continue;
+                        }
+                    }
+                    let terminals = terms.map(|a| {
+                        a.iter()
+                            .filter_map(|x| match x {
+                                Value::Str(s) => Some(Lit::Str(super::obj::WStr::new(s, None))),
+                                _ => None,
+                            })
+                            .collect()
+                    });
+                    self.units[u].devices.push(DeviceDecl {
+                        name: name.unwrap_or_else(|| "*".into()),
+                        model,
+                        terminals,
+                        mtype,
+                        loc,
+                        package: pkg.clone(),
+                    });
                 }
                 _ => {}
             }
@@ -1288,7 +1329,7 @@ impl Interp<'_> {
         loc: &Loc,
         std_form: bool,
     ) -> Option<HashMap<String, Value>> {
-        match params_by_name(kw, p, std_form, |n| self.word(n, u)) {
+        match params_by_name_in(kw, p, std_form, |n| self.word(n, u), &self.version_of(Some(u))) {
             Ok(out) => Some(out),
             Err((code, msg)) => {
                 let pkg = self.units[u].pkg().to_string();

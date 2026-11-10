@@ -40,7 +40,6 @@ const PENDING_0_4: &[&str] = &[
     "SOLVER-CONFIG",
     // the rest of the changes of 0.4
     "record",
-    "DEVICE",
     // gathered from the keywords compared, so whole only when none of them is pending
     "pseudo_kinds",
     "takes",
@@ -286,7 +285,7 @@ fn compare(p: &Value, version: &str, pending: &[&str]) {
             json!(a.positional_in(version)),
             "{name} positional"
         );
-        assert_eq!(at_least_one(k.get("at_least_one")), json!(a.at_least_one), "{name} at_least_one");
+        assert_eq!(at_least_one(k.get("at_least_one")), json!(a.at_least_one_in(version)), "{name} at_least_one");
         assert_eq!(k["open_params"].as_bool().unwrap_or(false), a.open_params, "{name} open params");
         assert_eq!(k["override"], json!(a.override_), "{name} override");
         let dynamic = matches!(a.params, ParamsSpec::Definition);

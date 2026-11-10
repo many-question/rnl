@@ -203,6 +203,8 @@ pub struct KeywordSig {
     /// Groups of parameters of which each needs at least one written (4.2), such as DISTANCE's
     /// `min`, `max` and `exact`.
     pub at_least_one: Vec<Vec<String>>,
+    /// The first version requiring these parameter groups.
+    pub at_least_one_since: Option<String>,
     /// Whether it takes parameters beyond its list, which the keyword checks itself (SOLVER-CONFIG).
     pub open_params: bool,
     /// The version that adds it, none for 0.2.
@@ -218,6 +220,14 @@ pub struct KeywordSig {
 }
 
 impl KeywordSig {
+    pub fn at_least_one_in(&self, version: &str) -> &[Vec<String>] {
+        if in_version(&self.at_least_one_since, &None, version) {
+            &self.at_least_one
+        } else {
+            &[]
+        }
+    }
+
     pub fn param_list(&self) -> &[ParamSpec] {
         match &self.params {
             ParamsSpec::List(v) => v,
@@ -622,6 +632,7 @@ fn keyword(name: &str, spec: &Value) -> Result<KeywordSig, String> {
             Some(_) => vec![list("at_least_one")],
             None => Vec::new(),
         },
+        at_least_one_since: str_of(spec.get("at_least_one_since")),
         open_params: spec.get("open_params").and_then(Value::as_bool).unwrap_or(false),
         since: str_of(spec.get("since")),
         until: str_of(spec.get("until")),
