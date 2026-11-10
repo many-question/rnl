@@ -49,3 +49,19 @@ It refuses, giving no text, a `Failure::Refused` with the kind and the reason of
 `rnl replace-records` ([`rnl-cli`](../rnl-cli/README.md#replace-records)) and the `replace_records` request of the [WebAssembly binding](../../bindings/runtime-wasm/README.md#replacing-the-records-of-a-level) call it.
 
 With `language_version="0.4"`, structured text and pin labels accept `kind:"sqrt"` with `radicand` runs, and the optional run style `upright`. The writer checks that a formula reads back with the same content and style. Expanded literal attributes with spaces or unsupported styled fragments may have no equivalent in the formula subset; provide their original `markup` instead of reconstructed `lines`. Such requests are refused rather than changing their text. Existing runs and the default output version keep their behavior.
+
+
+### Numbered edit errors
+
+`write_diagnosed` and `write_with_options_diagnosed` return `Written { text, diagnostics }`
+or `Refusal { code, message, diagnostics }`. Operation errors use the existing RNL8600–RNL8624
+kinds; host errors retain their own kind and source location. The `write` and
+`write_with_options` string interfaces remain available. Draft 0.4 refuses a host parse error
+before writing; released output versions retain their behavior. Diagnostics are available
+through the diagnosed interfaces even when a released-version write succeeds.
+
+For explicit 0.4 requests, the CLI prints the diagnostic number. The WASM response keeps its
+`error` string and adds `code`, `name` and `diagnostics`. Both direct and Worker JavaScript
+calls reject with an Error carrying `code`, `diagnosticName` and `diagnostics`. Existing
+requests keep their old error response shape. No Viewer application changes are required
+to keep displaying the message; frontends can use the added fields for diagnostic links.

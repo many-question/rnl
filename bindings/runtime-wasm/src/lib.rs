@@ -321,6 +321,14 @@ pub enum Response {
     /// the refusal, such as `RNL8405 writeback-replace-region-encrypted`), or no build kept the
     /// drawings asked for.
     Error(String),
+    /// Draft 0.4 edit refusals keep the existing error string and add machine-readable fields.
+    #[serde(untagged)]
+    EditError {
+        error: String,
+        code: Option<String>,
+        name: &'static str,
+        diagnostics: Vec<rnl_view::Diagnostic>,
+    },
 }
 
 thread_local! {
@@ -377,8 +385,15 @@ pub fn respond(request: &[u8]) -> Response {
         };
     }
     if value.get("write").is_some() {
+        let modern = value["write"]["language_version"].as_str() == Some("0.4");
         return match serde_json::from_value(value) {
             Ok(w) => write(w),
+            Err(e) if modern => Response::EditError {
+                error: format!("the request is not valid: {e}"),
+                code: rnl_runtime::diag::codes::EDIT_FIELD_INVALID.number(),
+                name: rnl_runtime::diag::codes::EDIT_FIELD_INVALID.name(),
+                diagnostics: Vec::new(),
+            },
             Err(e) => invalid(e),
         };
     }
@@ -596,9 +611,23 @@ fn write(request: WriteRequest) -> Response {
         std_version: request.std_version.clone(),
         ..Options::default()
     };
-    let text = match rnl_edit::write_with_options(&request.write, &files, &runtime) {
-        Ok(t) => t,
-        Err(e) => return Response::Error(e),
+    let text = if request.write.language_version.as_deref() == Some("0.4") {
+        match rnl_edit::write_with_options_diagnosed(&request.write, &files, &runtime) {
+            Ok(written) => written.text,
+            Err(e) => {
+                return Response::EditError {
+                    error: e.message,
+                    code: e.code.number(),
+                    name: e.code.name(),
+                    diagnostics: e.diagnostics,
+                }
+            }
+        }
+    } else {
+        match rnl_edit::write_with_options(&request.write, &files, &runtime) {
+            Ok(text) => text,
+            Err(e) => return Response::Error(e),
+        }
     };
     // the netlist built under the name it was written under, so that it reads the same
     let entry = rnl_edit::entry_of(&request.write);
@@ -1134,6 +1163,30 @@ R1 a 0 1k
             let v: Value = serde_json::from_str(&respond_json(request)).unwrap();
             assert!(v["error"].as_str().unwrap().starts_with("the request is not valid: "), "{v}");
         }
+    }
+
+    #[test]
+    fn modern_edit_refusals_have_codes_and_legacy_responses_stay_unchanged() {
+        let mut write = json!({"dialect":"spice", "netlist":"title\nR1 a 0 1k\n", "author":"test",
+            "ops":[{"op":"set","level":"file","object":"#R1"}]});
+        let old = answer(json!({"write":write}));
+        assert_eq!(old, json!({"error":"op 0 (set): nothing to set: no `symbol`, `style`, `at` or `orient`"}));
+        write["language_version"] = json!("0.4");
+        let new = answer(json!({"write":write}));
+        assert_eq!(new["error"], old["error"]);
+        assert_eq!(new["code"], "RNL8619");
+        assert_eq!(new["name"], "edit-set-nothing");
+        assert_eq!(new["diagnostics"], json!([]));
+        write["ops"] = json!(false);
+        let invalid = answer(json!({"write":write}));
+        assert_eq!(invalid["code"], "RNL8603");
+        assert!(invalid["error"].as_str().unwrap().starts_with("the request is not valid:"));
+        write["ops"] = json!([]);
+        write["netlist"] = json!("title\n.subckt broken a b\nR1 a b 1k\n");
+        let host = answer(json!({"write":write}));
+        assert!(host.get("written").is_none(), "{host}");
+        assert_eq!(host["name"], "host-subckt-no-ends");
+        assert!(host["diagnostics"].as_array().unwrap().iter().any(|d| d["code"] == host["code"] && d["line"] != 0));
     }
 
     #[test]

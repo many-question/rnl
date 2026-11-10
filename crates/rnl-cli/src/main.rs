@@ -820,7 +820,14 @@ fn run(args: &Args) -> Result<ExitCode, Said> {
             }
             let request: rnl_edit::WriteRequest = serde_json::from_value(request)
                 .map_err(|e| Said::new(codes::CLI_REQUEST_INVALID, format!("the request is not valid: {e}")))?;
-            std::fs::write(&out, rnl_edit::write_with_options(&request, &provider, &options(args))?).map_err(io)?;
+            let written = if request.language_version.as_deref() == Some("0.4") {
+                rnl_edit::write_with_options_diagnosed(&request, &provider, &options(args))
+                    .map(|w| w.text)
+                    .map_err(|e| Said::new(e.code, e.message))?
+            } else {
+                rnl_edit::write_with_options(&request, &provider, &options(args))?
+            };
+            std::fs::write(&out, written).map_err(io)?;
             Ok(ExitCode::SUCCESS)
         }
         _ => Err(Said::new(codes::CLI_UNKNOWN_COMMAND, format!("unknown command {}\n{USAGE}", args.command))),

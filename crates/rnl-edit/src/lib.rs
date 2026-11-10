@@ -26,6 +26,8 @@
 //! level put in place of the records of that level, in the file that holds it, with no merging and
 //! no other line changed.
 
+mod error;
+pub use error::{Refusal, Written};
 pub mod form;
 pub mod ops;
 pub mod replace;
@@ -33,7 +35,7 @@ pub mod upgrade;
 
 use std::collections::BTreeMap;
 
-use rnl_runtime::diag::Sink;
+use rnl_runtime::diag::{codes, Severity, Sink};
 use rnl_runtime::host::file_name;
 use rnl_runtime::host::{HostDocument, LevelId, LevelKind};
 use rnl_runtime::source::MemoryProvider;
@@ -97,38 +99,61 @@ pub fn entry(dialect: &str) -> &'static str {
 /// Write the ops into the netlist; the netlist's own text stays as it is, line endings included.
 /// An op that cannot be written refuses the whole request, with the reason.
 pub fn write(request: &WriteRequest) -> Result<String, String> {
+    write_diagnosed(request).map(|w| w.text).map_err(|e| e.message)
+}
+
+/// Write with stable diagnostic kinds and the host reader's diagnostics. Draft 0.4 refuses
+/// host errors before writing; released output versions retain their existing behavior.
+pub fn write_diagnosed(request: &WriteRequest) -> Result<Written, Refusal> {
+    write_in(request, None)
+}
+
+fn write_in(request: &WriteRequest, files: Option<&dyn rnl_runtime::source::Provider>) -> Result<Written, Refusal> {
     let version = request.language_version.as_deref().unwrap_or(VERSION);
     if !["0.3", "0.4"].contains(&version) {
-        return Err(format!("unsupported output language version `{version}`"));
+        return Err(Refusal::new(
+            codes::EDIT_FIELD_INVALID,
+            format!("unsupported output language version `{version}`"),
+        ));
     }
     let dialect = request.dialect.as_str();
     // the formats of the files that are not netlists, a Verilog-A model or a package file (2.7): this
     // writer does not write into them
     let (text, package) = (rnl_runtime::host::text::NAME, rnl_runtime::host::package::NAME);
     if dialect == text {
-        return Err(
-            "dialect \"text\" is that of a file that is not a netlist; RNL is written only into a netlist".into()
-        );
+        return Err(Refusal::new(
+            codes::EDIT_DIALECT_TEXT,
+            "dialect \"text\" is that of a file that is not a netlist; RNL is written only into a netlist",
+        ));
     }
     if dialect == package {
-        return Err("dialect \"rnl\" is that of a package file (2.7), which is not a netlist; RNL is written \
-                    here only into a netlist"
-            .into());
+        return Err(Refusal::new(
+            codes::EDIT_DIALECT_PACKAGE,
+            "dialect \"rnl\" is that of a package file (2.7), which is not a netlist; RNL is written \
+                    here only into a netlist",
+        ));
     }
     let formats: Vec<_> = rnl_view::formats().into_iter().filter(|f| f.name != text && f.name != package).collect();
     if !formats.iter().any(|f| f.name == dialect) {
         let names: Vec<&str> = formats.iter().map(|f| f.name.as_str()).collect();
-        return Err(format!("dialect \"{dialect}\" is not {}", names.join(" or ")));
+        return Err(Refusal::new(
+            codes::EDIT_DIALECT_UNKNOWN,
+            format!("dialect \"{dialect}\" is not {}", names.join(" or ")),
+        ));
     }
-    let ops: Vec<LevelOp> = request.ops.iter().enumerate().map(|(k, v)| ops::parse(k, v)).collect::<Result<_, _>>()?;
+    let ops: Vec<LevelOp> =
+        request.ops.iter().enumerate().map(|(k, v)| ops::parse_diagnosed(k, v)).collect::<Result<_, _>>()?;
 
     for op in &ops {
         match &op.op {
-            Op::AddText { text, .. } => form::check_math_content(text, version)?,
+            Op::AddText { text, .. } => {
+                form::check_math_content(text, version).map_err(|e| Refusal::new(codes::EDIT_FIELD_INVALID, e))?
+            }
             Op::DefineSymbol { pins, .. } => {
                 for pin in pins {
                     if let Some(label) = &pin.label {
-                        form::check_math_content(label, version)?;
+                        form::check_math_content(label, version)
+                            .map_err(|e| Refusal::new(codes::EDIT_PIN_INVALID, e))?;
                     }
                 }
             }
@@ -139,30 +164,58 @@ pub fn write(request: &WriteRequest) -> Result<String, String> {
     if version != "0.4" {
         for op in &ops {
             if matches!(&op.op, Op::AddText { fix_rotate: Some(_), .. }) {
-                return Err("fix_rotate requires language_version 0.4".into());
+                return Err(Refusal::new(codes::EDIT_FIELD_INVALID, "fix_rotate requires language_version 0.4"));
             }
             if let Op::DefineSymbol { pins, .. } = &op.op {
                 if pins.iter().any(|p| p.terminals.is_empty() || !p.names.is_empty() || p.bus && p.terminals.len() == 1)
                 {
-                    return Err(
-                        "independent pin names, unbound pins and one-terminal bus pins require language_version 0.4"
-                            .into(),
-                    );
+                    return Err(Refusal::new(
+                        codes::EDIT_PIN_INVALID,
+                        "independent pin names, unbound pins and one-terminal bus pins require language_version 0.4",
+                    ));
                 }
             }
         }
     }
 
     let path = entry_of(request);
-    let read = |text: &str| {
-        let files = MemoryProvider::new().with(&path, text);
-        rnl_view::read_host(&path, Some(dialect), &files, &mut Sink::new())
+    let mut sink = Sink::new();
+    let mut read = |text: &str| {
+        let memory = MemoryProvider::new().with(&path, text);
+        let mut layers: Vec<&dyn rnl_runtime::source::Provider> = vec![&memory];
+        // Modern writes read includes from the caller's workspace too.
+        if version == "0.4" {
+            layers.extend(files);
+        }
+        let source = rnl_runtime::source::Layered { layers };
+        let doc = rnl_view::read_host(&path, Some(dialect), &source, &mut sink);
+        if version == "0.4" {
+            if let Some(d) = sink.all().iter().find(|d| d.severity == Severity::Error) {
+                return Err(Refusal {
+                    code: d.code,
+                    message: d
+                        .loc
+                        .as_ref()
+                        .map(|loc| format!("{loc}: {}", d.message))
+                        .unwrap_or_else(|| d.message.clone()),
+                    diagnostics: error::diagnostics(&sink),
+                });
+            }
+        }
+        doc.map_err(|message| Refusal {
+            code: codes::VIEW_CANNOT_READ,
+            message,
+            diagnostics: error::diagnostics(&sink),
+        })
     };
     let doc = read(&request.netlist)?;
     // the netlist as the reader names it in its levels and records
     let file = doc.main().file.clone();
     if doc.levels.iter().any(|lv| lv.records.iter().any(|r| r.file == file)) {
-        return Err("the netlist has RNL records already; this writer writes only into a netlist without them".into());
+        return Err(Refusal::new(
+            codes::EDIT_NETLIST_HAS_RECORDS,
+            "the netlist has RNL records already; this writer writes only into a netlist without them",
+        ));
     }
 
     // the header's packages, and each level's statements in the order of the ops
@@ -183,7 +236,7 @@ pub fn write(request: &WriteRequest) -> Result<String, String> {
             continue;
         }
         let id = lop.level.as_deref().unwrap_or_default();
-        let level = find_level(&doc, &file, id).map_err(|why| format!("op {k} ({}): {why}", lop.op.name()))?;
+        let level = find_level(&doc, &file, id).map_err(|e| e.context(format!("op {k} ({})", lop.op.name())))?;
         let style = match &lop.op {
             Op::Set { style, .. } | Op::AddUsage { style, .. } if !style.is_empty() => {
                 let defined = styles.entry(level).or_default();
@@ -213,16 +266,16 @@ pub fn write(request: &WriteRequest) -> Result<String, String> {
             let file_level = doc.file_level(level);
             let selected = &doc.levels[file_level];
             if selected.section.is_some() && selected.section_lines.is_none() {
-                format!("op {k} ({what}): the selected library section {} was not found (2.2)", selected.section.as_deref().unwrap())
+                Refusal::new(codes::EDIT_SECTION_NOT_FOUND, format!("op {k} ({what}): the selected library section {} was not found (2.2)", selected.section.as_deref().unwrap()))
             } else if doc.excluded.iter().any(|(f, x, y)| f == &file && (*x, *y) == (a, b))
                 || doc.unselected_sections.iter().any(|(l, x, y)| *l == file_level && (*x, *y) == (a, b)) {
 
-                format!("op {k} ({what}): {title} lies in a host region excluded from writing, lines {a} to {b} (2.2)")
+                Refusal::new(codes::EDIT_REGION_EXCLUDED, format!("op {k} ({what}): {title} lies in a host region excluded from writing, lines {a} to {b} (2.2)"))
             } else {
-                format!(
+                Refusal::new(codes::EDIT_REGION_ENCRYPTED, format!(
                     "op {k} ({what}): {title} lies in a region written to be encrypted, lines {a} to {b}, where a record \
                      is gone once the region is encrypted (2.2)"
-                )
+                ))
             }
         })?;
     }
@@ -233,7 +286,8 @@ pub fn write(request: &WriteRequest) -> Result<String, String> {
     let doc = read(&text)?;
     let mut at: BTreeMap<LevelId, u32> = BTreeMap::new();
     for &level in levels.keys() {
-        let line = record_line(&doc, level, &text).map_err(|_| "the netlist reads otherwise with its header")?;
+        let line = record_line(&doc, level, &text)
+            .map_err(|_| Refusal::new(codes::EDIT_REREAD_DIFFERS, "the netlist reads otherwise with its header"))?;
         at.insert(level, line);
     }
     // from the bottom up, so that the places of the levels above stay where the reader found them
@@ -245,7 +299,7 @@ pub fn write(request: &WriteRequest) -> Result<String, String> {
         let record = record(&request.author, &statements, carrier_at(&doc, &file, &text, at[&lv]));
         text = append_record(&doc, lv, &text, &record);
     }
-    Ok(text)
+    Ok(Written { text, diagnostics: error::diagnostics(&sink) })
 }
 
 /// Write a new drawing with the tool's package settings. In draft 0.4, persist the exact
@@ -256,29 +310,46 @@ pub fn write_with_options(
     files: &dyn rnl_runtime::source::Provider,
     options: &rnl_runtime::Options,
 ) -> Result<String, String> {
-    let text = write(request)?;
+    write_with_options_diagnosed(request, files, options).map(|w| w.text).map_err(|e| e.message)
+}
+
+/// The package-aware writer, retaining numbered refusals and host diagnostics.
+pub fn write_with_options_diagnosed(
+    request: &WriteRequest,
+    files: &dyn rnl_runtime::source::Provider,
+    options: &rnl_runtime::Options,
+) -> Result<Written, Refusal> {
+    let mut written = write_in(request, Some(files))?;
+    let text = &written.text;
     if !options.include_std || request.language_version.as_deref() != Some("0.4") {
-        return Ok(text);
+        return Ok(written);
     }
     let entry = entry_of(request);
-    let memory = MemoryProvider::new().with(&entry, &text);
+    let memory = MemoryProvider::new().with(&entry, text);
     let both = rnl_runtime::source::Layered { layers: vec![&memory, files] };
-    let read = rnl_view::interpret_with(&entry, Some(&request.dialect), &BTreeMap::new(), &both, options)?;
-    let Some(version) = read.included_standard else { return Ok(text) };
-    let saved = rnl_runtime::writeback::with_standard_package(&read.doc, &text, &version);
-    if saved == text {
-        return Err("cannot write the standard-package reference into the main header (16.3)".into());
+    let read = rnl_view::interpret_with(&entry, Some(&request.dialect), &BTreeMap::new(), &both, options)
+        .map_err(|e| Refusal::new(codes::VIEW_CANNOT_READ, e))?;
+    let Some(version) = read.included_standard else { return Ok(written) };
+    let saved = rnl_runtime::writeback::with_standard_package(&read.doc, text, &version);
+    if saved == *text {
+        return Err(Refusal::new(
+            codes::EDIT_REREAD_DIFFERS,
+            "cannot write the standard-package reference into the main header (16.3)",
+        ));
     }
-    Ok(saved)
+    written.text = saved;
+    Ok(written)
 }
 
 /// The level an op names: `subckt:NAME`, a subcircuit of the netlist, by the dialect's case rule;
 /// `file` or `file:…`, the netlist's file level.
-fn find_level(doc: &HostDocument, file: &str, id: &str) -> Result<LevelId, String> {
+fn find_level(doc: &HostDocument, file: &str, id: &str) -> Result<LevelId, Refusal> {
     if id == "file" || id.starts_with("file:") {
         return Ok(0);
     }
-    let name = id.strip_prefix("subckt:").ok_or_else(|| format!("level \"{id}\" is not subckt:NAME or file:PATH"))?;
+    let name = id.strip_prefix("subckt:").ok_or_else(|| {
+        Refusal::new(codes::EDIT_LEVEL_ID_INVALID, format!("level \"{id}\" is not subckt:NAME or file:PATH"))
+    })?;
     doc.levels
         .iter()
         .position(|lv| {
@@ -286,7 +357,7 @@ fn find_level(doc: &HostDocument, file: &str, id: &str) -> Result<LevelId, Strin
                 && lv.file == file
                 && if lv.case_sensitive { lv.name == name } else { lv.name.eq_ignore_ascii_case(name) }
         })
-        .ok_or_else(|| format!("the netlist has no subcircuit {name}"))
+        .ok_or_else(|| Refusal::new(codes::EDIT_LEVEL_NO_SUBCKT, format!("the netlist has no subcircuit {name}")))
 }
 
 /// A record of the author's: one statement after another, separated by `;`, each line within
