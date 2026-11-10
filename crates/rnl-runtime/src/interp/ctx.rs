@@ -24,6 +24,7 @@ pub struct Frame {
     /// Parameter values; None for a parameter neither passed nor given a default.
     pub params: Vec<(String, Option<Lit>)>,
     pub locals: Vec<(String, ObjId)>,
+    pub local_dependencies: HashMap<String, Vec<ObjId>>,
     /// Local names and the members that bind them, evaluated on first use (forward references).
     pub local_members: Vec<(String, MemberRef, usize)>,
     pub symbol: Option<ObjId>,
@@ -40,6 +41,7 @@ impl Frame {
             roles: Vec::new(),
             params: Vec::new(),
             locals: Vec::new(),
+            local_dependencies: HashMap::new(),
             local_members: Vec::new(),
             symbol: None,
             definition: None,
@@ -75,7 +77,7 @@ pub type FrameRef = Rc<RefCell<Frame>>;
 #[derive(Clone, Debug)]
 pub enum Nested {
     Member(MemberRef, usize),
-    Val(ObjId),
+    Val(ObjId, Vec<ObjId>),
 }
 
 pub type NestedRef = Rc<RefCell<HashMap<(char, String), Nested>>>;
@@ -120,9 +122,28 @@ pub struct Ctx {
     pub segments: Segments,
     /// The input retained by this segment, once its signature slots are matched (5.5).
     pub modifier_input: Cell<Option<(ObjId, bool)>>,
+    /// Objects traversed by a sub-object reference in this segment. A role filler can remain
+    /// valid even when the usage through which it was reached fails after symbol assignment.
+    pub reference_dependencies: Rc<RefCell<Vec<ObjId>>>,
 }
 
 impl Ctx {
+    pub fn with_dependencies(&self, dependencies: &[ObjId]) -> Ctx {
+        let mut context = self.clone();
+        context.reference_dependencies = Rc::new(RefCell::new(self.reference_dependencies.borrow().clone()));
+        context.depend_on(dependencies);
+        context
+    }
+
+    pub fn depend_on(&self, objects: &[ObjId]) {
+        let mut dependencies = self.reference_dependencies.borrow_mut();
+        for object in objects {
+            if !dependencies.contains(object) {
+                dependencies.push(*object);
+            }
+        }
+    }
+
     pub fn frame_kind(&self) -> Option<FrameKind> {
         self.frame.as_ref().map(|f| f.borrow().kind)
     }
@@ -158,6 +179,7 @@ impl Ctx {
         let mut c = self.clone();
         c.segments = self.segments.iter().copied().chain([(self.pos.len(), k)]).collect();
         c.modifier_input = Cell::default();
+        c.reference_dependencies = Rc::new(RefCell::new(self.reference_dependencies.borrow().clone()));
         c
     }
 

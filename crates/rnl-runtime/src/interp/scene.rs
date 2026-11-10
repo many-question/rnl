@@ -164,6 +164,8 @@ pub struct Scene {
     pub constraints: Vec<ObjId>,
     pub routes: Vec<ObjId>,
     pub keytexts: HashMap<(ObjId, String), ObjId>,
+    pub named_subobjects: HashMap<(ObjId, String), ObjId>,
+    pub pins: HashMap<(ObjId, usize), ObjId>,
     pub at: Vec<Fact>,
     /// The indexes in `at` of each object's facts, in order; `add_at` keeps it.
     pub at_by_target: HashMap<ObjId, Vec<usize>>,
@@ -182,10 +184,12 @@ pub struct Scene {
     pub groups: Vec<GroupFact>,
     pub tasks: Vec<Vec<(Pos, Task)>>,
     pub created: HashMap<ObjId, Pos>,
+    /// Contexts that created objects, for failures learned after symbol assignment.
+    pub creation_sites: HashMap<ObjId, Rc<Ctx>>,
     /// Where each object is made, in the order of writing: `created` with the segment of each
     /// pipe (5.5), for the drawing order (11.6), bundles (11.8) and the style of a text (8.3).
     pub created_order: HashMap<ObjId, Pos>,
-    pub items_cache: HashMap<(ObjId, usize), Vec<ObjId>>,
+    pub items_cache: HashMap<(ObjId, usize), Vec<InputMember>>,
     pub pos_cache: HashMap<ObjId, ObjId>,
     pub symbol: HashMap<ObjId, ObjId>,
     pub(crate) pin_text_sources: Vec<super::pin_names::PinTextSource>,
@@ -245,6 +249,7 @@ impl Scene {
     /// Add a coordinate fact (PLACE, or the coordinates of a point).
     /// Note where an object is made, by the context of its statement.
     pub(crate) fn note_created(&mut self, o: ObjId, at: Pos, ctx: &Ctx) {
+        self.creation_sites.insert(o, Rc::new(ctx.clone()));
         self.created_order.insert(o, order_pos(&at, &ctx.segments));
         self.created.insert(o, at);
     }
@@ -282,6 +287,8 @@ impl Scene {
             constraints: Vec::new(),
             routes: Vec::new(),
             keytexts: HashMap::new(),
+            named_subobjects: HashMap::new(),
+            pins: HashMap::new(),
             at: Vec::new(),
             at_by_target: HashMap::new(),
             orient: Vec::new(),
@@ -294,6 +301,7 @@ impl Scene {
             groups: Vec::new(),
             tasks: (0..10).map(|_| Vec::new()).collect(),
             created: HashMap::new(),
+            creation_sites: HashMap::new(),
             created_order: HashMap::new(),
             items_cache: HashMap::new(),
             pos_cache: HashMap::new(),
@@ -835,6 +843,8 @@ impl Interp<'_> {
             | ObjData::Usage(_)
             | ObjData::Bundle { .. }
             | ObjData::Term { .. }
+            | ObjData::ScenePin { .. }
+            | ObjData::NamedSubobject { .. }
             | ObjData::Wire { .. }
             | ObjData::Prim { .. }
             | ObjData::Net { .. } => {
@@ -1034,6 +1044,7 @@ impl Interp<'_> {
     ) -> R<()> {
         let chain = self.apply_chain(ctx);
         let site = Some(Rc::new(ctx.clone()));
+        let obj = if self.scenes[s].phase >= 7 { self.scene_value(obj) } else { obj };
         match op {
             TargetOp::Place { x, y, priority, off } => {
                 let obj = if self.follows_0_4(self.source_unit(ctx)) { self.coordinate_object(obj) } else { obj };
@@ -1216,12 +1227,25 @@ impl Interp<'_> {
 
     /// Leaf members, sets inside sets spread all the way (done one by one, 5.2.1).
     pub(crate) fn flatten(&mut self, s: SceneId, obj: ObjId, phase: usize, ctx: Option<&Ctx>) -> Vec<ObjId> {
+        self.flatten_inputs(s, obj, phase, ctx).into_iter().map(|member| member.object).collect()
+    }
+
+    pub(crate) fn flatten_inputs(
+        &mut self,
+        s: SceneId,
+        obj: ObjId,
+        phase: usize,
+        ctx: Option<&Ctx>,
+    ) -> Vec<InputMember> {
         let mut out = Vec::new();
-        for m in self.items_of(s, obj, phase, ctx) {
-            if self.is_set(m) {
-                out.extend(self.flatten(s, m, phase, ctx));
+        for member in self.input_items(s, obj, phase, ctx) {
+            if self.is_set(member.object) {
+                for mut child in self.flatten_inputs(s, member.object, phase, ctx) {
+                    child.depend_on(&member.dependencies);
+                    out.push(child);
+                }
             } else {
-                out.push(m);
+                out.push(member);
             }
         }
         out
@@ -1229,12 +1253,16 @@ impl Interp<'_> {
 
     /// Members of a set one level deep: references to sets are spread, written `{…}` stay.
     pub(crate) fn items_of(&mut self, s: SceneId, obj: ObjId, phase: usize, ctx: Option<&Ctx>) -> Vec<ObjId> {
+        self.input_items(s, obj, phase, ctx).into_iter().map(|member| member.object).collect()
+    }
+
+    pub(super) fn input_items(&mut self, s: SceneId, obj: ObjId, phase: usize, ctx: Option<&Ctx>) -> Vec<InputMember> {
         self.materialize_constraint(obj);
         if obj == LEVEL {
-            return vec![self.scenes[s].levelobj];
+            return vec![InputMember::plain(self.scenes[s].levelobj)];
         }
         if !self.is_set(obj) {
-            return vec![obj];
+            return vec![InputMember::plain(obj)];
         }
         let key = (obj, phase);
         if let Some(v) = self.scenes[s].items_cache.get(&key) {
@@ -1254,12 +1282,12 @@ impl Interp<'_> {
             ks.sort_by_cached_key(|&k| order_pos(&sd.mods[k].pos, &sd.mods[k].ctx.segments));
             ks.into_iter().map(|k| (sd.mods[k].add, sd.mods[k].source, sd.mods[k].ctx.clone())).collect()
         };
-        let mut base: Vec<ObjId> = match &self.set(obj).kind {
-            SetKind::Constraints { members, .. } => members.clone(),
-            SetKind::Select { .. } => self.select(s, obj, phase, ctx),
+        let mut base: Vec<InputMember> = match &self.set(obj).kind {
+            SetKind::Constraints { members, .. } => members.iter().copied().map(InputMember::plain).collect(),
+            SetKind::Select { .. } => self.select(s, obj, phase, ctx).into_iter().map(InputMember::plain).collect(),
             SetKind::Gen { by_scene } => {
                 if phase >= 5 {
-                    by_scene.get(&s).cloned().unwrap_or_default()
+                    by_scene.get(&s).into_iter().flatten().copied().map(InputMember::plain).collect()
                 } else {
                     Vec::new()
                 }
@@ -1267,11 +1295,20 @@ impl Interp<'_> {
             &SetKind::Union { source } => {
                 let mut seen = HashSet::new();
                 let mut out = Vec::new();
-                for m in self.items_of(s, source, phase, ctx) {
-                    let xs =
-                        if self.is_set(m) && !self.set(m).explicit { self.items_of(s, m, phase, ctx) } else { vec![m] };
+                for m in self.input_items(s, source, phase, ctx) {
+                    let xs = if self.is_set(m.object) && !self.set(m.object).explicit {
+                        self.input_items(s, m.object, phase, ctx)
+                            .into_iter()
+                            .map(|mut child| {
+                                child.depend_on(&m.dependencies);
+                                child
+                            })
+                            .collect()
+                    } else {
+                        vec![m]
+                    };
                     for x in xs {
-                        if seen.insert(x) {
+                        if seen.insert(x.object) {
                             out.push(x);
                         }
                     }
@@ -1280,31 +1317,39 @@ impl Interp<'_> {
             }
             SetKind::Plain => {
                 let mut out = Vec::new();
-                for (o, spread) in self.set(obj).items.clone() {
+                for (index, (o, spread)) in self.set(obj).items.clone().into_iter().enumerate() {
                     if self.is_failed(o) {
                         continue;
                     }
-                    if o == LEVEL {
-                        out.push(self.scenes[s].levelobj);
-                    } else if self.is_set(o) && (spread || !self.set(o).explicit) {
-                        out.extend(self.items_of(s, o, phase, ctx));
+                    let dependencies = self.set(obj).item_dependencies.get(index).cloned().unwrap_or_default();
+                    if self.is_set(o) && (spread || !self.set(o).explicit) {
+                        for mut child in self.input_items(s, o, phase, ctx) {
+                            child.depend_on(&dependencies);
+                            out.push(child);
+                        }
                     } else {
-                        out.push(o);
+                        out.push(InputMember {
+                            object: if o == LEVEL { self.scenes[s].levelobj } else { o },
+                            dependencies,
+                        });
                     }
                 }
                 out
             }
         };
         for (add, source, mctx) in mods {
-            let srcm = if self.is_set(source) { self.items_of(s, source, phase, Some(&mctx)) } else { vec![source] };
+            let mut srcm = self.input_items(s, source, phase, Some(&mctx));
+            for member in &mut srcm {
+                member.depend_on(&mctx.reference_dependencies.borrow());
+            }
             if add {
                 base.extend(srcm);
             } else {
-                let ids: HashSet<ObjId> = srcm.into_iter().collect();
-                base.retain(|x| !ids.contains(x));
+                let ids: HashSet<ObjId> = srcm.into_iter().map(|member| member.object).collect();
+                base.retain(|x| !ids.contains(&x.object));
             }
         }
-        let base: Vec<ObjId> = base.into_iter().filter(|x| self.belongs(s, *x)).collect();
+        let base: Vec<InputMember> = base.into_iter().filter(|x| self.belongs(s, x.object)).collect();
         self.scenes[s].busy.remove(&key);
         self.scenes[s].items_cache.insert(key, base.clone());
         base
@@ -1892,7 +1937,7 @@ impl Interp<'_> {
             }
             let Some(shape) = self.wire_shape_of(s, w, false) else { continue };
             for q in shape.points {
-                if let ObjData::Term { owner, .. } = self.o(q) {
+                if let ObjData::Term { owner, .. } | ObjData::ScenePin { owner, .. } = self.o(self.scene_value(q)) {
                     ends.entry(*owner).or_default().push(q);
                 }
             }
@@ -1903,7 +1948,9 @@ impl Interp<'_> {
     /// 10.2: a terminal is wired when an explicit wire touches it (or its bus pin). `ends` is what
     /// `wire_ends` gives while the wires stay as they are.
     pub(crate) fn wired(&mut self, s: SceneId, t: ObjId, ends: &HashMap<ObjId, Vec<ObjId>>) -> bool {
-        let ObjData::Term { owner, .. } = *self.o(t) else { return false };
+        let (ObjData::Term { owner, .. } | ObjData::ScenePin { owner, .. }) = *self.o(self.scene_value(t)) else {
+            return false;
+        };
         for &q in ends.get(&owner).into_iter().flatten() {
             if self.same_pin(s, q, t) {
                 return true;
@@ -1916,23 +1963,28 @@ impl Interp<'_> {
         if a == b {
             return true;
         }
-        let (ObjData::Term { owner: oa, .. }, ObjData::Term { owner: ob, .. }) = (self.o(a).clone(), self.o(b).clone())
-        else {
-            return false;
+        let key = |this: &mut Self, object| {
+            let object = this.scene_value(object);
+            match this.o(object).clone() {
+                ObjData::ScenePin { owner, index } => Some((owner, index)),
+                ObjData::Term { owner, .. } => this.pin_for(s, owner, object).map(|index| (owner, index)),
+                _ => None,
+            }
         };
-        if oa != ob {
-            return false;
-        }
-        if !self.scenes[s].symbol.contains_key(&oa) {
-            return false;
-        }
-        match (self.pin_for(s, oa, a), self.pin_for(s, oa, b)) {
-            (Some(pa), Some(pb)) => pa == pb,
+        match (key(self, a), key(self, b)) {
+            (Some(a), Some(b)) => a == b,
             _ => false,
         }
     }
 
     pub(crate) fn net_wired(&mut self, s: SceneId, n: ObjId, ends: &HashMap<ObjId, Vec<ObjId>>) -> bool {
+        for point in ends.values().flatten() {
+            if let ObjData::ScenePin { owner, index } = *self.o(self.scene_value(*point)) {
+                if self.scene_pin_nets(s, owner, index).contains(&n) {
+                    return true;
+                }
+            }
+        }
         for ow in self.inst_like(s) {
             for t in self.terms_of(s, ow) {
                 if self.tnet_has(s, t, n) && self.wired(s, t, ends) {
@@ -2005,6 +2057,8 @@ impl Interp<'_> {
 
     pub(crate) fn obj_kind(&self, o: ObjId) -> Option<&'static str> {
         match self.o(o) {
+            ObjData::NamedSubobject { resolved: Some(value), .. } => self.obj_kind(*value),
+            ObjData::ScenePin { .. } => Some("pin"),
             ObjData::Inst { .. } | ObjData::Bundle { .. } => Some("instance"),
             ObjData::Usage(_) => Some("usage"),
             ObjData::Wire { .. } => Some("wire"),
@@ -2036,6 +2090,7 @@ impl Interp<'_> {
                 out.push(t);
             }
         }
+        out.retain(|object| !self.is_failed(*object));
         out
     }
 

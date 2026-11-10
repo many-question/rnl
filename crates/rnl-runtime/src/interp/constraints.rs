@@ -1,6 +1,7 @@
 //! Written items and independent constraints in files of 0.4 (5.2, 14.1).
 
 use std::collections::HashSet;
+use std::rc::Rc;
 
 use crate::diag::codes;
 use crate::syntax::Segment;
@@ -28,20 +29,27 @@ struct Expansion {
 
 impl Interp<'_> {
     pub(super) fn constraint_members(&mut self, s: SceneId, obj: ObjId, phase: usize, ctx: &Ctx) -> Vec<ObjId> {
+        self.constraint_inputs(s, obj, phase, ctx).into_iter().map(|member| member.object).collect()
+    }
+
+    fn constraint_inputs(&mut self, s: SceneId, obj: ObjId, phase: usize, ctx: &Ctx) -> Vec<InputMember> {
         if phase < 7 {
-            self.written_members(obj, Some(s), &mut HashSet::new())
+            self.written_inputs(obj, Some(s), &mut HashSet::new())
         } else {
-            self.items_of(s, obj, phase, Some(ctx))
+            self.input_items(s, obj, phase, Some(ctx))
         }
     }
 
-    fn constraint_leaves(&mut self, s: SceneId, obj: ObjId, phase: usize, ctx: &Ctx) -> Vec<ObjId> {
+    fn constraint_leaves(&mut self, s: SceneId, obj: ObjId, phase: usize, ctx: &Ctx) -> Vec<InputMember> {
         if !self.is_set(obj) {
-            return vec![obj];
+            return vec![InputMember::plain(obj)];
         }
         let mut out = Vec::new();
-        for item in self.constraint_members(s, obj, phase, ctx) {
-            out.extend(self.constraint_leaves(s, item, phase, ctx));
+        for item in self.constraint_inputs(s, obj, phase, ctx) {
+            for mut leaf in self.constraint_leaves(s, item.object, phase, ctx) {
+                leaf.depend_on(&item.dependencies);
+                out.push(leaf);
+            }
         }
         out
     }
@@ -50,19 +58,36 @@ impl Interp<'_> {
     /// Edits preserve the structure inside each item, including a single nested item that
     /// a keyword will split one level (5.2.1).
     pub(super) fn written_items(&mut self, s: SceneId, obj: ObjId, phase: usize, ctx: &Ctx) -> Vec<ObjId> {
+        self.written_input_items(s, obj, phase, ctx).into_iter().map(|member| member.object).collect()
+    }
+
+    pub(super) fn written_input_items(&mut self, s: SceneId, obj: ObjId, phase: usize, ctx: &Ctx) -> Vec<InputMember> {
         self.materialize_constraint(obj);
         if !self.is_set(obj) {
-            return vec![obj];
+            return vec![InputMember::plain(obj)];
         }
         let sd = self.set(obj).clone();
-        let mut items: Vec<ObjId> = match sd.kind {
-            SetKind::Plain => sd.items.iter().map(|(o, _)| *o).filter(|o| !self.is_failed(*o)).collect(),
-            SetKind::Select { .. } => self.select(s, obj, phase, Some(ctx)),
-            SetKind::Gen { ref by_scene } => by_scene.get(&s).cloned().unwrap_or_default(),
-            SetKind::Constraints { ref members, .. } => members.clone(),
+        let mut items: Vec<InputMember> = match sd.kind {
+            SetKind::Plain => sd
+                .items
+                .iter()
+                .enumerate()
+                .filter(|(_, (o, _))| !self.is_failed(*o))
+                .map(|(index, &(object, _))| InputMember {
+                    object,
+                    dependencies: sd.item_dependencies.get(index).cloned().unwrap_or_default(),
+                })
+                .collect(),
+            SetKind::Select { .. } => {
+                self.select(s, obj, phase, Some(ctx)).into_iter().map(InputMember::plain).collect()
+            }
+            SetKind::Gen { ref by_scene } => {
+                by_scene.get(&s).into_iter().flatten().copied().map(InputMember::plain).collect()
+            }
+            SetKind::Constraints { ref members, .. } => members.iter().copied().map(InputMember::plain).collect(),
             SetKind::Union { source } => {
                 let mut unique = HashSet::new();
-                self.constraint_members(s, source, phase, ctx).into_iter().filter(|m| unique.insert(*m)).collect()
+                self.constraint_inputs(s, source, phase, ctx).into_iter().filter(|m| unique.insert(m.object)).collect()
             }
         };
         let mut mods = sd.mods_by_scene.get(&Some(s)).cloned().unwrap_or_default();
@@ -73,7 +98,10 @@ impl Interp<'_> {
         for k in mods {
             let edit = &sd.mods[k];
             if edit.add {
-                items.push(edit.source);
+                items.push(InputMember {
+                    object: edit.source,
+                    dependencies: edit.ctx.reference_dependencies.borrow().clone(),
+                });
             } else {
                 let removed: HashSet<_> =
                     self.constraint_members(s, edit.source, phase, &edit.ctx).into_iter().collect();
@@ -89,29 +117,26 @@ impl Interp<'_> {
     fn constraint_item_without(
         &mut self,
         s: SceneId,
-        item: ObjId,
+        item: InputMember,
         phase: usize,
         ctx: &Ctx,
         removed: &HashSet<ObjId>,
-    ) -> Option<ObjId> {
-        if removed.contains(&item) {
+    ) -> Option<InputMember> {
+        if removed.contains(&item.object) {
             return None;
         }
-        if !self.is_set(item) {
+        if !self.is_set(item.object) {
             return Some(item);
         }
-        let before = self.written_items(s, item, phase, ctx);
+        let before = self.written_input_items(s, item.object, phase, ctx);
         let after: Vec<_> =
-            before.iter().filter_map(|o| self.constraint_item_without(s, *o, phase, ctx, removed)).collect();
+            before.iter().filter_map(|o| self.constraint_item_without(s, o.clone(), phase, ctx, removed)).collect();
         if before == after {
             Some(item)
         } else {
-            Some(
-                self.new_obj(ObjData::Set(Box::new(SetData::plain(
-                    after.into_iter().map(|o| (o, false)).collect(),
-                    true,
-                )))),
-            )
+            let mut data = SetData::plain(after.iter().map(|m| (m.object, false)).collect(), true);
+            data.item_dependencies = after.into_iter().map(|m| m.dependencies).collect();
+            Some(InputMember { object: self.new_obj(ObjData::Set(Box::new(data))), dependencies: item.dependencies })
         }
     }
 
@@ -190,21 +215,23 @@ impl Interp<'_> {
     ) -> ObjId {
         if !expansion.collection {
             let atom = expansion.atoms.pop().unwrap();
+            let site = atom.site.clone();
             let root = if let Some(root) = result {
                 *self.om(root) = ObjData::Constraint(Box::new(atom));
                 root
             } else {
                 self.new_obj(ObjData::Constraint(Box::new(atom)))
             };
-            self.scene_add_constraint(s, root, ctx.pos.clone(), ctx);
+            self.scene_add_constraint(s, root, ctx.pos.clone(), site.as_deref().unwrap_or(ctx));
             return root;
         }
         let root = result.unwrap_or_else(|| self.new_obj(ObjData::Set(Box::new(SetData::plain(Vec::new(), true)))));
         let mut members = Vec::new();
         for mut atom in expansion.atoms {
             atom.name_owner = Some(root);
+            let site = atom.site.clone();
             let c = self.new_obj(ObjData::Constraint(Box::new(atom)));
-            self.scene_add_constraint(s, c, ctx.pos.clone(), ctx);
+            self.scene_add_constraint(s, c, ctx.pos.clone(), site.as_deref().unwrap_or(ctx));
             members.push(c);
         }
         let mut data = SetData {
@@ -252,19 +279,32 @@ impl Interp<'_> {
             if template.kind == ConstraintKind::OrientRelation && columns.iter().all(|c| c.len() > 1) {
                 let shown: Vec<_> = columns
                     .iter()
-                    .map(|c| format!("{{{}}}", c.iter().map(|o| self.label(*o)).collect::<Vec<_>>().join(" ")))
+                    .map(|c| format!("{{{}}}", c.iter().map(|o| self.label(o.object)).collect::<Vec<_>>().join(" ")))
                     .collect();
                 return self.fail(ctx, codes::CONSTRAINT_ORIENT_RELATION_SETS_BOTH_SIDES, format!("{kw} relates one object to one object, and both its slots have more than one member, {} and {}: pairing them in order and relating every pair would both make sense; this constraint fails (5.2.1, 14.9)", shown[0], shown[1]), seg.start);
             }
             (columns, args.iter().any(|a| self.is_set(*a)))
         } else {
-            let mut items = self.written_items(s, args[0], phase, ctx);
-            if items.len() == 1 && self.is_set(items[0]) {
-                items = self.written_items(s, items[0], phase, ctx);
+            let mut items = self.written_input_items(s, args[0], phase, ctx);
+            if items.len() == 1 && self.is_set(items[0].object) {
+                let parent = items.pop().unwrap();
+                items = self.written_input_items(s, parent.object, phase, ctx);
+                for member in &mut items {
+                    member.depend_on(&parent.dependencies);
+                }
             }
-            let collection = items.iter().any(|o| self.is_set(*o));
-            let columns: Vec<_> =
-                items.into_iter().map(|o| self.constraint_leaves(s, o, phase, ctx)).filter(|c| !c.is_empty()).collect();
+            let collection = items.iter().any(|o| self.is_set(o.object));
+            let columns: Vec<_> = items
+                .into_iter()
+                .map(|item| {
+                    let mut leaves = self.constraint_leaves(s, item.object, phase, ctx);
+                    for leaf in &mut leaves {
+                        leaf.depend_on(&item.dependencies);
+                    }
+                    leaves
+                })
+                .filter(|c| !c.is_empty())
+                .collect();
             if columns.len() < 2 {
                 self.hint_at(ctx, codes::CONSTRAINT_EXPANSION_TOO_FEW_PLACES, format!("{kw} has fewer than two items after empty sets are omitted, so its constraints hold trivially (14.1)"), seg.start);
             }
@@ -284,18 +324,32 @@ impl Interp<'_> {
                 .flat_map(|row| {
                     column.iter().map(move |o| {
                         let mut next = row.clone();
-                        next.push(*o);
+                        next.push(o.clone());
                         next
                     })
                 })
                 .collect();
         }
         let mut atoms = Vec::new();
-        for mut row in combinations {
-            if template.kind != ConstraintKind::OrientRelation {
-                row = row.into_iter().map(|o| self.constraint_point(o)).collect();
-            }
+        for row in combinations {
+            let atom_ctx = ctx.with_dependencies(&[]);
+            let row: Vec<_> = row
+                .into_iter()
+                .map(|member| {
+                    atom_ctx.depend_on(&member.dependencies);
+                    let point = if template.kind != ConstraintKind::OrientRelation {
+                        self.constraint_point(member.object)
+                    } else {
+                        member.object
+                    };
+                    if point != member.object {
+                        atom_ctx.depend_on(&[member.object]);
+                    }
+                    point
+                })
+                .collect();
             let mut atom = template.clone();
+            atom.site = Some(Rc::new(atom_ctx));
             atom.args = if pair {
                 row
             } else {

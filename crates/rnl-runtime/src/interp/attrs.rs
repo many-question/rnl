@@ -50,7 +50,7 @@ impl Interp<'_> {
                 }
                 return Ok(AVal::List(out));
             }
-            AVal::Obj(o) => o,
+            AVal::Obj(o) => self.scene_value(o),
         };
         if self.is_set(obj) {
             let mut out = Vec::new();
@@ -129,6 +129,14 @@ impl Interp<'_> {
                 Err(format!("{l} is not a host instance and has no host parameter {name}"))
             }
             ObjData::Term { .. } if key == "net" => Ok(self.term_nets_val(s, obj)),
+            ObjData::ScenePin { owner, index } if key == "net" => {
+                let nets = self.scene_pin_nets(s, owner, index);
+                Ok(if nets.len() == 1 {
+                    AVal::Obj(nets[0])
+                } else {
+                    AVal::List(nets.into_iter().map(AVal::Obj).collect())
+                })
+            }
             ObjData::Wire { nets, .. } if key == "net" => {
                 if nets.len() == 1 {
                     Ok(AVal::Obj(nets[0]))

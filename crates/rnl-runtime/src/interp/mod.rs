@@ -23,6 +23,7 @@ mod output;
 mod packages;
 mod pin_names;
 mod places;
+mod scene_pins;
 /// The name of the standard package that the setting of 16.3 brings in at the root.
 pub use packages::STD_NAME;
 pub mod phases;
@@ -46,7 +47,7 @@ use crate::previous::RecordResult;
 use crate::source::Provider;
 use crate::syntax::RecordAst;
 
-use eval::{Bound, Stop, R};
+use eval::{Bound, CachedMember, Stop};
 use numbers::{AuthoredCount, Birth, Counted, LevelNumbers, NumberRun};
 use obj::*;
 use packages::{Eff, EffKey, Expansion};
@@ -175,6 +176,8 @@ pub struct Interp<'p> {
     pub(crate) provider: &'p dyn Provider,
     pub sink: Sink,
     pub(crate) objs: Vec<Obj>,
+    /// Late failures retain object data needed by earlier phases (7.2, 8.2).
+    pub(crate) late_failures: HashMap<ObjId, DiagId>,
     pub(crate) units: Vec<Unit>,
     pub(crate) level_unit: Vec<UnitId>,
     pub(crate) level_scene: Vec<Option<SceneId>>,
@@ -197,7 +200,7 @@ pub struct Interp<'p> {
     pub(crate) memo: HashMap<(MemberKey, Option<SceneId>), Memo>,
     pub(crate) bound_memo: HashMap<(MemberKey, Option<SceneId>), Bound>,
     pub(crate) in_progress: HashSet<(MemberKey, Option<SceneId>)>,
-    pub(crate) nested_memo: HashMap<(usize, usize, Option<SceneId>), R<ObjId>>,
+    pub(crate) nested_memo: HashMap<(usize, usize, Option<SceneId>), CachedMember>,
     pub(crate) tm_memo: HashMap<(usize, ObjId), ObjId>,
     pub(crate) tm_in_progress: HashSet<(usize, ObjId)>,
     pub(crate) node_memo: HashMap<(&'static str, usize, usize, usize), ObjId>,
@@ -317,6 +320,7 @@ impl<'p> Interp<'p> {
             provider,
             sink,
             objs: Vec::new(),
+            late_failures: HashMap::new(),
             units: Vec::new(),
             level_unit: vec![0; nlevels],
             level_scene: vec![None; nlevels],

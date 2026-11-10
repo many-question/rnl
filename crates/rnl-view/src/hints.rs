@@ -740,6 +740,7 @@ impl<'a> Drawing<'a> {
         let vkey = |v: &Vertex| -> Option<String> {
             match v {
                 Vertex::Terminal(t) => Some(t.clone()),
+                Vertex::Pin { reference, .. } => Some(reference.clone()),
                 Vertex::Point(p) => Some(p.clone()),
                 Vertex::Usage { usage, role } => Some(format!("{usage}:{role}")),
                 Vertex::At(_) => None,
@@ -786,6 +787,7 @@ impl<'a> Drawing<'a> {
             let shown = |v: Option<&Vertex>, p: Pt| -> String {
                 match v {
                     Some(Vertex::Terminal(t)) => names.terminal(t),
+                    Some(Vertex::Pin { reference, .. }) => reference.clone(),
                     Some(Vertex::Point(n)) => n.clone(),
                     Some(Vertex::Usage { usage, role }) => {
                         let o = names.object(usage);

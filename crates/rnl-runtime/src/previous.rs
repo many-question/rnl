@@ -157,6 +157,7 @@ fn left_to_viewer(p: &LevelProblem, k: usize) -> bool {
             matches!(a.kind, ObjectKind::Point | ObjectKind::Instance | ObjectKind::Usage | ObjectKind::Bundle)
         }),
         Filler::Terminal { pin, .. } => pin.is_some(),
+        Filler::Pin { .. } => true,
         Filler::Usage(_) | Filler::Net(_) | Filler::Wire(_) | Filler::Other(_) => false,
     };
     !point && !p.facts.iter().any(|f| reaches(&f.kind, k))

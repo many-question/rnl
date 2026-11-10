@@ -234,13 +234,15 @@ impl Interp<'_> {
                 off,
             );
         }
-        let members = self.written_members(source, ctx.scene, &mut HashSet::new());
-        let selected: Vec<_> = places.expand(members.len()).into_iter().map(|i| members[i]).collect();
+        let members = self.written_inputs(source, ctx.scene, &mut HashSet::new());
+        let selected: Vec<_> = places.expand(members.len()).into_iter().map(|i| members[i].clone()).collect();
         if places.single() && selected.len() == 1 {
-            return Ok(selected[0]);
+            ctx.depend_on(&selected[0].dependencies);
+            return Ok(selected[0].object);
         }
-        let set = self
-            .new_obj(ObjData::Set(Box::new(SetData::plain(selected.into_iter().map(|o| (o, false)).collect(), true))));
+        let mut data = SetData::plain(selected.iter().map(|member| (member.object, false)).collect(), true);
+        data.item_dependencies = selected.into_iter().map(|member| member.dependencies).collect();
+        let set = self.new_obj(ObjData::Set(Box::new(data)));
         self.note_made(set, ctx, off);
         Ok(set)
     }
@@ -291,32 +293,45 @@ impl Interp<'_> {
     /// Read one level of a written set without the phase caches: more edits may still be found
     /// in this provisional reading. The selected handles themselves are kept, including sets.
     pub(super) fn written_members(&self, obj: ObjId, scene: Option<SceneId>, busy: &mut HashSet<ObjId>) -> Vec<ObjId> {
+        self.written_inputs(obj, scene, busy).into_iter().map(|member| member.object).collect()
+    }
+
+    pub(super) fn written_inputs(
+        &self,
+        obj: ObjId,
+        scene: Option<SceneId>,
+        busy: &mut HashSet<ObjId>,
+    ) -> Vec<InputMember> {
         if obj == LEVEL {
-            return vec![scene.map_or(LEVEL, |s| self.scenes[s].levelobj)];
+            return vec![InputMember::plain(scene.map_or(LEVEL, |s| self.scenes[s].levelobj))];
         }
         if !self.is_set(obj) {
-            return if self.is_failed(obj) { Vec::new() } else { vec![obj] };
+            return if self.is_failed(obj) { Vec::new() } else { vec![InputMember::plain(obj)] };
         }
         if !busy.insert(obj) {
             return Vec::new();
         }
         let set = self.set(obj);
         let mut out = match set.kind {
-            SetKind::Constraints { ref members, .. } => members.clone(),
+            SetKind::Constraints { ref members, .. } => members.iter().copied().map(InputMember::plain).collect(),
             SetKind::Union { source } => {
                 let mut unique = HashSet::new();
-                self.written_members(source, scene, busy).into_iter().filter(|o| unique.insert(*o)).collect()
+                self.written_inputs(source, scene, busy).into_iter().filter(|m| unique.insert(m.object)).collect()
             }
             _ => {
                 let mut out = Vec::new();
-                for &(o, spread) in &set.items {
+                for (index, &(o, spread)) in set.items.iter().enumerate() {
                     if self.is_failed(o) {
                         continue;
                     }
+                    let dependencies = set.item_dependencies.get(index).cloned().unwrap_or_default();
                     if o == LEVEL || (self.is_set(o) && (spread || !self.set(o).explicit)) {
-                        out.extend(self.written_members(o, scene, busy));
+                        for mut child in self.written_inputs(o, scene, busy) {
+                            child.depend_on(&dependencies);
+                            out.push(child);
+                        }
                     } else {
-                        out.push(o);
+                        out.push(InputMember { object: o, dependencies });
                     }
                 }
                 out
@@ -329,12 +344,15 @@ impl Interp<'_> {
         });
         for k in edits {
             let edit = &set.mods[k];
-            let members = self.written_members(edit.source, scene, busy);
+            let mut members = self.written_inputs(edit.source, scene, busy);
+            for member in &mut members {
+                member.depend_on(&edit.ctx.reference_dependencies.borrow());
+            }
             if edit.add {
                 out.extend(members);
             } else {
-                let removed: HashSet<_> = members.into_iter().collect();
-                out.retain(|o| !removed.contains(o));
+                let removed: HashSet<_> = members.into_iter().map(|member| member.object).collect();
+                out.retain(|member| !removed.contains(&member.object));
             }
         }
         busy.remove(&obj);

@@ -57,6 +57,7 @@ fn filler(f: &Filler) -> Value {
     match f {
         Filler::Object(k) => json!({"object": k}),
         Filler::Terminal { object, terminal, pin } => json!({"object": object, "terminal": terminal, "pin": pin}),
+        Filler::Pin { object, pin } => json!({"object": object, "pin": pin}),
         Filler::Usage(k) => json!({"usage": k}),
         Filler::Net(n) => json!({"net": n}),
         Filler::Wire(k) => json!({"wire": k}),

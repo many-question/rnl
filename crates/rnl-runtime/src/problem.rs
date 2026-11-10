@@ -244,6 +244,8 @@ pub enum Filler {
     Object(usize),
     /// A terminal of an object of the problem, with the pin that draws it when there is one.
     Terminal { object: usize, terminal: String, pin: Option<usize> },
+    /// One exact pin of an object's assigned symbol, including an unbound pin (9.2.4).
+    Pin { object: usize, pin: usize },
     /// A usage without a symbol, by its index in [`LevelProblem::usages`].
     Usage(usize),
     /// A net, by its name.
@@ -1119,6 +1121,11 @@ impl Canon {
                 self.index(*object);
                 self.str(terminal);
                 self.opt_index(*pin);
+            }
+            Filler::Pin { object, pin } => {
+                self.word("pin");
+                self.index(*object);
+                self.index(*pin);
             }
             Filler::Usage(k) => {
                 self.word("usage");

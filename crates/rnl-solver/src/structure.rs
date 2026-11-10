@@ -312,7 +312,7 @@ fn anchors(problem: &LevelProblem, connections: &Connections, objects: &[ObjectI
                 }
                 _ => continue,
             },
-            Filler::Terminal { object, pin: Some(pin), .. } => {
+            Filler::Terminal { object, pin: Some(pin), .. } | Filler::Pin { object, pin } => {
                 Anchor { from: vec![(*object, Some(*pin))], offset: beside(), point: true }
             }
             Filler::Wire(w) => {
@@ -1118,7 +1118,7 @@ pub(crate) fn hang(problem: &LevelProblem, k: usize) -> Option<Hang> {
         .roles
         .iter()
         .flat_map(|r| &r.members)
-        .any(|m| matches!(m, Filler::Net(_) | Filler::Terminal { pin: Some(_), .. }));
+        .any(|m| matches!(m, Filler::Net(_) | Filler::Terminal { pin: Some(_), .. } | Filler::Pin { .. }));
     let symbol = problem.symbols.get(o.symbol?)?;
     let [pin] = symbol.pins.as_slice() else { return None };
     if !attached || usage.object != Some(k) {
@@ -1210,10 +1210,10 @@ fn power(problem: &LevelProblem, kept: &[usize], objects: &mut [ObjectInfo]) -> 
                     }
                     // drawn right on a terminal (12.1): the terminal is on the supply or the
                     // ground, and so is its net when the problem shows it ([`power_pins`])
-                    Filler::Terminal { object, pin: Some(pin), .. } if supply => {
+                    Filler::Terminal { object, pin: Some(pin), .. } | Filler::Pin { object, pin } if supply => {
                         p.supply_pins.insert((*object, *pin));
                     }
-                    Filler::Terminal { object, pin: Some(pin), .. } => {
+                    Filler::Terminal { object, pin: Some(pin), .. } | Filler::Pin { object, pin } => {
                         p.ground_pins.insert((*object, *pin));
                     }
                     _ => {}
@@ -1223,7 +1223,7 @@ fn power(problem: &LevelProblem, kept: &[usize], objects: &mut [ObjectInfo]) -> 
         // a stub: the usage this one is made in hangs it from a terminal
         let Some(parent) = usage.parent else { continue };
         let host = problem.usages[parent].roles.iter().flat_map(|r| &r.members).find_map(|m| match m {
-            Filler::Terminal { object, pin: Some(pin), .. } => Some((*object, *pin)),
+            Filler::Terminal { object, pin: Some(pin), .. } | Filler::Pin { object, pin } => Some((*object, *pin)),
             _ => None,
         });
         // drawn at a point of its own, not right on the terminal (12.1)

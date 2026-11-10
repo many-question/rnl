@@ -74,8 +74,12 @@ impl Interp<'_> {
                 if matches!(self.o(o), ObjData::Bundle { .. }) { ObjectKind::Bundle } else { ObjectKind::Instance };
             objs.push((o, kind));
         }
-        let mut usages: Vec<ObjId> =
-            self.scenes[s].usages.iter().copied().filter(|a| !self.usage(*a).in_symbol).collect();
+        let mut usages: Vec<ObjId> = self.scenes[s]
+            .usages
+            .iter()
+            .copied()
+            .filter(|a| !self.usage(*a).in_symbol && !self.is_failed(*a))
+            .collect();
         usages.sort();
         usages.dedup();
         for &a in &usages {
@@ -84,6 +88,7 @@ impl Interp<'_> {
             }
         }
         let mut points = self.scenes[s].points.clone();
+        points.retain(|p| !self.is_failed(*p));
         points.sort();
         points.dedup();
         objs.extend(points.into_iter().map(|p| (p, ObjectKind::Point)));
@@ -406,10 +411,11 @@ impl Interp<'_> {
                     }
                 }
                 ObjectKind::Text => {
-                    let att = self.text_attach(o);
+                    let att = self.scene_value(self.text_attach(o));
                     on = match self.o(att).clone() {
                         ObjData::Net { .. } => vec![att],
                         ObjData::Term { .. } => self.term_nets(s, att),
+                        ObjData::ScenePin { owner, index } => self.scene_pin_nets(s, owner, index),
                         ObjData::Wire { nets, .. } => nets,
                         _ => Vec::new(),
                     };
@@ -710,6 +716,9 @@ impl Interp<'_> {
                 }
             }
             ObjData::Pos { parent } => self.reference_of(s, ix, parent).then("::position"),
+            ObjData::NamedSubobject { parent, name, .. } => {
+                self.reference_of(s, ix, parent).then(&format!("::{}", written_name(&name)))
+            }
             ObjData::KeyText { .. } => self.text_reference(s, o, ix),
             _ => ix.refs.get(&o).cloned().unwrap_or(Reference::Anonymous),
         }
@@ -742,10 +751,14 @@ impl Interp<'_> {
 
     /// What fills a role, or what a text is attached to, as the problem refers to it.
     fn filler(&mut self, s: SceneId, ix: &Index, o: ObjId) -> Filler {
+        let o = self.scene_value(o);
         if let Some(&k) = ix.objects.get(&o) {
             return Filler::Object(k);
         }
         match self.o(o).clone() {
+            ObjData::ScenePin { owner, index } if ix.objects.contains_key(&owner) => {
+                Filler::Pin { object: ix.objects[&owner], pin: index }
+            }
             ObjData::Inst { bundle: Some(b), .. } if ix.objects.contains_key(&b) => Filler::Object(ix.objects[&b]),
             ObjData::Term { owner, index, name } => {
                 let owner = self.bundle_field(owner).unwrap_or(owner);
@@ -769,6 +782,19 @@ impl Interp<'_> {
     /// a set. None for what has no point, or is not in the problem.
     fn point_ref(&mut self, s: SceneId, ix: &Index, o: ObjId) -> Option<PointRef> {
         match self.o(o).clone() {
+            ObjData::NamedSubobject { resolved, .. } => {
+                let value = resolved?;
+                if let ObjData::ScenePin { owner, index } = *self.o(value) {
+                    Some(PointRef::SymbolPin {
+                        object: *ix.objects.get(&owner)?,
+                        pin: index,
+                        reference: self.reference_of(s, ix, o),
+                    })
+                } else {
+                    self.point_ref(s, ix, value)
+                }
+            }
+            ObjData::ScenePin { owner, index } => self.symbol_pin_ref(s, ix, owner, index),
             ObjData::Inst { bundle: Some(b), .. } => Some(PointRef::Origin(*ix.objects.get(&b)?)),
             ObjData::Inst { .. }
             | ObjData::Bundle { .. }

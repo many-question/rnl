@@ -82,6 +82,7 @@ impl Interp<'_> {
         self.resolve_bundles(s);
         self.scenes[s].phase = 4;
         self.resolve_symbols(s, false);
+        self.resolve_scene_subobjects(s);
         self.scenes[s].phase = 5;
         self.run_tasks(s, 5);
         self.scenes[s].phase = 6;
@@ -90,9 +91,12 @@ impl Interp<'_> {
         self.note_overridden_symbols(s);
         self.symbol_labels(s);
         self.check_scene_pin_text_names(s);
+        self.finish_scene_subobjects(s);
         self.scenes[s].phase = 7;
+        self.check_scene_pin_roles(s);
         self.materialize_constraints(s);
         self.run_tasks(s, 7);
+        self.check_scene_pin_roles(s);
         self.resolve_geometry(s);
         self.scenes[s].phase = 8;
         self.run_tasks(s, 8);
@@ -859,10 +863,11 @@ impl Interp<'_> {
                 continue;
             }
             for q in &points {
-                if !matches!(self.o(*q), ObjData::Term { .. }) {
-                    continue;
-                }
-                let tn = self.term_nets(s, *q);
+                let (tn, kind) = match self.o(self.scene_value(*q)).clone() {
+                    ObjData::Term { .. } => (self.term_nets(s, *q), "terminal"),
+                    ObjData::ScenePin { owner, index } => (self.scene_pin_nets(s, owner, index), "pin"),
+                    _ => continue,
+                };
                 if !tn.is_empty() && !tn.iter().any(|n| nets.contains(n)) {
                     let wn: Vec<String> = nets.iter().map(|n| self.net_display(*n)).collect();
                     let names: Vec<String> = tn.iter().map(|n| self.net_display(*n)).collect();
@@ -873,7 +878,7 @@ impl Interp<'_> {
                         &site,
                         off,
                         format!(
-                            "the wire is marked on net {}, but the terminal {ql} it reaches is on {} (13.1)",
+                            "the wire is marked on net {}, but the {kind} {ql} it reaches is on {} (13.1)",
                             wn.join(","),
                             names.join(",")
                         ),
@@ -1039,6 +1044,9 @@ impl Interp<'_> {
     }
 
     pub(crate) fn is_obj_failed(&self, o: ObjId) -> bool {
+        if self.is_failed(o) {
+            return true;
+        }
         match self.o(o) {
             ObjData::Wire { failed, .. } | ObjData::Text { failed, .. } | ObjData::KeyText { failed, .. } => *failed,
             ObjData::Constraint(c) => c.failed,
@@ -1123,6 +1131,9 @@ impl Interp<'_> {
     }
 
     fn geom_target_ok(&mut self, s: SceneId, list: char, k: usize, f: &Fact, what: &str) -> bool {
+        if self.is_obj_failed(f.target) || f.ctx.as_ref().is_some_and(|ctx| self.failed_body(ctx)) {
+            return false;
+        }
         if f.ctx.is_none() {
             return true;
         }
@@ -1314,7 +1325,10 @@ impl Interp<'_> {
             let wire = self.label(w);
             for k in 0..self.scenes[s].rewrites[&w].len() {
                 let points = self.scenes[s].rewrites[&w][k].points.clone();
-                let fault = points.iter().find_map(|q| self.term_fault(s, *q)).map(|f| f.for_rewrite(&wire));
+                let site = self.scenes[s].rewrites[&w][k].site.clone();
+                let fault = self
+                    .wire_rewrite_error(&site, &points)
+                    .or_else(|| points.iter().find_map(|q| self.term_fault(s, *q)).map(|f| f.for_rewrite(&wire)));
                 let Some(r) = self.scenes[s].rewrites.get_mut(&w).map(|r| &mut r[k]) else { continue };
                 let style = r.style.filter(|_| fault.is_some());
                 r.fault = fault;
@@ -1340,7 +1354,18 @@ impl Interp<'_> {
 
     /// The coordinate point of a locatable object (14.1), or None when it is free.
     pub(crate) fn point_of(&mut self, s: SceneId, o: ObjId) -> Option<Pt> {
+        if self.is_failed(o) {
+            return None;
+        }
         match self.o(o).clone() {
+            ObjData::NamedSubobject { resolved, .. } => self.point_of(s, resolved?),
+            ObjData::ScenePin { owner, index } => {
+                let symbol = *self.scenes[s].symbol.get(&owner)?;
+                let local = self.symbol(symbol).pins.get(index)?.pos;
+                let base = self.xy(s, owner)?;
+                let delta = self.orientation(s, owner).apply(local);
+                Some((base.0 + delta.0, base.1 + delta.1))
+            }
             ObjData::Point { .. } => self.xy(s, o),
             ObjData::Pos { parent } => {
                 if self.is_set(parent) {
@@ -1435,6 +1460,8 @@ impl Interp<'_> {
             ObjData::Point { .. }
             | ObjData::Pos { .. }
             | ObjData::Term { .. }
+            | ObjData::ScenePin { .. }
+            | ObjData::NamedSubobject { .. }
             | ObjData::Inst { .. }
             | ObjData::Usage(_)
             | ObjData::Bundle { .. } => self.point_of(s, att),
@@ -1693,6 +1720,10 @@ impl Interp<'_> {
             kept.entry(o).or_default().extend(proof);
         }
         for c in self.scenes[s].constraints.clone() {
+            if self.is_failed(c) {
+                self.constraint_mut(c).status = Some("failed");
+                continue;
+            }
             let ObjData::Constraint(cd) = self.o(c).clone() else { continue };
             let site = cd.site.clone();
             let p = self.eff_priority(s, cd.priority_param, &cd.chain, Some(c));
@@ -2044,6 +2075,9 @@ impl Interp<'_> {
         // in `done` stay valid until its end
         let mut idx = StyleIndex::default();
         for (k, f) in self.scenes[s].styles.iter().enumerate() {
+            if self.is_obj_failed(f.target) || f.ctx.as_ref().is_some_and(|ctx| self.failed_body(ctx)) {
+                continue;
+            }
             match &f.data {
                 FactData::OwnStyle(m) => idx.own.entry(f.target).or_default().push((f.order(), m.clone())),
                 FactData::Style(sty) if matches!(self.o(*sty), ObjData::Style(_)) => {
@@ -2074,6 +2108,7 @@ impl Interp<'_> {
         idx: &StyleIndex,
         done: &'a mut HashMap<ObjId, BTreeMap<String, (Lit, Pos)>>,
     ) -> &'a BTreeMap<String, (Lit, Pos)> {
+        let o = self.scene_value(o);
         if done.contains_key(&o) {
             return &done[&o];
         }
@@ -2131,18 +2166,20 @@ impl Interp<'_> {
         let src = match self.o(o) {
             ObjData::Text { attach, .. } | ObjData::KeyText { attach, .. } => {
                 if matches!(
-                    self.o(*attach),
+                    self.o(self.scene_value(*attach)),
                     ObjData::Inst { .. }
                         | ObjData::Usage(_)
                         | ObjData::Bundle { .. }
                         | ObjData::Wire { .. }
                         | ObjData::Prim { .. }
+                        | ObjData::ScenePin { .. }
                 ) {
                     Some(*attach)
                 } else {
                     None
                 }
             }
+            ObjData::ScenePin { owner, .. } => Some(*owner),
             _ => None,
         };
         if let Some(src) = src {
@@ -2166,6 +2203,9 @@ impl Interp<'_> {
     fn resolve_layers(&mut self, s: SceneId) {
         let layers = self.scenes[s].layers.clone();
         for (k, f) in layers.iter().enumerate() {
+            if self.is_obj_failed(f.target) || f.ctx.as_ref().is_some_and(|ctx| self.failed_body(ctx)) {
+                continue;
+            }
             let o = f.target;
             match self.o(o) {
                 ObjData::Point { .. } | ObjData::Net { .. } | ObjData::Constraint(_) => {

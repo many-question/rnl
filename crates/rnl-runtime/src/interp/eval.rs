@@ -39,6 +39,7 @@ pub type R<T> = Result<T, Stop>;
 #[derive(Clone, Debug)]
 pub struct ArgV {
     pub obj: ObjId,
+    pub dependencies: Vec<ObjId>,
     pub role: Option<String>,
     pub role_quoted: bool,
     pub sel: bool,
@@ -50,14 +51,17 @@ pub struct ArgV {
 #[derive(Clone, Debug)]
 pub enum Found {
     Binding(Binding),
-    Local(ObjId),
+    Local(ObjId, Vec<ObjId>),
     LocalMember(String),
     Nested(Nested),
     /// A body names the name it defines, and there is no outer definition of it (6.9).
     NoOuter,
 }
 
-pub type Bound = Vec<((char, String), ObjId)>;
+pub type Bound = Vec<((char, String), ObjId, Vec<ObjId>)>;
+
+/// A nested statement's result and the references on which that occurrence depends.
+pub type CachedMember = (R<ObjId>, Vec<ObjId>);
 
 /// Alias -> original.
 pub type Aliases = Vec<(String, String)>;
@@ -129,7 +133,17 @@ impl<'p> Interp<'p> {
     }
 
     pub(crate) fn is_failed(&self, id: ObjId) -> bool {
-        matches!(self.o(id), ObjData::Failed(_))
+        if self.late_failures.contains_key(&id) {
+            return true;
+        }
+        match self.o(id) {
+            ObjData::Failed(_) => true,
+            ObjData::NamedSubobject { parent, resolved, .. } => {
+                self.is_failed(*parent) || resolved.is_some_and(|value| self.is_failed(value))
+            }
+            ObjData::ScenePin { owner, .. } => self.is_failed(*owner),
+            _ => false,
+        }
     }
 
     pub(crate) fn kind_of(&self, id: ObjId) -> &'static str {
@@ -149,7 +163,8 @@ impl<'p> Interp<'p> {
             ObjData::Inst { .. } => "instance",
             ObjData::Net { .. } => "net",
             ObjData::Term { .. } => "terminal",
-            ObjData::SymbolPin { .. } => "pin",
+            ObjData::SymbolPin { .. } | ObjData::ScenePin { .. } => "pin",
+            ObjData::NamedSubobject { resolved, .. } => resolved.map_or("subobject", |value| self.kind_of(value)),
             ObjData::Point { .. } => "point",
             ObjData::Pos { .. } => "position",
             ObjData::Wire { .. } => "wire",
@@ -216,6 +231,8 @@ impl<'p> Interp<'p> {
             }
             ObjData::Pos { parent } => format!("{}::position", self.label(*parent)),
             ObjData::SymbolPin { .. } => named("a pin"),
+            ObjData::ScenePin { owner, index } => format!("pin {} of {}", index + 1, self.label(*owner)),
+            ObjData::NamedSubobject { parent, name, .. } => format!("{}::{name}", self.label(*parent)),
             ObjData::Wire { .. } => named("a wire"),
             ObjData::Route { net, .. } => {
                 if o.name.is_empty() {
@@ -459,7 +476,7 @@ impl<'p> Interp<'p> {
         if let (Some(fr), '%') = (&ctx.frame, prefix) {
             let fr = fr.borrow();
             if let Some(v) = fr.local(name) {
-                return Some(Found::Local(v));
+                return Some(Found::Local(v, fr.local_dependencies.get(name).cloned().unwrap_or_default()));
             }
             if let Some((_, m, _)) = fr.local_members.iter().find(|(n, _, _)| n == name) {
                 let is_defining = defining.as_ref().is_some_and(|(dm, _)| m.same(dm));
@@ -605,8 +622,19 @@ impl<'p> Interp<'p> {
 
     pub(crate) fn binding_value(&mut self, found: &Found, ctx: &Ctx) -> R<ObjId> {
         let b = match found {
-            Found::Local(v) => return Ok(*v),
-            Found::LocalMember(name) => return self.local_member(name, ctx),
+            Found::Local(v, dependencies) => {
+                ctx.depend_on(dependencies);
+                return Ok(*v);
+            }
+            Found::LocalMember(name) => {
+                let object = self.local_member(name, ctx)?;
+                if let Some(frame) = &ctx.frame {
+                    if let Some(dependencies) = frame.borrow().local_dependencies.get(name) {
+                        ctx.depend_on(dependencies);
+                    }
+                }
+                return Ok(object);
+            }
             Found::Binding(b) => b.clone(),
             _ => return Ok(NOTHING),
         };
@@ -630,6 +658,11 @@ impl<'p> Interp<'p> {
             other => other?,
         };
         let val = self.bound_value(&mkey, scene, b.prefix, &b.name, val);
+        if let Some(bound) = self.bound_memo.get(&(mkey.clone(), scene)) {
+            if let Some((_, _, dependencies)) = bound.iter().find(|(key, _, _)| key.0 == b.prefix && key.1 == b.name) {
+                ctx.depend_on(dependencies);
+            }
+        }
         if ctx.scene.is_some() && scene != ctx.scene && self.scene_bound(val) {
             return Err(Stop::LocalRef);
         }
@@ -645,7 +678,7 @@ impl<'p> Interp<'p> {
         default: ObjId,
     ) -> ObjId {
         if let Some(bound) = self.bound_memo.get(&(mkey.clone(), scene)) {
-            if let Some((_, v)) = bound.iter().find(|(k, _)| k.0 == prefix && k.1 == name) {
+            if let Some((_, v, _)) = bound.iter().find(|(k, _, _)| k.0 == prefix && k.1 == name) {
                 return *v;
             }
         }
@@ -706,6 +739,7 @@ impl<'p> Interp<'p> {
             stmt: Some(StmtSpan { rec, start: m.start, end: m.end }),
             segments: Rc::new([]),
             modifier_input: Default::default(),
+            reference_dependencies: Default::default(),
         };
         let (r, bound) = self.eval_member(m, &ctx);
         self.in_progress.remove(&skey);
@@ -742,9 +776,11 @@ impl<'p> Interp<'p> {
         let mut val = NOTHING;
         let mut sel = false;
         let mut bound: Bound = Vec::new();
+        let mut pipe_dependencies = Vec::new();
         for (k, seg) in m.segments.iter().enumerate() {
             let piped = if k > 0 { Some((val, sel)) } else { None };
-            match self.eval_segment(seg, &ctx.in_segment(k), piped, m) {
+            let segment_ctx = ctx.in_segment(k);
+            match self.eval_segment(seg, &segment_ctx, piped, &pipe_dependencies, m) {
                 Ok((v, s)) => {
                     val = v;
                     sel = s;
@@ -760,6 +796,7 @@ impl<'p> Interp<'p> {
                     let piped_ok = piped.is_some_and(|(p, _)| !self.is_failed(p));
                     if k > 0 && out == "pass" && piped_ok {
                         // a segment that only adds facts keeps the handle (5.5)
+                        segment_ctx.depend_on(&pipe_dependencies);
                     } else {
                         val = self.new_obj(ObjData::Failed(d));
                         sel = false;
@@ -767,8 +804,9 @@ impl<'p> Interp<'p> {
                 }
                 Err(other) => return (Err(other), bound),
             }
+            pipe_dependencies = segment_ctx.reference_dependencies.borrow().clone();
             for b in m.binds.iter().filter(|b| b.after == k) {
-                bound.push(((b.prefix, b.name.clone()), val));
+                bound.push(((b.prefix, b.name.clone()), val, pipe_dependencies.clone()));
                 // a name of a member of a record or of a definition body, which other members can
                 // use; one bound inside a `{…}` holds only there (6.7) and is no name for 5.9
                 if ctx.nested.is_none() {
@@ -797,6 +835,9 @@ impl<'p> Interp<'p> {
                 }
             }
         }
+        if ctx.nested.is_some() {
+            ctx.depend_on(&pipe_dependencies);
+        }
         if let ObjData::Failed(d) = self.o(val) {
             return (Err(Stop::Fail(*d)), bound);
         }
@@ -808,11 +849,20 @@ impl<'p> Interp<'p> {
         seg: &Segment,
         ctx: &Ctx,
         piped: Option<(ObjId, bool)>,
+        pipe_dependencies: &[ObjId],
         member: &Rc<Member>,
     ) -> R<(ObjId, bool)> {
         let mut args: Vec<ArgV> = Vec::new();
         if let Some((p, s)) = piped {
-            args.push(ArgV { obj: p, role: None, role_quoted: false, sel: s, off: seg.start, explicit: false });
+            args.push(ArgV {
+                obj: p,
+                dependencies: pipe_dependencies.to_vec(),
+                role: None,
+                role_quoted: false,
+                sel: s,
+                off: seg.start,
+                explicit: false,
+            });
         }
         // a rule whose selection takes effect only in its own level does nothing below it (10.4),
         // before what else it names, which may be host objects of that level
@@ -831,6 +881,7 @@ impl<'p> Interp<'p> {
                     // a definition body is encapsulated: it is not evaluated as statements here (5.4)
                     args.push(ArgV {
                         obj: NOTHING,
+                        dependencies: Vec::new(),
                         role: a.role.clone(),
                         role_quoted: a.role_quoted,
                         sel: false,
@@ -840,7 +891,8 @@ impl<'p> Interp<'p> {
                     continue;
                 }
             }
-            let (obj, sel) = match self.eval_obj(&a.obj, ctx) {
+            let arg_ctx = ctx.with_dependencies(&[]);
+            let (obj, sel) = match self.eval_obj(&a.obj, &arg_ctx) {
                 Ok(value) => value,
                 Err(Stop::Fail(diagnostic)) if keeps_input => {
                     // Keep evaluating independent inputs once. A failed source or definition
@@ -852,6 +904,7 @@ impl<'p> Interp<'p> {
             };
             args.push(ArgV {
                 obj,
+                dependencies: arg_ctx.reference_dependencies.borrow().clone(),
                 role: a.role.clone(),
                 role_quoted: a.role_quoted,
                 sel,
@@ -864,11 +917,20 @@ impl<'p> Interp<'p> {
         }
         let Some(call) = &seg.call else {
             if args.len() == 1 {
+                ctx.depend_on(&args[0].dependencies);
                 return Ok((args[0].obj, args[0].sel));
             }
             return Ok((NOTHING, false));
         };
         let kw = self.kw(&call.kw, ctx.unit);
+        let independent_args = words().keyword(&kw).is_some_and(|signature| {
+            matches!(&signature.positions, crate::words::Positions::List(slots) if slots.len() == 1 && matches!(slots[0].takes, Takes::One | Takes::Shape))
+        });
+        if args.len() == 1 || !independent_args {
+            for arg in &args {
+                ctx.depend_on(&arg.dependencies);
+            }
+        }
         self.check_segment_keyword(&kw, call, ctx)?;
         if kw == "USE-PACKAGE" {
             return Ok((NOTHING, false));
@@ -1017,6 +1079,7 @@ impl<'p> Interp<'p> {
 
     pub(crate) fn make_set(&mut self, e: &Rc<SetExpr>, ctx: &Ctx) -> R<(ObjId, bool)> {
         let mut items: Vec<(ObjId, bool)> = Vec::new();
+        let mut item_dependencies = Vec::new();
         let nested: super::ctx::NestedRef =
             Rc::new(RefCell::new(ctx.nested.as_ref().map(|n| n.borrow().clone()).unwrap_or_default()));
         let mut lazy = false;
@@ -1035,9 +1098,11 @@ impl<'p> Interp<'p> {
                 self.note_failed(ctx.rec, m.start, m.end, false);
                 let f = self.new_obj(ObjData::Failed(None));
                 items.push((f, false));
+                item_dependencies.push(Vec::new());
                 continue;
             }
             let mut sub = ctx.clone();
+            sub.reference_dependencies = Default::default();
             sub.nested = Some(nested.clone());
             sub.pos = {
                 let mut p = ctx.pos.clone();
@@ -1048,13 +1113,15 @@ impl<'p> Interp<'p> {
             };
             if m.segments.len() == 1 && m.segments[0].call.is_none() && m.bind().is_none() {
                 for a in &m.segments[0].args {
-                    let (obj, _sel) = match self.eval_obj(&a.obj, &sub) {
+                    let arg_ctx = sub.with_dependencies(&[]);
+                    let (obj, _sel) = match self.eval_obj(&a.obj, &arg_ctx) {
                         Ok(v) => v,
                         Err(Stop::Fail(d)) => (self.new_obj(ObjData::Failed(d)), false),
                         Err(o) => return Err(o),
                     };
                     lazy = lazy || self.is_lazy(obj);
                     items.push((obj, !matches!(a.obj, ObjExpr::Set(_))));
+                    item_dependencies.push(arg_ctx.reference_dependencies.borrow().clone());
                 }
                 continue;
             }
@@ -1065,9 +1132,11 @@ impl<'p> Interp<'p> {
             };
             lazy = lazy || self.is_lazy(obj);
             items.push((obj, false));
+            item_dependencies.push(sub.reference_dependencies.borrow().clone());
         }
         self.check_closing(ctx, e.start)?;
         let mut sd = SetData::plain(items, true);
+        sd.item_dependencies = item_dependencies;
         if ctx.scene.is_some() && ctx.frame.is_none() {
             sd.writer = Some(ctx.unit);
         }
@@ -1079,18 +1148,19 @@ impl<'p> Interp<'p> {
     pub(crate) fn nested_member(&mut self, m: &Rc<Member>, ctx: &Ctx, nested: &super::ctx::NestedRef) -> R<ObjId> {
         let fkey = ctx.frame.as_ref().map(|f| Rc::as_ptr(f) as usize).unwrap_or(0);
         let key = (ptr(&**m), fkey, ctx.scene);
-        if let Some(v) = self.nested_memo.get(&key) {
+        if let Some((v, dependencies)) = self.nested_memo.get(&key) {
+            ctx.depend_on(dependencies);
             return v.clone();
         }
         let (r, bound) = self.eval_member(m, ctx);
-        for ((p, n), v) in bound {
-            nested.borrow_mut().insert((p, n), Nested::Val(v));
+        for ((p, n), v, dependencies) in bound {
+            nested.borrow_mut().insert((p, n), Nested::Val(v, dependencies));
         }
         let r = match r {
             Err(Stop::LocalRef) | Err(Stop::OwnLevel) | Err(Stop::NoCircuit) => return r,
             other => other,
         };
-        self.nested_memo.insert(key, r.clone());
+        self.nested_memo.insert(key, (r.clone(), ctx.reference_dependencies.borrow().clone()));
         r
     }
 
@@ -1159,18 +1229,23 @@ impl<'p> Interp<'p> {
                     let _ = k;
                     let hit = nested.borrow().get(&(e.prefix, name.clone())).cloned();
                     obj = match hit {
-                        Some(Nested::Val(v)) => v,
+                        Some(Nested::Val(v, dependencies)) => {
+                            ctx.depend_on(&dependencies);
+                            v
+                        }
                         _ => last,
                     };
                 }
-                Some(Found::Nested(Nested::Val(v))) => obj = v,
+                Some(Found::Nested(Nested::Val(v, dependencies))) => {
+                    ctx.depend_on(&dependencies);
+                    obj = v;
+                }
                 Some(f) => obj = self.binding_value(&f, ctx)?,
             }
             if obj == NOTHING {
                 return self.fail(ctx, codes::REF_NO_OBJECT, format!("{}{name} produces no object", e.prefix), e.start);
             }
-            if let ObjData::Failed(d) = self.o(obj) {
-                let d = *d;
+            if let Some(d) = self.failed_obj(obj) {
                 let msg = format!("{}{name} failed", e.prefix);
                 let id = self.err_cause(ctx, codes::REF_FAILED, msg, e.start, d);
                 return Err(Stop::Fail(Some(id)));
@@ -1429,6 +1504,18 @@ impl<'p> Interp<'p> {
     }
 
     fn subobject(&mut self, obj: ObjId, p: &PathItem, ctx: &Ctx, e: &Ref) -> R<ObjId> {
+        if self.follows_0_4(self.source_unit(ctx)) {
+            if let Some(cause) = self.failed_obj(obj) {
+                let diagnostic =
+                    self.err_cause(ctx, codes::REF_FAILED, format!("{} failed", self.label(obj)), e.start, cause);
+                return Err(Stop::Fail(Some(diagnostic)));
+            }
+        }
+        if self.follows_0_4(self.source_unit(ctx))
+            && matches!(self.o(obj), ObjData::Usage(_) | ObjData::NamedSubobject { .. })
+        {
+            ctx.depend_on(&[obj]);
+        }
         if self.is_set(obj)
             && p.sep == Sep::Sub
             && self.follows_0_4(self.source_unit(ctx))
@@ -1480,6 +1567,11 @@ impl<'p> Interp<'p> {
                 return Ok(r);
             }
             if let Some(l) = u.local(&name) {
+                if let Some(frame) = &u.frame {
+                    if let Some(dependencies) = frame.borrow().local_dependencies.get(&name) {
+                        ctx.depend_on(dependencies);
+                    }
+                }
                 return Ok(l);
             }
         }
@@ -1489,6 +1581,8 @@ impl<'p> Interp<'p> {
                 | ObjData::Usage(_)
                 | ObjData::Bundle { .. }
                 | ObjData::Term { .. }
+                | ObjData::ScenePin { .. }
+                | ObjData::NamedSubobject { .. }
                 | ObjData::Wire { .. }
                 | ObjData::Prim { .. }
                 | ObjData::Net { .. }
@@ -1497,6 +1591,18 @@ impl<'p> Interp<'p> {
             let Some(s) = ctx.scene else {
                 return self.fail(ctx, codes::REF_NO_CIRCUIT, "there is no circuit here", e.start);
             };
+            if self.follows_0_4(self.source_unit(ctx))
+                && matches!(
+                    self.o(obj),
+                    ObjData::Inst { .. }
+                        | ObjData::Usage(_)
+                        | ObjData::Bundle { .. }
+                        | ObjData::ScenePin { .. }
+                        | ObjData::NamedSubobject { .. }
+                )
+            {
+                return Ok(self.scene_named_subobject(s, obj, &name, ctx, e.start));
+            }
             return Ok(self.scene_keytext(s, obj, &name));
         }
         if obj == OWNER {
@@ -1776,17 +1882,34 @@ impl<'p> Interp<'p> {
             && (!self.is_lazy(objs[0].obj) || (constraint_items && phase >= 7))
         {
             let a = objs[0].clone();
-            let items = if constraint_items {
-                self.written_items(ctx.scene.unwrap(), a.obj, phase, ctx).into_iter().map(|o| (o, false)).collect()
+            let items: Vec<(InputMember, bool)> = if constraint_items {
+                self.written_input_items(ctx.scene.unwrap(), a.obj, phase, ctx)
+                    .into_iter()
+                    .map(|m| (m, false))
+                    .collect()
             } else if matches!(self.set(a.obj).kind, SetKind::Constraints { .. }) {
-                self.written_members(a.obj, ctx.scene, &mut HashSet::new()).into_iter().map(|o| (o, false)).collect()
+                self.written_inputs(a.obj, ctx.scene, &mut HashSet::new()).into_iter().map(|m| (m, false)).collect()
             } else {
-                self.set(a.obj).items.clone()
+                let data = self.set(a.obj);
+                data.items
+                    .iter()
+                    .enumerate()
+                    .map(|(index, &(object, spread))| {
+                        (
+                            InputMember {
+                                object,
+                                dependencies: data.item_dependencies.get(index).cloned().unwrap_or_default(),
+                            },
+                            spread,
+                        )
+                    })
+                    .collect()
             };
             objs = items
                 .into_iter()
-                .map(|(o, spread)| ArgV {
-                    obj: o,
+                .map(|(member, spread)| ArgV {
+                    obj: member.object,
+                    dependencies: member.dependencies,
                     role: None,
                     role_quoted: false,
                     sel: a.sel,
@@ -1795,6 +1918,11 @@ impl<'p> Interp<'p> {
                 })
                 .collect();
             unpacked_from = Some(a);
+        }
+        if rest.len() > 1 {
+            for arg in &objs {
+                ctx.depend_on(&arg.dependencies);
+            }
         }
         if rest.len() == 1 {
             let p = rest[0];
@@ -1832,11 +1960,21 @@ impl<'p> Interp<'p> {
                 let items: Vec<(ObjId, bool)> = objs.iter().map(|a| (a.obj, !a.explicit)).collect();
                 let sel = objs.iter().any(|a| a.sel);
                 self.check_closing(ctx, seg.start)?;
-                let s = self.new_obj(ObjData::Set(Box::new(SetData::plain(items, false))));
+                let mut data = SetData::plain(items, false);
+                data.item_dependencies = objs.iter().map(|arg| arg.dependencies.clone()).collect();
+                let s = self.new_obj(ObjData::Set(Box::new(data)));
                 self.note_made(s, ctx, seg.start);
                 mapped.insert(
                     p.name.clone(),
-                    ArgV { obj: s, role: None, role_quoted: false, sel, off: objs[0].off, explicit: false },
+                    ArgV {
+                        obj: s,
+                        dependencies: Vec::new(),
+                        role: None,
+                        role_quoted: false,
+                        sel,
+                        off: objs[0].off,
+                        explicit: false,
+                    },
                 );
             }
             return Ok(mapped);
