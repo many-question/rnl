@@ -2586,6 +2586,13 @@
    ]
   },
   {
+   "number": "RNL3516",
+   "name": "role-pin-filled-with-other-kind",
+   "severity": "error",
+   "message": "pin {pin} of {symbol} binds role {role}, filled with {object} ({kind}); a bound role takes a net, terminal or pin, so this symbol assignment fails (5.2.4, 12.1)",
+   "sections": ["5.2.4", "12.1"]
+  },
+  {
    "number": "RNL3517",
    "name": "usage-point-idle-04",
    "severity": "hint",
@@ -2875,6 +2882,13 @@
    "severity": "warning",
    "message": "pin {pin} of {symbol}: terminal={binding} binds no role of {owner}; this binding is unconnected (11.3)",
    "sections": ["11.3", "12.1"]
+  },
+  {
+   "number": "RNL4111",
+   "name": "pin-on-no-net",
+   "severity": "error",
+   "message": "{pin} is on no net: it binds no connected terminal or role (5.2.4, 6.5)",
+   "sections": ["5.2.4", "6.5", "12.1"]
   },
   {
    "number": "RNL4113",

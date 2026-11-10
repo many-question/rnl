@@ -108,6 +108,92 @@ impl Interp<'_> {
                 matches!(term, TermKey::Name(name) if usage.role_sets.contains(name))))
     }
 
+    /// A symbol may bind only electrically meaningful role fillers (12.1). This rejects the
+    /// assignment, not the semantic usage or the independent objects made by its body.
+    pub(crate) fn check_scene_pin_bindings(&mut self, scene: SceneId) -> bool {
+        let mut removed = false;
+        for usage in self.scenes[scene].usages.clone() {
+            if !self.usage_own_point(usage) || self.is_failed(usage) {
+                continue;
+            }
+            let Some(&symbol) = self.scenes[scene].symbol.get(&usage) else { continue };
+            if !self.symbol(symbol).independent_pins {
+                continue;
+            }
+            let data = self.usage(usage).clone();
+            let Some(site) = &data.site else { continue };
+            let mut faults = Vec::new();
+            for (index, pin) in self.symbol(symbol).pins.clone().into_iter().enumerate() {
+                'bindings: for binding in pin.terms {
+                    let TermKey::Name(role) = binding else { continue };
+                    let Some(filler) = data.role(&role) else { continue };
+                    for member in self.scene_input_members_at(scene, filler, self.scenes[scene].phase, Some(site)) {
+                        let value = self.scene_value(member.object);
+                        if matches!(
+                            self.o(value),
+                            ObjData::Net { .. }
+                                | ObjData::Term { .. }
+                                | ObjData::ScenePin { .. }
+                                | ObjData::NamedSubobject { resolved: None, .. }
+                        ) {
+                            continue;
+                        }
+                        faults.push((index, role, member.object));
+                        break 'bindings;
+                    }
+                }
+            }
+            if faults.is_empty() {
+                continue;
+            }
+            let assignment = self.scenes[scene]
+                .appear
+                .iter()
+                .enumerate()
+                .find(|(index, fact)| fact.target == usage && self.scenes[scene].symbol_won.contains(index))
+                .map(|(_, fact)| fact.clone());
+            let at = assignment
+                .as_ref()
+                .and_then(|fact| fact.ctx.as_ref().and_then(|ctx| self.rec_loc(ctx.rec, fact.off)))
+                .map(|loc| format!("; the symbol is given at {}:{}:{}", loc.file, loc.line, loc.col))
+                .unwrap_or_default();
+            for (index, role, member) in faults {
+                self.err(site, codes::ROLE_PIN_FILLED_WITH_OTHER_KIND, format!(
+                    "pin {} of {} binds role {role}, filled with {} ({}); a bound role takes a net, terminal or pin, so this symbol assignment fails (5.2.4, 12.1){at}",
+                    index + 1, self.label(symbol), self.label(member), self.kind_of(member)), data.off);
+            }
+            if let Some(fact) = assignment {
+                if let Some(ctx) = fact.ctx {
+                    self.note_failed_at(ctx.rec, fact.off, false);
+                }
+            }
+            self.scenes[scene].symbol.remove(&usage);
+            if let Some(order) = self.symbol_order.get_mut(&scene) {
+                order.retain(|owner| *owner != usage);
+            }
+            // A binding may resolve to a keyed symbol text only after symbol_labels. Remove
+            // the rejected symbol's text layers as well, while keeping explicit TEXT layers.
+            for text in self.scenes[scene].texts.clone() {
+                match self.om(text) {
+                    ObjData::Text { attach, from_symbol: true, failed, .. } if *attach == usage => {
+                        *failed = true;
+                    }
+                    ObjData::KeyText { attach, layers, from_symbol, sym_pos, failed, .. }
+                        if *attach == usage && *from_symbol =>
+                    {
+                        layers.retain(|(order, _, _)| *order != super::obj::pos(&[-1]));
+                        *from_symbol = false;
+                        *sym_pos = None;
+                        *failed = layers.is_empty();
+                    }
+                    _ => {}
+                }
+            }
+            removed = true;
+        }
+        removed
+    }
+
     /// Expand resolved set values only for a consumer after symbol assignment. The written
     /// members used for UNION, member places and earlier creation keep their handles (8.2).
     pub(crate) fn scene_input_members(
@@ -575,12 +661,17 @@ impl Interp<'_> {
             if resolved.is_some() {
                 continue;
             }
-            let diagnostic = self.err(
-                &site,
-                codes::REF_NO_SUBOBJECT,
-                format!("{} has no sub-object {name} (6.5)", self.label(parent)),
-                off,
-            );
+            let (code, message) = if name == "net"
+                && matches!(self.o(self.scene_value(parent)), ObjData::ScenePin { .. })
+            {
+                (
+                    codes::PIN_ON_NO_NET,
+                    format!("{} is on no net: it binds no connected terminal or role (5.2.4, 6.5)", self.label(parent)),
+                )
+            } else {
+                (codes::REF_NO_SUBOBJECT, format!("{} has no sub-object {name} (6.5)", self.label(parent)))
+            };
+            let diagnostic = self.err(&site, code, message, off);
             let failed = self.new_obj(ObjData::Failed(Some(diagnostic)));
             if let ObjData::NamedSubobject { resolved, .. } = self.om(object) {
                 *resolved = Some(failed);

@@ -100,7 +100,7 @@ fn an_unbound_pin_has_no_net_and_dependent_creation_fails() {
         #R1 @SET-SYMBOL $S
     "#,
     );
-    assert!(r.diagnostics().iter().any(|d| d.code == codes::REF_NO_SUBOBJECT));
+    assert!(r.diagnostics().iter().any(|d| d.code == codes::PIN_ON_NO_NET));
     assert_eq!(r.problems[0].usages.len(), 1);
     assert!(r.problems[0].wires.is_empty());
 }
@@ -184,7 +184,7 @@ fn a_failed_network_reference_does_not_fail_an_independent_wire() {
     );
     assert_eq!(r.problems[0].wires.len(), 1);
     assert_eq!(r.problems[0].wires[0].nets, ["a"]);
-    assert!(r.diagnostics().iter().any(|d| d.code == codes::REF_NO_SUBOBJECT));
+    assert!(r.diagnostics().iter().any(|d| d.code == codes::PIN_ON_NO_NET));
 }
 
 #[test]

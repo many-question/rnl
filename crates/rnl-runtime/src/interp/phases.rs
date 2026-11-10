@@ -83,15 +83,23 @@ impl Interp<'_> {
         self.scenes[s].phase = 4;
         self.resolve_symbols(s, false);
         self.resolve_scene_subobjects(s);
+        if self.check_scene_pin_bindings(s) {
+            self.resolve_scene_subobjects(s);
+        }
         self.scenes[s].phase = 5;
         self.run_tasks(s, 5);
         self.scenes[s].phase = 6;
         self.run_tasks(s, 6);
         self.resolve_symbols(s, true);
+        self.resolve_scene_subobjects(s);
+        self.check_scene_pin_bindings(s);
         self.note_overridden_symbols(s);
         self.symbol_labels(s);
         self.check_scene_pin_text_names(s);
         self.finish_scene_subobjects(s);
+        if self.check_scene_pin_bindings(s) {
+            self.finish_scene_subobjects(s);
+        }
         self.scenes[s].phase = 7;
         self.check_scene_pin_roles(s);
         self.materialize_constraints(s);
