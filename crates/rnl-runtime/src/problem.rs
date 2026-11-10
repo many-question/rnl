@@ -1113,6 +1113,11 @@ impl Canon {
                     self.str(text);
                     style
                 }
+                Run::Sqrt { radicand, style } => {
+                    self.word("sqrt");
+                    self.runs(radicand);
+                    style
+                }
                 Run::Frac { num, den, style } => {
                     self.word("frac");
                     self.runs(num);
@@ -1121,6 +1126,9 @@ impl Canon {
                 }
             };
             self.word(&format!("{}{}{}{}", st.level, st.bold as u8, st.italic as u8, st.overline as u8));
+            if st.upright {
+                self.word("upright");
+            }
         }
         self.word("]");
     }

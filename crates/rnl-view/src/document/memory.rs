@@ -42,6 +42,7 @@ fn runs(v: &Vec<Run>) -> usize {
             .map(|r| match r {
                 Run::Text { text, .. } => string(text),
                 Run::Frac { num, den, .. } => runs(num) + runs(den),
+                Run::Sqrt { radicand, .. } => runs(radicand),
             })
             .sum::<usize>()
 }

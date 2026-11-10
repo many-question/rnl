@@ -119,9 +119,12 @@ export type Vertex = { terminal: string } | { point: string } | { usage: string;
 /** A run of a line of text, as the Document's `Text.lines` holds it (13.6). */
 export type Run =
   | { kind: "text"; text: string; style: RunStyle }
-  | { kind: "frac"; num: Run[]; den: Run[]; style: RunStyle };
+  | { kind: "frac"; num: Run[]; den: Run[]; style: RunStyle }
+  | { kind: "sqrt"; radicand: Run[]; style: RunStyle };
 
 export interface RunStyle {
+  /** Overrides whole-text italic for draft math digits, symbols and roman text. */
+  upright?: boolean;
   level: number;
   bold: boolean;
   italic: boolean;

@@ -122,6 +122,20 @@ pub fn write(request: &WriteRequest) -> Result<String, String> {
     }
     let ops: Vec<LevelOp> = request.ops.iter().enumerate().map(|(k, v)| ops::parse(k, v)).collect::<Result<_, _>>()?;
 
+    for op in &ops {
+        match &op.op {
+            Op::AddText { text, .. } => form::check_math_content(text, version)?,
+            Op::DefineSymbol { pins, .. } => {
+                for pin in pins {
+                    if let Some(label) = &pin.label {
+                        form::check_math_content(label, version)?;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     if version != "0.4" {
         for op in &ops {
             if matches!(&op.op, Op::AddText { fix_rotate: Some(_), .. }) {

@@ -238,11 +238,16 @@ impl Interp<'_> {
             values.push((path, v));
         }
         let mut k = 0;
-        crate::markup::expand(text.as_str(), |_p| {
+        let value = |_p: &str| {
             let v = values.get(k).map(|(_, v)| v.clone()).unwrap_or_default();
             k += 1;
             v
-        })
+        };
+        if unit.is_some_and(|u| self.follows_0_4(u)) {
+            crate::markup::expand_math(text.as_str(), value)
+        } else {
+            crate::markup::expand(text.as_str(), value)
+        }
     }
 
     /// Read markup by the version of the file that wrote the text, including passed parameters.

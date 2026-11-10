@@ -987,7 +987,7 @@ fn level_model(
     let shows = |lines: &[rnl_runtime::markup::Line]| {
         lines.iter().flatten().any(|r| match r {
             rnl_runtime::markup::Run::Text { text, .. } => !text.trim().is_empty(),
-            rnl_runtime::markup::Run::Frac { .. } => true,
+            rnl_runtime::markup::Run::Frac { .. } | rnl_runtime::markup::Run::Sqrt { .. } => true,
         })
     };
     let texts = lv

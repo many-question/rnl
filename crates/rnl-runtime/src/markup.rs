@@ -2,6 +2,8 @@
 
 use crate::diag::{codes, Code};
 
+mod math;
+
 /// Marks text taken from an attribute: shown as written, never read as markup.
 pub const LITERAL: char = '\u{0}';
 
@@ -10,6 +12,11 @@ pub const LITERAL: char = '\u{0}';
 pub enum Run {
     Text {
         text: String,
+        style: RunStyle,
+    },
+    /// A square root, including its bar over the radicand (13.6).
+    Sqrt {
+        radicand: Vec<Run>,
         style: RunStyle,
     },
     /// `\frac{…}{…}`: numerator over denominator.
@@ -26,6 +33,8 @@ pub struct RunStyle {
     pub level: i8,
     pub bold: bool,
     pub italic: bool,
+    /// Math digits, symbols, roman groups and attribute values override whole-text italic.
+    pub upright: bool,
     pub overline: bool,
 }
 
@@ -137,6 +146,18 @@ impl P<'_> {
             if until_brace && c == '}' {
                 self.emit(&mut buf, style);
                 return i + 1;
+            }
+            if self.name_formats && c == '\\' && t.get(i + 1) == Some(&'(') {
+                self.emit(&mut buf, style);
+                if let Some(end) = math::end(t, i + 2) {
+                    let (runs, _) = math::parse(&t[i + 2..end], style);
+                    self.lines.last_mut().unwrap().extend(runs);
+                    i = end + 2;
+                } else {
+                    buf.extend(t[i..].iter().copied().filter(|c| *c != LITERAL));
+                    i = n;
+                }
+                continue;
             }
             if c == '\\' {
                 if t.get(i + 1) == Some(&'\\') {
@@ -276,6 +297,14 @@ fn subscript_after(runs: Vec<Run>, keep: &mut usize) -> Vec<Run> {
                     out.push(Run::Text { text: text[split..].into(), style });
                 }
             }
+            Run::Sqrt { radicand, mut style } => {
+                if *keep == 0 {
+                    style.level -= 1;
+                }
+                *keep = keep.saturating_sub(1);
+                let radicand = subscript_after(radicand, keep);
+                out.push(Run::Sqrt { radicand, style });
+            }
             Run::Frac { num, den, mut style } => {
                 if *keep == 0 {
                     style.level -= 1;
@@ -320,6 +349,10 @@ pub fn plain(runs: &[Run]) -> String {
     for r in runs {
         match r {
             Run::Text { text, .. } => s.push_str(text),
+            Run::Sqrt { radicand, .. } => {
+                s.push('√');
+                s.push_str(&plain(radicand));
+            }
             Run::Frac { num, den, .. } => {
                 s.push_str(&plain(num));
                 s.push('/');
@@ -363,7 +396,41 @@ pub fn problems(text: &str) -> Vec<(Code, String)> {
 /// Diagnose markup in the same version as the text that will be drawn.
 pub fn problems_with_name_formats(text: &str, name_formats: bool) -> Vec<(Code, String)> {
     let mut out = Vec::new();
-    let t: Vec<char> = strip_refs(text).replace("\\\\", "\n").chars().collect();
+    // Parse formulas separately so the text-mode command set cannot leak into them.
+    let text = if name_formats {
+        let expanded = expand_math(text, |_| String::new());
+        let t: Vec<char> = expanded.chars().collect();
+        let mut outside = String::new();
+        let mut i = 0;
+        while i < t.len() {
+            if t[i] == LITERAL {
+                i = (i + 1..t.len()).find(|&j| t[j] == LITERAL).map_or(t.len(), |end| end + 1);
+            } else if t[i] == '\\' && t.get(i + 1) == Some(&'(') {
+                if let Some(end) = math::end(&t, i + 2) {
+                    out.extend(math::parse(&t[i + 2..end], RunStyle::default()).1);
+                    i = end + 2;
+                } else {
+                    out.push((
+                        codes::MARKUP_UNKNOWN_COMMAND,
+                        "unknown markup \\( without a closing \\) is shown as written".into(),
+                    ));
+                    outside.extend(&t[i..]);
+                    break;
+                }
+            } else if t[i] == '\\' && t.get(i + 1) == Some(&'\\') {
+                outside.push('\\');
+                outside.push('\\');
+                i += 2;
+            } else {
+                outside.push(t[i]);
+                i += 1;
+            }
+        }
+        outside
+    } else {
+        text.to_string()
+    };
+    let t: Vec<char> = strip_refs(&text).replace("\\\\", "\n").chars().collect();
     let mut i = 0;
     while i < t.len() {
         if t[i] == '\\' {
@@ -457,6 +524,37 @@ pub fn expand(text: &str, mut value: impl FnMut(&str) -> String) -> String {
     out.replace('\u{1}', "${")
 }
 
+/// Draft text keeps a written literal attribute reference opaque even inside a formula (13.6).
+pub fn expand_math(text: &str, mut value: impl FnMut(&str) -> String) -> String {
+    let t: Vec<char> = text.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < t.len() {
+        if t[i] == '\\' && t.get(i + 1) == Some(&'$') && t.get(i + 2) == Some(&'{') {
+            let end = name_group(&t, i + 2).map_or(t.len(), |(_, end)| end + 1);
+            out.push(LITERAL);
+            out.extend(&t[i + 1..end]);
+            out.push(LITERAL);
+            i = end;
+        } else if t[i] == '$' && t.get(i + 1) == Some(&'{') {
+            if let Some(end) = (i + 2..t.len()).find(|&j| t[j] == '}') {
+                let path: String = t[i + 2..end].iter().collect();
+                out.push(LITERAL);
+                out.push_str(&value(&path));
+                out.push(LITERAL);
+                i = end + 1;
+            } else {
+                out.push(t[i]);
+                i += 1;
+            }
+        } else {
+            out.push(t[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -466,6 +564,7 @@ mod tests {
             .map(|r| match r {
                 Run::Text { text, style } => (text.clone(), style.level),
                 Run::Frac { .. } => ("<frac>".into(), 0),
+                Run::Sqrt { .. } => ("<sqrt>".into(), 0),
             })
             .collect()
     }

@@ -334,19 +334,25 @@ fn in_a_spice_section_of_a_spectre_netlist_a_record_is_carried_by_a_star() {
 
 /// The runtime's runs as this crate's, to compare what the markup reads back as.
 fn ours(runs: &[markup::Run]) -> Vec<Run> {
-    let style =
-        |s: &markup::RunStyle| RunStyle { level: s.level as i32, bold: s.bold, italic: s.italic, overline: s.overline };
+    let style = |s: &markup::RunStyle| RunStyle {
+        level: s.level as i32,
+        bold: s.bold,
+        italic: s.italic,
+        upright: s.upright,
+        overline: s.overline,
+    };
     runs.iter()
         .map(|r| match r {
             markup::Run::Text { text, style: s } => Run::Text { text: text.clone(), style: style(s) },
             markup::Run::Frac { num, den, style: s } => Run::Frac { num: ours(num), den: ours(den), style: style(s) },
+            markup::Run::Sqrt { radicand, style: s } => Run::Sqrt { radicand: ours(radicand), style: style(s) },
         })
         .collect()
 }
 
 #[test]
 fn markup_reads_back_as_the_runs_it_was_written_from() {
-    let s = |level, bold, italic, overline| RunStyle { level, bold, italic, overline };
+    let s = |level, bold, italic, overline| RunStyle { level, bold, italic, overline, upright: false };
     let t = |text: &str, st| Run::Text { text: text.into(), style: st };
     let lines = vec![
         vec![
@@ -369,6 +375,41 @@ fn markup_reads_back_as_the_runs_it_was_written_from() {
     let written = form::markup(&lines);
     let read: Vec<Vec<Run>> = markup::parse(&written).iter().map(|l| ours(l)).collect();
     assert_eq!(read, lines, "{written}");
+}
+
+#[test]
+fn structured_math_preserves_roots_scripts_fractions_and_upright_runs() {
+    for source in [r"\(g_m=2\mathrm{V}\)", r"\(\sqrt{x^2+\frac{a}{b}}\)", r"\textbf{\(\sqrt{x_1}\)}"] {
+        let lines: Vec<_> = markup::parse_with_name_formats(source, true).iter().map(|l| ours(l)).collect();
+        let content = crate::ops::TextContent::Lines(lines.clone());
+        form::check_math_content(&content, "0.4").unwrap();
+        assert!(form::check_math_content(&content, "0.3").unwrap_err().contains("language_version 0.4"));
+        assert!(markup::problems_with_name_formats(&form::markup(&lines), true).is_empty());
+    }
+}
+
+#[test]
+fn structured_math_refuses_to_drop_literal_spaces_or_styles() {
+    let input = markup::expand_math(r"\(\sqrt{${value}}\)", |_| "A B".into());
+    let lines = markup::parse_with_name_formats(&input, true).iter().map(|l| ours(l)).collect();
+    let error = form::check_math_content(&crate::ops::TextContent::Lines(lines), "0.4").unwrap_err();
+    assert!(error.contains("original markup"));
+}
+
+#[test]
+fn structured_math_json_requires_draft_output_and_writes_a_formula() {
+    let ops = json!([{"op":"add-text", "level":"file", "at":[0,0], "lines":[[
+        {"kind":"sqrt", "radicand":[
+            {"kind":"text", "text":"x", "style":{"italic":true}},
+            {"kind":"text", "text":"2", "style":{"level":1,"upright":true}}
+        ]}
+    ]]}]);
+    let mut req = request("spice", "\nR1 a b 1k\n", ops);
+    assert!(write(&req).unwrap_err().contains("language_version 0.4"));
+    req.language_version = Some("0.4".into());
+    let written = write(&req).unwrap();
+    assert!(written.contains(r"\(\sqrt{x^{\mathrm{2}}}\)"), "{written}");
+    assert!(written.contains("@VERSION(\"0.4\")"));
 }
 
 #[test]

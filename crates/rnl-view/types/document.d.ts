@@ -1283,7 +1283,8 @@ export type VAlign = "baseline" | "top" | "middle" | "bottom";
  */
 export type Run =
   | { "kind": "text", text: string, style: RunStyle }
-  | { "kind": "frac", num: Array<Run>, den: Array<Run>, style: RunStyle };
+  | { "kind": "frac", num: Array<Run>, den: Array<Run>, style: RunStyle }
+  | { "kind": "sqrt", radicand: Array<Run>, style: RunStyle };
 
 /**
  * The style the markup gives a run (13.6).
@@ -1298,5 +1299,9 @@ export type RunStyle = {
   level: number,
   bold: boolean,
   italic: boolean,
+  /**
+   * Force upright math content even when the whole text is italic.
+   */
+  upright?: boolean,
   overline: boolean,
 };

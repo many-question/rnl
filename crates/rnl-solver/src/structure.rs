@@ -900,6 +900,7 @@ fn line_chars(runs: &[Run]) -> usize {
         .map(|r| match r {
             Run::Text { text, .. } => text.chars().filter(|c| *c != rnl_runtime::markup::LITERAL).count(),
             Run::Frac { num, den, .. } => line_chars(num).max(line_chars(den)),
+            Run::Sqrt { radicand, .. } => 1 + line_chars(radicand),
         })
         .sum()
 }
