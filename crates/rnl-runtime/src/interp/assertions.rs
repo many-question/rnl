@@ -518,6 +518,14 @@ impl Interp<'_> {
                         ns
                     }
                 }
+                ("terminal", ObjData::ScenePin { owner, index }) if self.follows_0_4(self.source_unit(&a.site)) => {
+                    let terminals = self.scene_pin_terminals(s, *owner, *index);
+                    if terminals.is_empty() {
+                        vec![m]
+                    } else {
+                        terminals
+                    }
+                }
                 ("net", ObjData::ScenePin { owner, index }) => {
                     let nets = self.scene_pin_nets(s, *owner, *index);
                     if nets.is_empty() {
