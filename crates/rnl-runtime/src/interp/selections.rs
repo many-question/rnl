@@ -317,7 +317,7 @@ impl Interp<'_> {
         snapshot: bool,
     ) -> Vec<ObjId> {
         let mut all = Vec::new();
-        for owner in self.drawables(scene, snapshot) {
+        for owner in self.selection_drawables(scene, snapshot, true) {
             all.extend(self.owner_pins(scene, owner));
         }
         let mut candidates = Vec::new();

@@ -198,6 +198,11 @@ pub struct Scene {
     /// Where each object is made, in the order of writing: `created` with the segment of each
     /// pipe (5.5), for the drawing order (11.6), bundles (11.8) and the style of a text (8.3).
     pub created_order: HashMap<ObjId, Pos>,
+    /// Creation step, independent of the order in which forward references were evaluated (10.3).
+    pub created_phase: HashMap<ObjId, usize>,
+    /// Symbol texts follow their owners, then the statements of the symbol (10.3).
+    pub symbol_text_order: HashMap<ObjId, (ObjId, usize)>,
+    pub symbol_label_owners: HashSet<ObjId>,
     pub items_cache: HashMap<(ObjId, usize), Vec<InputMember>>,
     pub pos_cache: HashMap<ObjId, ObjId>,
     pub symbol: HashMap<ObjId, ObjId>,
@@ -263,6 +268,7 @@ impl Scene {
     pub(crate) fn note_created(&mut self, o: ObjId, at: Pos, ctx: &Ctx) {
         self.creation_sites.insert(o, Rc::new(ctx.clone()));
         self.created_order.insert(o, order_pos(&at, &ctx.segments));
+        self.created_phase.insert(o, self.phase.max(3));
         self.created.insert(o, at);
     }
 
@@ -315,6 +321,9 @@ impl Scene {
             created: HashMap::new(),
             creation_sites: HashMap::new(),
             created_order: HashMap::new(),
+            created_phase: HashMap::new(),
+            symbol_text_order: HashMap::new(),
+            symbol_label_owners: HashSet::new(),
             items_cache: HashMap::new(),
             pos_cache: HashMap::new(),
             symbol: HashMap::new(),
@@ -881,6 +890,8 @@ impl Interp<'_> {
                         off,
                         generated,
                     });
+                    let keeps_creation =
+                        self.follows_0_4(self.source_unit(ctx)) && self.scenes[s].created.contains_key(&kt);
                     if let ObjData::KeyText { layers, site: ks, generated: g, direct, .. } = self.om(kt) {
                         // its place in the order of writing, where a later segment is later (5.5)
                         layers.push((order_pos(&at, &ctx.segments), items, style));
@@ -888,7 +899,9 @@ impl Interp<'_> {
                             *direct = site.clone().map(|c| (c, 0));
                         }
                         *ks = site;
-                        *g = generated;
+                        if !keeps_creation {
+                            *g = generated;
+                        }
                     }
                     let sc = &mut self.scenes[s];
                     if !sc.created.contains_key(&kt) {
@@ -1470,7 +1483,7 @@ impl Interp<'_> {
             }
             None => (None, HashSet::new()),
         };
-        match keyword.as_str() {
+        let mut selected = match keyword.as_str() {
             "SELECT-PIN" => self.select_pins(s, pool, &via, &params, snapshot),
             "SELECT-INSTANCE" => {
                 let cands = match &pool {
@@ -1683,7 +1696,7 @@ impl Interp<'_> {
             }
             "SELECT-WIRE" => {
                 let wires: Vec<ObjId> = self
-                    .drawables(s, snapshot)
+                    .selection_drawables(s, snapshot, self.follows_0_4(writer))
                     .into_iter()
                     .filter(|o| matches!(self.o(*o), ObjData::Wire { .. }))
                     .collect();
@@ -1745,8 +1758,11 @@ impl Interp<'_> {
                 out
             }
             "SELECT-LABEL" => {
-                let labels: Vec<ObjId> =
-                    self.drawables(s, snapshot).into_iter().filter(|o| self.obj_kind(*o) == Some("label")).collect();
+                let labels: Vec<ObjId> = self
+                    .selection_drawables(s, snapshot, self.follows_0_4(writer))
+                    .into_iter()
+                    .filter(|o| self.obj_kind(*o) == Some("label"))
+                    .collect();
                 let cands: Vec<ObjId> = match &pool {
                     None => labels,
                     Some(pool) if self.follows_0_4(writer) => {
@@ -1796,7 +1812,7 @@ impl Interp<'_> {
             "SELECT-ANNOTATION" => {
                 // the graphics written in the scene, and texts attached to points (13.4, TR3)
                 let objs = match pool {
-                    None => self.drawables(s, snapshot),
+                    None => self.selection_drawables(s, snapshot, self.follows_0_4(writer)),
                     Some(p) => p,
                 };
                 let out = objs.into_iter().filter(|o| self.obj_kind(*o) == Some("annotation")).collect();
@@ -1807,7 +1823,13 @@ impl Interp<'_> {
                 }
             }
             _ => Vec::new(),
+        };
+        if snapshot && self.follows_0_4(writer) {
+            // The snapshot excludes everything a generation creates, including graphics
+            // inside its usages, which have no separate `generated` flag (10.5).
+            selected.retain(|object| self.in_generation_snapshot(s, *object));
         }
+        selected
     }
 
     pub(crate) fn text_attach(&self, t: ObjId) -> ObjId {
@@ -1833,7 +1855,7 @@ impl Interp<'_> {
         off: usize,
         modern: bool,
     ) -> Vec<ObjId> {
-        let usages: Vec<ObjId> = self.scenes[s]
+        let mut usages: Vec<ObjId> = self.scenes[s]
             .usages
             .clone()
             .into_iter()
@@ -1842,6 +1864,9 @@ impl Interp<'_> {
                 !u.in_symbol && !(snapshot && u.generated)
             })
             .collect();
+        if modern {
+            usages.sort_by_cached_key(|object| self.selection_order_key(s, *object));
+        }
         if kw == "SELECT-USAGE" {
             let Some(pool) = pool else {
                 return usages.into_iter().filter(|a| dfn.is_none_or(|d| self.usage(*a).definition == d)).collect();
@@ -2213,6 +2238,51 @@ impl Interp<'_> {
                 }
             }
             _ => None,
+        }
+    }
+
+    pub(super) fn selection_drawables(&mut self, s: SceneId, snapshot: bool, modern: bool) -> Vec<ObjId> {
+        let mut objects = self.drawables(s, snapshot && !modern);
+        if snapshot {
+            if modern {
+                objects.retain(|object| self.in_generation_snapshot(s, *object));
+            } else {
+                // Earlier languages did not materialize symbol labels until after generation.
+                objects.retain(|object| !self.scenes[s].symbol_text_order.contains_key(object));
+            }
+        }
+        if modern {
+            objects.sort_by_cached_key(|object| self.selection_order_key(s, *object));
+        }
+        objects
+    }
+
+    fn in_generation_snapshot(&self, s: SceneId, object: ObjId) -> bool {
+        if let Some(phase) = self.scenes[s].created_phase.get(&object) {
+            return *phase < 5;
+        }
+        match self.o(object) {
+            ObjData::Term { owner, .. } | ObjData::ScenePin { owner, .. } => self.in_generation_snapshot(s, *owner),
+            ObjData::Pos { parent } | ObjData::NamedSubobject { parent, .. } => self.in_generation_snapshot(s, *parent),
+            _ => !self.made_by_rule(s, object),
+        }
+    }
+
+    fn selection_order_key(&self, s: SceneId, object: ObjId) -> (usize, Pos) {
+        let scene = &self.scenes[s];
+        if let Some((owner, index)) = scene.symbol_text_order.get(&object) {
+            let (_, mut key) = self.selection_order_key(s, *owner);
+            key.push(PosElem::Int(*index as i64));
+            return (scene.created_phase[&object], key);
+        }
+        match self.o(object) {
+            ObjData::Inst { .. } => (0, pos(&[0, self.inst_of(object).order as i64])),
+            ObjData::Bundle { members, .. } => (0, pos(&[0, self.inst_of(members[0]).order as i64])),
+            _ => {
+                let mut key = pos(&[1]);
+                key.extend(scene.created_order.get(&object).into_iter().flatten().cloned());
+                (scene.created_phase.get(&object).copied().unwrap_or(3), key)
+            }
         }
     }
 
