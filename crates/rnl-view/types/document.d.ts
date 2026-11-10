@@ -195,6 +195,15 @@ export type Usage = {
   frame: UsageFrame | null,
   object: number,
   /**
+   * For a 0.4 usage attached to pins of one owner: that owner's Document object index.
+   * Absent without a unique host; independent of the usage's symbol, coordinates and constraints.
+   */
+  pin_of?: number,
+  /**
+   * The enclosing 0.4 usage's Document object index. Follow this chain for inherited pin attachment.
+   */
+  parent?: number,
+  /**
    * "usage", or "group" for a set marked with GROUP (11.5), whose one role, `members`, holds
    * its members.
    */
@@ -779,7 +788,7 @@ export type FormatInfo = {
 
 export type Object = {
   /**
-   * "instance", "net", "usage" or "group", a set marked with GROUP (11.5).
+   * "instance", "net", "usage", "group" (a set marked with GROUP), or "bundle" for a 0.4 pin host.
    */
   kind: string,
   /**

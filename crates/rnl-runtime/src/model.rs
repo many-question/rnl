@@ -411,6 +411,11 @@ pub struct BlockSymbol {
 /// gives of it (`notes/rnl-editor-interface` in rnl-dev, 3.5).
 #[derive(Clone, Debug)]
 pub struct ObjectInfo {
+    /// A scene usage with its own point (0.4), independently of its symbol or position.
+    pub own_point: bool,
+    /// The owner of all pin-valued roles, when no role names another positioned object.
+    /// Nets do not affect this structural relation. Descendants follow `parent`.
+    pub pin_of: Option<String>,
     /// A usage has its own symbol or creates drawing objects in its body/descendants.
     pub usage_has_drawing: bool,
     /// The complete statement that creates a usage, inclusive source coordinates.
