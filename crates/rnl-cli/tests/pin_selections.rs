@@ -438,3 +438,20 @@ X1 a b cell
         assert_eq!(child.usages.iter().filter(|u| u.definition == "$PROBE").count(), expected, "{selection}");
     }
 }
+
+#[test]
+fn a_symbol_binding_a_converted_point_role_is_not_drawn_in_the_selection_snapshot() {
+    let r = read(
+        "0.4",
+        &format!(
+            r#"{SYMBOL};
+        $D = @DEFINE(roles=[["x","point"]]) {{}};
+        $U = @DEFINE-SYMBOL {{ (0,0) @PIN(terminal="x") }};
+        %u = #R1:1 @AS $D => @SET-SYMBOL $U;
+        # @SELECT-USAGE(drawn=true) $D => @AS $PROBE
+    "#
+        ),
+    );
+    assert!(r.diagnostics().iter().any(|d| d.message.contains("symbol assignment fails")), "{:?}", r.diagnostics());
+    assert_eq!(count(&r), 0);
+}

@@ -148,7 +148,10 @@ impl Interp<'_> {
                     let TermKey::Name(role) = binding else { continue };
                     let Some(filler) = data.role(&role) else { continue };
                     for member in self.scene_input_members_at(scene, filler, self.scenes[scene].phase, Some(site)) {
-                        let value = self.scene_value(member.object);
+                        // The symbols are now known. A typed point role may have received a
+                        // terminal earlier, but its converted position cannot bind a pin.
+                        // Reject that symbol before generation reads drawn= or SELECT-PIN.
+                        let value = self.selection_value(member.object, 5);
                         if matches!(
                             self.o(value),
                             ObjData::Net { .. }
