@@ -499,6 +499,10 @@ impl Interp<'_> {
     /// reads the host and does not know the language version of a file, so the runtime gives
     /// these by the element letter.
     fn default_terminals(&self, s: SceneId, inst: &crate::host::Instance) -> Option<Vec<String>> {
+        let file = self.doc.file_level_of(inst).unwrap_or(self.scenes[s].level);
+        if self.follows_0_4(self.level_unit[file]) && inst.default_terminals_0_4.is_some() {
+            return inst.default_terminals_0_4.clone();
+        }
         if inst.default_terminals.is_some() {
             return inst.default_terminals.clone();
         }
