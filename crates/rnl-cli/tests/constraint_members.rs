@@ -354,8 +354,8 @@ fn conflicts_are_decided_independently_for_each_pair() {
 #[test]
 fn package_constraints_use_each_levels_final_members() {
     let files = MemoryProvider::new()
-        .with("p.rnl", "@RNL(type=\"header\") { @VERSION(\"0.4\"); @PACKAGE(name=\"p\",version=\"1\") }\n@RNL { $S = {}; $ROW = $S @ORDER(\"left-to-right\") }")
-        .with("t.sp", "* t\n* @RNL(type=\"header\") { @VERSION(\"0.4\"); @USE-PACKAGE(name=\"p\",version=\"1\",path=\"p.rnl\") }\nR1 a b 1k\nR2 b c 1k\nR3 c 0 1k\n* @RNL { $ROW @PRIORITY(\"high\"); #R1 @ADD-TO $S; {#R2 #R3} @ADD-TO $S }\n.subckt child a b\nR4 a b 1k\nR5 b c 1k\nR6 c 0 1k\n* @RNL { $ROW @PRIORITY(\"high\"); #R4 @ADD-TO $S; {#R5 #R6} @ADD-TO $S }\n.ends\n.end\n");
+        .with("p.rnl", "@RNL(type=\"header\") { @VERSION(\"0.4\"); @PACKAGE(name=\"p\",version=\"1.0\") }\n@RNL { $S = {}; $ROW = $S @ORDER(\"left-to-right\") }")
+        .with("t.sp", "* t\n* @RNL(type=\"header\") { @VERSION(\"0.4\"); @USE-PACKAGE(name=\"p\",version=\"1.0\",path=\"p.rnl\") }\nR1 a b 1k\nR2 b c 1k\nR3 c 0 1k\n* @RNL { $ROW @PRIORITY(\"high\"); #R1 @ADD-TO $S; {#R2 #R3} @ADD-TO $S }\n.subckt child a b\nR4 a b 1k\nR5 b c 1k\nR6 c 0 1k\n* @RNL { $ROW @PRIORITY(\"high\"); #R4 @ADD-TO $S; {#R5 #R6} @ADD-TO $S }\n.ends\n.end\n");
     let r = interpret_file(Path::new("t.sp"), None, &files, &Options { std: false, ..Options::solver() }).unwrap();
     assert_eq!(errors(&r), []);
     assert_eq!(r.problems.len(), 2);

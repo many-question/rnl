@@ -94,7 +94,7 @@ fn solve_persists_the_setting_in_the_main_header() {
 #[test]
 fn a_failed_explicit_header_reference_does_not_fall_back_to_the_setting() {
     let result = read(
-        &files(&source("0.4", r#"@USE-PACKAGE(name="rnl-std", version="999")"#)),
+        &files(&source("0.4", r#"@USE-PACKAGE(name="rnl-std", version="999.0")"#)),
         Options { include_std: true, ..Options::solver() },
     );
     assert!(errors(&result) > 0);

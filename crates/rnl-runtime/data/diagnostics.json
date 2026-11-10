@@ -4986,6 +4986,36 @@
    "sections": [
     "16.3"
    ]
+  },
+  {
+   "number": "RNL2219",
+   "name": "package-version-malformed",
+   "severity": "error",
+   "message": "@{keyword} version={version} must be two unsigned decimal integers separated by a dot; the package declaration or reference fails (16.1, 16.2)",
+   "sections": [
+    "16.1",
+    "16.2"
+   ]
+  },
+  {
+   "number": "RNL2220",
+   "name": "package-path-not-package",
+   "severity": "error",
+   "message": "{path} has no valid PACKAGE declaration; this reference fails without looking up another file (2.7, 16.2)",
+   "sections": [
+    "2.7",
+    "16.2"
+   ]
+  },
+  {
+   "number": "RNL2221",
+   "name": "package-declared-twice",
+   "severity": "error",
+   "message": "a package file declares PACKAGE only once; the first declaration stands (2.7, 16.2)",
+   "sections": [
+    "2.7",
+    "16.2"
+   ]
   }
  ]
 }

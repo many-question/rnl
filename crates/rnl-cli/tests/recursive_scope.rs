@@ -130,15 +130,15 @@ fn package_rule_origin_is_the_use_site() {
         for in_header in [false, true] {
             for indirect in [false, true] {
                 let usage = if indirect {
-                    "@USE-PACKAGE(name=\"outer\",version=\"1\",path=\"outer.rnl\")"
+                    "@USE-PACKAGE(name=\"outer\",version=\"1.0\",path=\"outer.rnl\")"
                 } else {
-                    "@USE-PACKAGE(name=\"inner\",version=\"1\",path=\"inner.rnl\")"
+                    "@USE-PACKAGE(name=\"inner\",version=\"1.0\",path=\"inner.rnl\")"
                 };
                 let header = if in_header { format!("; {usage}") } else { String::new() };
                 let content = if in_header { String::new() } else { format!("* @RNL {{ {usage} }}\n") };
                 let source=format!("* scope\n* @RNL(type=\"header\") {{ @VERSION(\"0.4\"){header} }}\n.subckt child p q\nR2 p q 1k\n.ends child\nR1 a b 1k\nX1 a b child\n{content}.end\n");
-                let package=format!("@RNL(type=\"header\") {{ @VERSION(\"0.4\"); @PACKAGE(name=\"inner\",version=\"1\") }}\n@RNL {{ $S = @DEFINE-SYMBOL {{ (0,0) @PIN(terminal=1) }}; # @SELECT-INSTANCE(recursive=true) => @SET-SYMBOL $S; # @SELECT-INSTANCE(name=\"R*\",recursive={recursive}) => @TEXT(\"mark\",key=\"mark\") }}\n");
-                let outer="@RNL(type=\"header\") { @VERSION(\"0.4\"); @PACKAGE(name=\"outer\",version=\"1\"); @USE-PACKAGE(name=\"inner\",version=\"1\",path=\"inner.rnl\") }\n";
+                let package=format!("@RNL(type=\"header\") {{ @VERSION(\"0.4\"); @PACKAGE(name=\"inner\",version=\"1.0\") }}\n@RNL {{ $S = @DEFINE-SYMBOL {{ (0,0) @PIN(terminal=1) }}; # @SELECT-INSTANCE(recursive=true) => @SET-SYMBOL $S; # @SELECT-INSTANCE(name=\"R*\",recursive={recursive}) => @TEXT(\"mark\",key=\"mark\") }}\n");
+                let outer="@RNL(type=\"header\") { @VERSION(\"0.4\"); @PACKAGE(name=\"outer\",version=\"1.0\"); @USE-PACKAGE(name=\"inner\",version=\"1.0\",path=\"inner.rnl\") }\n";
                 let files =
                     MemoryProvider::new().with("t.sp", &source).with("inner.rnl", &package).with("outer.rnl", outer);
                 let r = interpret_file(Path::new("t.sp"), None, &files, &Options { std: false, ..Options::solver() })

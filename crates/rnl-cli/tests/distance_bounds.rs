@@ -123,8 +123,8 @@ fn scoped_constraints_use_the_source_file_version() {
 fn definition_bodies_use_the_same_language_as_the_file() {
     for (host, package) in [("0.4", "0.4"), ("0.3", "0.3")] {
         let files = MemoryProvider::new()
-            .with("p.rnl", &format!("@RNL(type=\"header\") {{ @VERSION(\"{package}\"); @PACKAGE(name=\"p\",version=\"1\") }}\n@RNL {{ $D = @DEFINE(roles=[\"a\",\"b\"]) {{ ?a ?b @DISTANCE(\"left-to-right\", max=10) }} }}"))
-            .with("t.sp", &netlist(host, "#R1 #R2 @AS $D").replace(" }\nR1 a b", "; @USE-PACKAGE(name=\"p\",version=\"1\",path=\"p.rnl\") }\nR1 a b"));
+            .with("p.rnl", &format!("@RNL(type=\"header\") {{ @VERSION(\"{package}\"); @PACKAGE(name=\"p\",version=\"1.0\") }}\n@RNL {{ $D = @DEFINE(roles=[\"a\",\"b\"]) {{ ?a ?b @DISTANCE(\"left-to-right\", max=10) }} }}"))
+            .with("t.sp", &netlist(host, "#R1 #R2 @AS $D").replace(" }\nR1 a b", "; @USE-PACKAGE(name=\"p\",version=\"1.0\",path=\"p.rnl\") }\nR1 a b"));
         let r = interpret(files);
         assert_eq!(errors(&r), []);
         assert_eq!(bounds(&r), [((package == "0.4").then_some(0.0), Some(10.0))]);

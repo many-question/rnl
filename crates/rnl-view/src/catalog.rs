@@ -7,7 +7,9 @@
 use std::collections::HashMap;
 
 use rnl_runtime::host::file_name;
-use rnl_runtime::interp::catalog::{package_contents, version_key, DefinedName, PackageContents, PackageSymbol};
+use rnl_runtime::interp::catalog::{
+    package_contents, package_version_key, version_key, DefinedName, PackageContents, PackageSymbol,
+};
 use rnl_runtime::interp::obj::TermKey;
 use rnl_runtime::interp::unit::{scan_language_decl, scan_package_decl, DEFAULT_VERSION};
 use rnl_runtime::source::Provider;
@@ -171,7 +173,8 @@ pub(crate) fn catalog(ws: &Workspace, options: &CatalogOptions) -> Catalog {
         })
         .collect();
     read.sort_by(|(a, ..), (b, ..)| {
-        let key = |c: &PackageContents| (c.name.clone(), version_key(&c.version), c.version.clone());
+        let key =
+            |c: &PackageContents| (c.name.clone(), package_version_key(&c.version, &c.language), c.version.clone());
         key(a).cmp(&key(b))
     });
     // what the rules draw with what, across the packages listed; of several rules, the first
@@ -276,13 +279,21 @@ fn listed(ws: &Workspace, options: &CatalogOptions) -> Vec<String> {
             let language = ws.read(path).as_deref().and_then(scan_language_decl);
             version_key(language.as_deref().unwrap_or(DEFAULT_VERSION)) <= version_key(DEFAULT_VERSION)
         };
-        let rank: HashMap<&str, (bool, (i64, i64))> =
-            found.iter().map(|f| (f.2.as_str(), (by_default(&f.2), version_key(&f.1)))).collect();
-        let newest = |name: &str| found.iter().filter(|f| f.0 == name).map(|f| rank[f.2.as_str()]).max();
+        let rank: HashMap<_, _> = found
+            .iter()
+            .map(|f| {
+                let language = ws.read(&f.2).as_deref().and_then(scan_language_decl);
+                (
+                    f.2.as_str(),
+                    (by_default(&f.2), package_version_key(&f.1, language.as_deref().unwrap_or(DEFAULT_VERSION))),
+                )
+            })
+            .collect();
+        let newest = |name: &str| found.iter().filter(|f| f.0 == name).map(|f| &rank[f.2.as_str()]).max();
         // of versions equally new, the first found
         let mut kept: Vec<&(String, String, String)> = Vec::new();
         for f in &found {
-            if Some(rank[f.2.as_str()]) == newest(&f.0) && !kept.iter().any(|k| k.0 == f.0) {
+            if Some(&rank[f.2.as_str()]) == newest(&f.0) && !kept.iter().any(|k| k.0 == f.0) {
                 kept.push(f);
             }
         }
@@ -699,5 +710,23 @@ mod tests {
         let c = crate::catalog(&files, &only(&["alpha", "beta"], true));
         assert_eq!(packages(&c), [("alpha", "1.0"), ("alpha", "1.1"), ("beta", "2.0")]);
         assert_eq!(crate::catalog(&files, &only(&["template"], true)), Catalog::default());
+    }
+
+    #[test]
+    fn draft_catalog_versions_use_unbounded_decimal_order() {
+        let huge = "9999999999999999999999999999999999999999.7";
+        let mut files = MemoryProvider::new();
+        files.package_dirs.push("pkg".into());
+        for (file, version) in [("low", "1.0"), ("high", huge), ("invalid", "1.-2")] {
+            files.insert(
+                &format!("pkg/{file}.rnl"),
+                &format!(r#"@RNL(type="header") {{ @VERSION("0.4"); @PACKAGE(name="p",version="{version}") }}"#),
+            );
+        }
+        let options = CatalogOptions { packages: Some(vec!["p".into()]), ..Default::default() };
+        let c = crate::catalog(&files, &options);
+        assert_eq!(packages(&c), [("p", huge)]);
+        let c = crate::catalog(&files, &CatalogOptions { all_versions: true, ..options });
+        assert_eq!(packages(&c), [("p", "1.0"), ("p", huge)]);
     }
 }

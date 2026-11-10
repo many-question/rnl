@@ -10,7 +10,9 @@ use crate::syntax::{parse_record_features, ObjExpr, Value};
 
 use super::ctx::Ctx;
 use super::packages::STD_NAME;
-use super::unit::{params_by_name, scan_language_decl, scan_package_decl, version_key, version_ok};
+use super::unit::{
+    package_version_cmp, params_by_name, scan_language_decl, scan_package_decl, valid_package_version, version_ok,
+};
 use super::Interp;
 
 #[derive(Default)]
@@ -44,10 +46,7 @@ fn index(files: &dyn Provider) -> BTreeMap<String, Vec<String>> {
     // collection also discovers optional packages that the default collection does not use.
     let mut pending = vec![("rnl-std-full".to_string(), None::<String>, None::<String>), (STD_NAME.into(), None, None)];
     while let Some((name, version, path)) = pending.pop() {
-        if version.as_ref().is_some_and(|v| {
-            let (major, minor) = version_key(v);
-            major < 0 || minor < 0
-        }) {
+        if version.as_ref().is_some_and(|v| !valid_package_version(v)) {
             continue;
         }
         // A missing path or an unsuitable declared name/version falls back to lookup;
@@ -55,7 +54,7 @@ fn index(files: &dyn Provider) -> BTreeMap<String, Vec<String>> {
         // quiet, since these packages have not been requested by the document.
         let by_name = path.as_ref().and_then(|path| files.read(path)).is_none_or(|text| {
             scan_package_decl(&text)
-                .is_some_and(|(declared, have)| declared != name || !version_ok(version.as_deref(), &have))
+                .is_some_and(|(declared, have)| declared != name || !version_ok(version.as_deref(), &have, true))
         });
         let found = if by_name {
             let choices = candidates.entry(name.clone()).or_insert_with(|| {
@@ -63,22 +62,23 @@ fn index(files: &dyn Provider) -> BTreeMap<String, Vec<String>> {
                 for path in files.package_candidates(&name) {
                     if let Some(p) = package(files, &path).filter(|p| p.name == name) {
                         // The first copy of a version wins, as in normal package lookup.
-                        if !choices.iter().any(|before| before.version == p.version) {
+                        if !choices.iter().any(|before| package_version_cmp(&before.version, &p.version, true).is_eq())
+                        {
                             choices.push(p);
                         }
                     }
                 }
                 choices
             });
-            let compatible = choices.iter().filter(|p| version_ok(version.as_deref(), &p.version));
+            let compatible = choices.iter().filter(|p| version_ok(version.as_deref(), &p.version, true));
             if version.is_some() {
-                compatible.min_by_key(|p| version_key(&p.version)).cloned()
+                compatible.min_by(|a, b| package_version_cmp(&a.version, &b.version, true)).cloned()
             } else {
-                compatible.max_by_key(|p| version_key(&p.version)).cloned()
+                compatible.max_by(|a, b| package_version_cmp(&a.version, &b.version, true)).cloned()
             }
         } else {
             path.and_then(|path| package(files, &path))
-                .filter(|p| p.name == name && version_ok(version.as_deref(), &p.version))
+                .filter(|p| p.name == name && version_ok(version.as_deref(), &p.version, true))
         };
         let Some(p) = found else { continue };
         if !seen.insert(p.path.clone()) {

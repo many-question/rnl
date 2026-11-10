@@ -231,8 +231,8 @@ fn recursive_body_rules_also_reach_grandchildren_once() {
 
 #[test]
 fn an_inherited_package_body_warning_points_to_the_body() {
-    let source = "* package body\n* @RNL(type=\"header\") { @VERSION(\"0.4\"); @USE-PACKAGE(name=\"defs\",version=\"1\",path=\"defs.rnl\") }\n.subckt child p q\nR2 p q 1k\n.ends child\nR1 a b 1k\nX1 a b child\n* @RNL { #R1 @AS $D }\n.end\n";
-    let package = "@RNL(type=\"header\") { @VERSION(\"0.4\"); @PACKAGE(name=\"defs\",version=\"1\") }\n@RNL {\n$P = @DEFINE(roles=[\"a\",\"b\"]) {};\n$D = @DEFINE(roles=[\"x\"]) {\n# @SELECT-INSTANCE(name=\"R*\",recursive=true) => $P @ATTACH ?x\n}\n}\n";
+    let source = "* package body\n* @RNL(type=\"header\") { @VERSION(\"0.4\"); @USE-PACKAGE(name=\"defs\",version=\"1.0\",path=\"defs.rnl\") }\n.subckt child p q\nR2 p q 1k\n.ends child\nR1 a b 1k\nX1 a b child\n* @RNL { #R1 @AS $D }\n.end\n";
+    let package = "@RNL(type=\"header\") { @VERSION(\"0.4\"); @PACKAGE(name=\"defs\",version=\"1.0\") }\n@RNL {\n$P = @DEFINE(roles=[\"a\",\"b\"]) {};\n$D = @DEFINE(roles=[\"x\"]) {\n# @SELECT-INSTANCE(name=\"R*\",recursive=true) => $P @ATTACH ?x\n}\n}\n";
     let r = interpret_file(
         Path::new("t.sp"),
         None,

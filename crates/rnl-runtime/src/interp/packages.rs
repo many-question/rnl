@@ -18,7 +18,9 @@ use crate::diag::{codes, Extra, Loc, Severity};
 use crate::host::{LevelId, LevelKind};
 
 use super::obj::{SceneId, UnitId};
-use super::unit::{version_key, Binding, DeviceDecl, EffPackage, Place, UnitKind, UseDecl};
+use super::unit::{
+    package_version_cmp, same_package_major, version_key, Binding, DeviceDecl, EffPackage, Place, UnitKind, UseDecl,
+};
 use super::Interp;
 
 /// The name of the standard package, used implicitly at the root (16.3).
@@ -181,16 +183,6 @@ impl Cands {
     }
 }
 
-/// The major version of "major.minor"; each 0.x counts as one of its own (16.1).
-fn major(v: &str) -> (i64, i64) {
-    let k = version_key(v);
-    if k.0 == 0 {
-        k
-    } else {
-        (k.0, 0)
-    }
-}
-
 /// A `$` name as written, with the name it stands for when written through an alias (16.5).
 pub(crate) fn shown(b: &Binding) -> String {
     let name = format!("${}", b.name);
@@ -253,7 +245,7 @@ impl Interp<'_> {
             // of that series the newest version
             let mut best: Option<&(String, String, String)> = None;
             for c in found.iter().filter(|c| Some(written_in(c)) == series) {
-                if best.is_none_or(|b| version_key(&c.1) > version_key(&b.1)) {
+                if best.is_none_or(|b| package_version_cmp(&c.1, &b.1, super::unit::keeps_0_4(language)).is_gt()) {
                     best = Some(c);
                 }
             }
@@ -261,7 +253,7 @@ impl Interp<'_> {
         };
         let out = chosen.map(|(n, v, path)| {
             let language = self.pkg_languages[&path].clone();
-            let key = (n.clone(), v.clone(), language == "0.4");
+            let key = super::unit::package_cache_key(n.clone(), v.clone(), language == "0.4");
             match self.packages.get(&key) {
                 Some(&u) => u,
                 None => self.load_package_file(&path, Some((n, v))),
@@ -609,8 +601,14 @@ impl Interp<'_> {
             } else if let Some(&u) = chosen.get(n) {
                 // placed at the nearest use that brings in a version of the major version chosen
                 let cs = &cands.by[n];
-                let first = major(&self.pkg_ver(cs[0].unit));
-                let i = cs.iter().filter(|c| major(&self.pkg_ver(c.unit)) == first).map(|c| c.by).max().unwrap();
+                let first = self.pkg_ver(cs[0].unit);
+                let modern = self.follows_0_4(cs[0].unit);
+                let i = cs
+                    .iter()
+                    .filter(|c| same_package_major(&self.pkg_ver(c.unit), &first, modern))
+                    .map(|c| c.by)
+                    .max()
+                    .unwrap();
                 (i, Some(u))
             } else {
                 continue; // brought in only by a package that is not in effect
@@ -673,15 +671,15 @@ impl Interp<'_> {
     /// The newest version within the major version of the first candidate; of equal versions,
     /// the first.
     fn newest(&self, cs: &[Cand]) -> UnitId {
-        let first = major(&self.pkg_ver(cs[0].unit));
-        let mut best: Option<(UnitId, (i64, i64))> = None;
-        for c in cs.iter().filter(|c| major(&self.pkg_ver(c.unit)) == first) {
-            let v = version_key(&self.pkg_ver(c.unit));
-            if best.is_none_or(|b| v > b.1) {
-                best = Some((c.unit, v));
+        let first = self.pkg_ver(cs[0].unit);
+        let modern = self.follows_0_4(cs[0].unit);
+        let mut best = cs[0].unit;
+        for c in cs.iter().filter(|c| same_package_major(&self.pkg_ver(c.unit), &first, modern)) {
+            if package_version_cmp(&self.pkg_ver(c.unit), &self.pkg_ver(best), modern).is_gt() {
+                best = c.unit;
             }
         }
-        best.map_or(cs[0].unit, |b| b.0)
+        best
     }
 
     /// The references a use brings in, depth first: each a candidate for its name, and the
@@ -735,7 +733,7 @@ impl Interp<'_> {
                 let wv = self.pkg_ver(w);
                 for c in cs {
                     let cv = self.pkg_ver(c.unit);
-                    if wv.is_empty() || cv.is_empty() || major(&cv) == major(&wv) {
+                    if wv.is_empty() || cv.is_empty() || same_package_major(&cv, &wv, self.follows_0_4(w)) {
                         continue;
                     }
                     let who = self.units[c.reference.0].pkg_name.clone();
@@ -755,7 +753,7 @@ impl Interp<'_> {
             for c in cs {
                 let cv = self.pkg_ver(c.unit);
                 let who = self.units[c.reference.0].pkg_name.clone();
-                if major(&cv) != major(&fv) {
+                if !same_package_major(&cv, &fv, self.follows_0_4(first.unit)) {
                     eff.failed.insert(c.reference);
                     let r = &self.units[c.reference.0].refs[c.reference.1];
                     let loc = self.rec_loc(r.rec, r.offset);
