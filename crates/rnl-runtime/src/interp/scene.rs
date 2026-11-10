@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
-use crate::diag::{codes, DiagId, Loc};
+use crate::diag::{codes, DiagId};
 use crate::geom::Orient;
 use crate::host::{glob, LevelId};
 
@@ -188,7 +188,7 @@ pub struct Scene {
     pub prioritys: Vec<Fact>,
     /// CURRENT on host terminals, each with its place in the order of writing (5.5, 15.2) and where
     /// it is written.
-    pub currents: Vec<(Pos, ObjId, String, Option<Loc>)>,
+    pub currents: Vec<super::currents::CurrentFact>,
     /// The sets given GROUP (11.5), in the order of writing.
     pub groups: Vec<GroupFact>,
     pub tasks: Vec<Vec<(Pos, Task)>>,
@@ -1166,23 +1166,7 @@ impl Interp<'_> {
                 });
             }
             TargetOp::Current { direction, off } => {
-                let ok = match self.o(obj) {
-                    ObjData::Term { owner, .. } => {
-                        matches!(self.o(*owner), ObjData::Inst { .. } | ObjData::LevelObj { .. })
-                    }
-                    _ => false,
-                };
-                if !ok {
-                    let l = self.label(obj);
-                    return self.fail(
-                        ctx,
-                        codes::CURRENT_NOT_HOST_TERMINAL,
-                        format!("CURRENT takes host terminals only, not {l} (15.2)"),
-                        *off,
-                    );
-                }
-                let loc = self.rec_loc(ctx.rec, *off);
-                self.scenes[s].currents.push((order_pos(&at, &ctx.segments), obj, direction.clone(), loc));
+                self.record_current(s, obj, direction, *off, at, ctx)?;
             }
             TargetOp::Priority { priority, off, spread } => {
                 if !matches!(self.o(obj), ObjData::Constraint(_) | ObjData::Usage(_) | ObjData::Set(_)) {
@@ -1587,7 +1571,7 @@ impl Interp<'_> {
                         }
                     }
                     if let Some(c) = params.get("current").and_then(Lit::str) {
-                        if self.current_of(s, t) != c {
+                        if self.current_of_at(s, t, phase) != c {
                             continue;
                         }
                     }
@@ -2064,16 +2048,6 @@ impl Interp<'_> {
             }
         }
         false
-    }
-
-    pub(crate) fn current_of(&self, s: SceneId, t: ObjId) -> String {
-        let mut best: Option<(&Pos, &String)> = None;
-        for (p, term, d, _) in &self.scenes[s].currents {
-            if *term == t && best.is_none_or(|b| p > b.0) {
-                best = Some((p, d));
-            }
-        }
-        best.map(|b| b.1.clone()).unwrap_or_else(|| "unspecified".into())
     }
 
     pub(crate) fn has_pin(&mut self, s: SceneId, t: ObjId) -> bool {

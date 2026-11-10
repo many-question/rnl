@@ -43,7 +43,7 @@ impl Interp<'_> {
         object
     }
 
-    fn role_kind_matches(&self, object: ObjId, wanted: &str) -> bool {
+    pub(super) fn role_kind_matches(&self, object: ObjId, wanted: &str) -> bool {
         let actual = self.kind_of(object);
         actual == wanted
             || self.obj_kind(object) == Some(wanted)
@@ -51,7 +51,7 @@ impl Interp<'_> {
             || (wanted == "point" && actual == "position")
     }
 
-    fn conversion_kind(&self, object: ObjId, kinds: &[String]) -> Option<String> {
+    pub(super) fn conversion_kind(&self, object: ObjId, kinds: &[String]) -> Option<String> {
         if kinds.iter().any(|kind| self.role_kind_matches(object, kind)) {
             return Some(self.kind_of(object).into());
         }
