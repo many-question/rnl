@@ -617,7 +617,7 @@ impl Interp<'_> {
                 source,
                 origin,
                 parent: g.chain.last().map(|p| self.ref_id(s, *p, ids)),
-                disabled: self.eff_priority(s, None, &g.chain, Some(g.set)) == Priority::Disabled,
+                disabled: self.group_disabled(s, &g),
             });
         }
         out

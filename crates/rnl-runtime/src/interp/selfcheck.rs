@@ -114,7 +114,7 @@ impl Interp<'_> {
             ConstraintKind::Distribute if cd.params.sense.is_some_and(|x| x != "either") => {
                 self.order_contradiction(s, members)
             }
-            ConstraintKind::Align | ConstraintKind::Distribute => None,
+            ConstraintKind::Align | ConstraintKind::Distribute | ConstraintKind::Table => None,
             ConstraintKind::Order => self.order_contradiction(s, members),
             ConstraintKind::Distance => self.distance_contradiction(s, cd),
             ConstraintKind::OrientRelation => {

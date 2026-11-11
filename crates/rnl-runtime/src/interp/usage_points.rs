@@ -155,6 +155,22 @@ impl Interp<'_> {
             {
                 continue;
             }
+            if let Some(rows) = &cd.table {
+                for &point in rows.points() {
+                    let object = self.position_owner(point);
+                    if matches!(self.o(object), ObjData::Usage(_))
+                        && self.usage_own_point(object)
+                        && seen.insert(object)
+                    {
+                        candidates.push((object, cd.site.clone(), cd.off));
+                    }
+                }
+                for (axis, from, to) in rows.orders(crate::problem::Axis::of(cd.params.axis.unwrap_or('y'))) {
+                    let axis = if axis == crate::problem::Axis::X { 'x' } else { 'y' };
+                    link(self.position_owner(*from), self.position_owner(*to), axis);
+                }
+                continue;
+            }
             let members = self.leaves(s, &cd.args);
             let axis = cd.params.axis.unwrap_or('x');
             let members: Vec<_> = members.into_iter().map(|o| self.position_owner(o)).collect();

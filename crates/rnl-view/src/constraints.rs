@@ -118,6 +118,8 @@ pub enum ConstraintKind {
     PinOrientRelation { from: ConstraintDirectedPin, to: ConstraintDirectedPin, relations: Vec<&'static str> },
     #[serde(rename = "ALIGN")]
     Align { axis: &'static str, members: Vec<ConstraintPoint> },
+    #[serde(rename = "TABLE")]
+    Table { axis: &'static str, rows: ConstraintTableCell },
     #[serde(rename = "ORDER")]
     Order { axis: &'static str, sense: &'static str, members: Vec<ConstraintPoint> },
     #[serde(rename = "DISTRIBUTE")]
@@ -133,6 +135,15 @@ pub enum ConstraintKind {
     },
     #[serde(rename = "ORIENT-RELATION")]
     OrientRelation { relation: &'static str, from: Vec<usize>, to: Vec<usize> },
+}
+
+/// A cell or nested list of a TABLE constraint (14.11).
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum ConstraintTableCell {
+    Point(ConstraintPoint),
+    List(Vec<ConstraintTableCell>),
 }
 
 /// A pin with its local direction, transformed by its owner's orientation.
@@ -277,6 +288,17 @@ fn kind(f: &ProblemFact) -> ConstraintKind {
             relations: relations.iter().map(|code| code.as_str()).collect(),
         },
         FactKind::Align { axis, members } => ConstraintKind::Align { axis: axis.as_str(), members: points_of(members) },
+        FactKind::Table { axis, rows } => {
+            fn cell(rows: &rnl_runtime::problem::TableCell<PointRef>) -> ConstraintTableCell {
+                match rows {
+                    rnl_runtime::problem::TableCell::Point(p) => ConstraintTableCell::Point(point(p)),
+                    rnl_runtime::problem::TableCell::List(items) => {
+                        ConstraintTableCell::List(items.iter().map(cell).collect())
+                    }
+                }
+            }
+            ConstraintKind::Table { axis: axis.as_str(), rows: cell(rows) }
+        }
         FactKind::Order { axis, sense, members } => {
             ConstraintKind::Order { axis: axis.as_str(), sense: sense.as_str(), members: points_of(members) }
         }

@@ -1701,6 +1701,7 @@ fn held_as_written(problem: &LevelProblem, model: &Model, kept: &[usize], work: 
                 | FactKind::PointCoordinate { .. }
                 | FactKind::Offset { .. }
                 | FactKind::Order { .. }
+                | FactKind::Table { .. }
                 | FactKind::Distance { .. }
         );
         if !widened {

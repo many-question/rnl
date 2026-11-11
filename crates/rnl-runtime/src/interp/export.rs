@@ -447,7 +447,7 @@ impl Interp<'_> {
         let mut groups = Vec::new();
         for g in self.scenes[s].groups.clone() {
             let set = g.set;
-            if self.failed_group(&g) || self.eff_priority(s, None, &g.chain, Some(set)) == Priority::Disabled {
+            if self.failed_group(&g) || self.group_disabled(s, &g) {
                 continue;
             }
             let members = self.group_members(s, &g);
@@ -1181,6 +1181,10 @@ impl Interp<'_> {
             Some(out)
         };
         Some(match cd.kind {
+            ConstraintKind::Table => FactKind::Table {
+                axis,
+                rows: cd.table.as_ref()?.try_map(&mut |object| self.point_ref(s, ix, *object))?,
+            },
             ConstraintKind::Align => FactKind::Align { axis, members: members(self)? },
             ConstraintKind::Order => FactKind::Order { axis, sense, members: members(self)? },
             ConstraintKind::Distribute => FactKind::Distribute { axis, sense, members: members(self)? },

@@ -41,7 +41,7 @@ pub use catalog::{
 };
 pub use constraints::{
     constraint, Constraint, ConstraintDirectedPin, ConstraintGroup, ConstraintKind, ConstraintObject, ConstraintPoint,
-    ConstraintReference, ConstraintRoute, ConstraintSource, ConstraintUsage, LevelConstraints,
+    ConstraintReference, ConstraintRoute, ConstraintSource, ConstraintTableCell, ConstraintUsage, LevelConstraints,
 };
 pub use document::{
     AutoIncludeCandidate, Child, Diagnostic, Document, Drawings, Hit, InspectedLabel, InspectedPin, InspectedSymbol,
