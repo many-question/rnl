@@ -2390,7 +2390,7 @@ impl<'p> Interp<'p> {
             return self.fail(
                 ctx,
                 codes::PARAM_WRONG_TYPE,
-                format!("the {name} of @{kw} has the wrong type (5.3)"),
+                super::unit::parameter_type_message(kw, name, &sp.ty, self.follows_0_4(self.source_unit(ctx))),
                 off,
             );
         }

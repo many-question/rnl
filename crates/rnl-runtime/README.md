@@ -224,6 +224,11 @@ applied (16.5), including imported and shadowing definitions. This check does no
 evaluate missing definitions or validate unused original names, and aliases remain
 local to the declaring file. Released versions keep their original diagnostics.
 
+Draft 0.4 parameter type errors state the expected type in both headers and
+ordinary statements (5.3). Alias conflict diagnostics retain the package that
+declares them, whether it is checked directly or imported (7.6, 16.5). Released
+files retain their existing messages and diagnostic metadata.
+
 Draft 0.4 GROUP members follow nested sets and the roles of usages without a
 symbol down to their objects; usages with a symbol remain members themselves
 (11.5). Problem groups and model groups use the same expansion, retaining order

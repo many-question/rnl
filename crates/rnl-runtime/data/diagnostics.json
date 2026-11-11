@@ -2000,7 +2000,7 @@
    "number": "RNL3120",
    "name": "param-wrong-type",
    "severity": "error",
-   "message": "the {name} of @{kw} has the wrong type (5.3)",
+   "message": "the {name} of @{kw} has the wrong type (5.3) || the {name} of @{kw} must be {expected type} (5.3)",
    "sections": [
     "5.3"
    ]

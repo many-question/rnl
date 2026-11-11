@@ -605,11 +605,30 @@ fn params_by_name_in(
                 _ => true,
             };
             if !valid {
-                return Err((codes::PARAM_WRONG_TYPE, format!("the {} of @{kw} has the wrong type (5.3)", q.name)));
+                return Err((codes::PARAM_WRONG_TYPE, parameter_type_message(kw, &q.name, &q.ty, keeps_0_4(version))));
             }
         }
     }
     Ok(out)
+}
+
+/// Share the expected-type description between headers and evaluated statements (5.3).
+pub(super) fn parameter_type_message(kw: &str, name: &str, ty: &ParamType, modern: bool) -> String {
+    if !modern {
+        return format!("the {name} of @{kw} has the wrong type (5.3)");
+    }
+    let expected = match ty {
+        ParamType::Number => "a number",
+        ParamType::String => "a string",
+        ParamType::Bool => "true or false",
+        ParamType::Array => "an array",
+        ParamType::Color => "a colour string, such as \"#RRGGBB\"",
+        ParamType::Term if kw == "PIN" => "a positive terminal number, a terminal name or an array of them",
+        ParamType::Term => "a positive terminal number or a terminal name",
+        ParamType::Enum(_) => "one of the allowed values",
+        ParamType::Any => "a literal value",
+    };
+    format!("the {name} of @{kw} must be {expected} (5.3)")
 }
 
 /// A record whose head writes `type="generated"`: the solver's result (2.8).
@@ -1686,6 +1705,7 @@ impl Interp<'_> {
     /// its scope (16.5). `source` names the alias package it comes from.
     fn add_alias(&mut self, u: UnitId, decl: (String, String, Option<String>), loc: &Loc, source: &str) {
         let (alias, orig, definition) = decl;
+        let package = if self.follows_0_4(u) { self.units[u].pkg().to_string() } else { String::new() };
         let wher = if source.is_empty() { String::new() } else { format!("in alias package {source}, ") };
         if let Some(def) = definition {
             self.units[u].scoped_raw.push((def.clone(), alias.clone(), orig.clone(), loc.clone(), source.to_string()));
@@ -1699,28 +1719,34 @@ impl Interp<'_> {
         }
         if let Some(old) = self.units[u].aliases.get(&alias).cloned() {
             if old != orig {
-                self.sink.error(
+                self.diag_in(
+                    Severity::Error,
                     codes::ALIAS_CONFLICT,
                     format!("{wher}the alias {alias} is already declared for {old} and cannot also be {orig} (16.5)"),
                     Some(loc.clone()),
+                    &package,
                 );
             }
             return;
         }
         if alias.starts_with('$') {
             if self.units[u].aliases.contains_key(&orig) {
-                self.sink.error(
+                self.diag_in(
+                    Severity::Error,
                     codes::ALIAS_ORIGINAL_IS_ALIAS,
                     format!("{wher}the alias {orig} cannot also be an original (16.5)"),
                     Some(loc.clone()),
+                    &package,
                 );
                 return;
             }
             if self.units[u].aliases.values().any(|o| *o == alias) {
-                self.sink.error(
+                self.diag_in(
+                    Severity::Error,
                     codes::ALIAS_IS_ORIGINAL,
                     format!("{wher}{alias} is already the original of another alias and cannot be an alias (16.5)"),
                     Some(loc.clone()),
+                    &package,
                 );
                 return;
             }
@@ -1731,6 +1757,7 @@ impl Interp<'_> {
 
     /// Definition-scoped aliases by the definition's `$` name, read through the `$` aliases (16.5, D17).
     fn finish_aliases(&mut self, u: UnitId) {
+        let package = if self.follows_0_4(u) { self.units[u].pkg().to_string() } else { String::new() };
         self.units[u].scoped.clear();
         let mut prio: Vec<String> = vec!["priority".into()];
         prio.extend(self.units[u].aliases.iter().filter(|(_, o)| *o == "priority").map(|(a, _)| a.clone()));
@@ -1740,9 +1767,10 @@ impl Interp<'_> {
             let key = self.units[u].aliases.get(&definition).cloned().unwrap_or(definition);
             if prio.contains(&alias) {
                 // the standard parameter of AS, ATTACH (14.8) is there for every definition
-                self.sink.error(codes::ALIAS_SCOPED_LIKE_PRIORITY,
+                self.diag_in(Severity::Error, codes::ALIAS_SCOPED_LIKE_PRIORITY,
                     format!("{wher}the alias {alias} is spelled like the standard parameter priority of AS, ATTACH or its alias; its meaning is not unique (16.5)"),
                     Some(loc),
+                    &package,
                 );
                 continue;
             }
@@ -1750,7 +1778,7 @@ impl Interp<'_> {
             if let Some((_, (o, _))) = table.iter().find(|(a, _)| *a == alias) {
                 if *o != orig {
                     let o = o.clone();
-                    self.sink.error(codes::ALIAS_SCOPED_CONFLICT, format!("{wher}the alias {alias} in {key} is already declared for {o} and cannot also be {orig} (16.5)"), Some(loc));
+                    self.diag_in(Severity::Error, codes::ALIAS_SCOPED_CONFLICT, format!("{wher}the alias {alias} in {key} is already declared for {o} and cannot also be {orig} (16.5)"), Some(loc), &package);
                 }
                 continue;
             }
