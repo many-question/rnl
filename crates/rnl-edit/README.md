@@ -65,3 +65,8 @@ For explicit 0.4 requests, the CLI prints the diagnostic number. The WASM respon
 calls reject with an Error carrying `code`, `diagnosticName` and `diagnostics`. Existing
 requests keep their old error response shape. No Viewer application changes are required
 to keep displaying the message; frontends can use the added fields for diagnostic links.
+
+
+For `language_version: "0.4"`, `add-point` with `junction: true` takes its dot definition from the target level's effective `SOLVER-CONFIG(junction=...)`. `write_with_options_diagnosed` resolves it after package ops and `include_std` have been persisted, then writes dot usages in a final record of the same author. Without a setting, or with an empty string, it writes only the point. An invalid definition setting adds the located warning `RNL8118` to `Written.diagnostics` and writes no dot. The definition must accept a point in its first role; no standard definition name is assumed.
+
+Low-level clients can use `form::statements_with_junction(op, style, definition)` with the resolved reference. The older `form::statements` entry retains its released behavior, as do writes that request or default to 0.3.

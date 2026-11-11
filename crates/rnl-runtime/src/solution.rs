@@ -200,6 +200,8 @@ impl fmt::Display for Unsolved {
 /// A record written from a solution.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Written {
+    /// Located warnings from settings consumed while writing, separate from ordinary reading.
+    pub warnings: Vec<crate::diag::Diag>,
     /// The whole record, from `@RNL` to the closing brace, lines joined by `\n` without the
     /// comment marker of the host, and without `numbering`: what [`finish_record`] takes, and then
     /// [`crate::writeback::replace_generated`].
@@ -707,9 +709,12 @@ pub fn write_record(p: &LevelProblem, solution: &Solution, author: &str, hash: &
     for (r, pieces) in &rewrites {
         statements.push(format!("{} @WIRE(mode=\"straight\") {{{}}}", refs.text(r), list(pieces)));
     }
+    let modern = crate::interp::unit::keeps_0_4(&p.version);
+    let junction = if modern { p.junction.definition.as_deref() } else { Some("$JUNCTION") };
+    let warnings = if modern { p.junction.warning().into_iter().collect() } else { Vec::new() };
     for (b, name) in solution.branches.iter().zip(&branch_names) {
-        if let (true, Some(name)) = (b.junction, name) {
-            statements.push(format!("$JUNCTION @ATTACH %{name}"));
+        if let (true, Some(name), Some(definition)) = (b.junction, name, junction) {
+            statements.push(format!("{definition} @ATTACH %{name}"));
         }
     }
 
@@ -723,7 +728,7 @@ pub fn write_record(p: &LevelProblem, solution: &Solution, author: &str, hash: &
     } else {
         format!("{head} {{\n  {}\n}}", statements.join(";\n  "))
     };
-    Written { record, unsolved, notes }
+    Written { record, unsolved, notes, warnings }
 }
 
 /// How deep the points that points are placed from are followed.

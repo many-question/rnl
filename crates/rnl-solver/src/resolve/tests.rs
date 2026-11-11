@@ -108,6 +108,7 @@ pub(crate) fn fact(kind: FactKind) -> ProblemFact {
 /// A level with these objects and these facts, in the order of 8.5.
 pub(crate) fn problem_of(objects: Vec<ProblemObject>, facts: Vec<ProblemFact>) -> LevelProblem {
     LevelProblem {
+        junction: Default::default(),
         solver_config: Vec::new(),
         level: 0,
         title: "t.sp".to_string(),

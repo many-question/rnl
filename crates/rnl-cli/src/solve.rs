@@ -1089,6 +1089,7 @@ pub fn report(level: &SolvedLevel, all: bool) -> Vec<String> {
     section(&mut out, head, statements);
     out.extend(r.errors.iter().map(|e| format!("  error: {e}")));
     out.extend(r.warnings.iter().map(|w| format!("  warning: {w}")));
+    out.extend(level.written.warnings.iter().map(|w| format!("  {}", rnl_runtime::diag::Sink::new().render(w))));
     section(&mut out, "unsolved", level.written.unsolved.iter().map(|u| u.to_string()).collect());
     section(
         &mut out,

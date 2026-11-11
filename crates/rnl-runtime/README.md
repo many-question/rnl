@@ -285,3 +285,8 @@ written values over file values. These are integration APIs: existing CLI solver
 option parsing and solver layout policy are not changed by this core input change.
 Consumers remain responsible for validating supported keys and resolving the
 `junction` definition as a name in the target level (13.2).
+
+
+In draft 0.4, `LevelProblem.junction` resolves the effective `SOLVER-CONFIG` `junction` string in the target level, as a generated record would. It keeps a writable reference to a definition whose first role accepts a point. An absent setting or empty string disables dots. Invalid settings are retained for a located `RNL8118 junction-definition-invalid` warning when a tool consumes them; ordinary reading does not issue solver-policy warnings. `solution::Written.warnings` returns these structured diagnostics. The CLI solve report and preview include them. The resolved reference contributes to the input digest, without source locations.
+
+`PointInfo.junction` uses the identity of this configured definition and the point in its first role, including aliases of the same definition. It does not infer a dot from a name, position or wire count. Junction appearances still come from ordinary definition usages and their symbols. Released 0.2/0.3 recognition and writeback retain their existing behavior.

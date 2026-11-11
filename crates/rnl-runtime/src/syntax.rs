@@ -1630,6 +1630,25 @@ pub fn parse_record_features(text: &str, numbers: bool, member_places: bool) -> 
     parser.record()
 }
 
+/// One complete definition name, optionally quoted, without a path or selector.
+pub(crate) fn definition_name(text: &str) -> Option<(String, bool)> {
+    if !text.starts_with('$') {
+        return None;
+    }
+    let mut parser = Parser::new(text, true);
+    let r = parser.reference().ok()?;
+    if parser.i != parser.n()
+        || r.prefix != '$'
+        || !r.path.is_empty()
+        || r.sub.is_some()
+        || r.places.is_some()
+        || r.number.is_some()
+    {
+        return None;
+    }
+    Some((r.name?, r.quoted))
+}
+
 /// Read the text inside parameter parentheses, with no trailing statement allowed.
 pub(crate) fn parameter_text(text: &str) -> Result<Params, ParseError> {
     let wrapped = format!("({text})");

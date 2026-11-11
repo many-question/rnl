@@ -594,6 +594,8 @@ pub struct UsageEntry {
 /// What a solver needs of one drawing level.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LevelProblem {
+    /// The junction definition resolved in this level for solver/editor writeback (13.2).
+    pub junction: crate::junction::JunctionConfig,
     /// Effective settings, by key, after package, file-header and level overrides (14.10).
     pub solver_config: Vec<SolverSetting>,
     /// The host level: its index in the host document's levels.
@@ -1123,6 +1125,10 @@ pub fn canonical_sig1(p: &LevelProblem) -> String {
         c.points(&r.pins);
         c.indexes(&r.wires);
     }
+    if let Some(definition) = &p.junction.definition {
+        c.word("junction-definition");
+        c.str(definition);
+    }
     if !p.solver_config.is_empty() {
         c.word("solver-config");
         for setting in &p.solver_config {
@@ -1384,6 +1390,7 @@ mod tests {
     #[test]
     fn the_input_segment_is_compared_alone() {
         let p = LevelProblem {
+            junction: Default::default(),
             solver_config: Vec::new(),
             level: 0,
             title: "t.sp".into(),
@@ -1435,6 +1442,7 @@ mod tests {
             port,
         };
         let p = LevelProblem {
+            junction: Default::default(),
             solver_config: Vec::new(),
             level: 0,
             title: "t.sp".into(),

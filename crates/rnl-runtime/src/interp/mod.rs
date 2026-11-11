@@ -20,6 +20,7 @@ pub mod eval;
 mod export;
 mod groups;
 mod islands;
+mod junction;
 pub mod kw;
 mod languages;
 mod modifier_handles;
