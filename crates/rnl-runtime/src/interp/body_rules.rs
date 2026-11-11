@@ -26,6 +26,64 @@ pub(super) struct BodyRules {
 }
 
 impl Interp<'_> {
+    /// Keep a failed nested member separate from its enclosing, tolerant member set.
+    pub(super) fn mark_failed_body_members(&mut self, definition: ObjId, member: &Member, ctx: &Ctx) {
+        use crate::syntax::{Coord, ObjExpr, Value};
+        fn literal_error(interp: &Interp<'_>, definition: ObjId, value: &Value) -> Option<crate::diag::DiagId> {
+            match value {
+                Value::Hole(name) => interp.body_parameter_errors.get(&(definition, name.clone())).copied(),
+                Value::Arr(values) => values.iter().find_map(|value| literal_error(interp, definition, value)),
+                _ => None,
+            }
+        }
+        let key = super::eval::ptr(member);
+        let mut diagnostic = self.body_member_errors.get(&key).copied();
+        if let Some(error) = &member.error {
+            if diagnostic.is_none() {
+                diagnostic = Some(self.err(ctx, error.code, error.message.clone(), member.error_pos));
+            }
+        }
+        for segment in &member.segments {
+            if let Some(call) = &segment.call {
+                diagnostic = diagnostic.or_else(|| self.body_errors.get(&super::eval::ptr(call)).copied());
+                if let Some(params) = &call.params {
+                    for value in params.positional.iter().chain(params.named.iter().map(|named| &named.value)) {
+                        diagnostic = diagnostic.or_else(|| literal_error(self, definition, value));
+                    }
+                }
+                if matches!(
+                    self.kw(&call.kw, ctx.unit).as_str(),
+                    "DEFINE" | "DEFINE-SYMBOL" | "DEFINE-STYLE" | "USE-PACKAGE"
+                ) {
+                    continue;
+                }
+            }
+            for argument in &segment.args {
+                match &argument.obj {
+                    ObjExpr::Ref(reference) => {
+                        diagnostic = diagnostic.or_else(|| self.body_errors.get(&super::eval::ptr(reference)).copied());
+                    }
+                    ObjExpr::Point(point) => {
+                        for coord in [&point.x, &point.y] {
+                            if let Coord::Hole(name) = coord {
+                                diagnostic = diagnostic
+                                    .or_else(|| self.body_parameter_errors.get(&(definition, name.clone())).copied());
+                            }
+                        }
+                    }
+                    ObjExpr::Set(set) => {
+                        for member in &set.members {
+                            self.mark_failed_body_members(definition, member, ctx);
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(diagnostic) = diagnostic {
+            self.body_member_errors.entry(key).or_insert(diagnostic);
+        }
+    }
+
     pub(super) fn check_body_level_symbols(&mut self, member: &Member, ctx: &Ctx) {
         use crate::syntax::ObjExpr;
         let mut level = false;
