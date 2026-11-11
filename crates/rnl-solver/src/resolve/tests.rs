@@ -117,6 +117,7 @@ pub(crate) fn problem_of(objects: Vec<ProblemObject>, facts: Vec<ProblemFact>) -
         version: "0.2".to_string(),
         authored_numbers: 0,
         orient_lists: Vec::new(),
+        currents: Vec::new(),
         ids: Default::default(),
         file: "t.sp".to_string(),
         line: 1,
