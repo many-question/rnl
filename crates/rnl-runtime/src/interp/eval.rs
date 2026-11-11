@@ -1069,7 +1069,11 @@ impl<'p> Interp<'p> {
                 }
             }
             // a keyword that a later version adds
-            if let Some(since) = words().keyword(kw).and_then(|k| k.since.clone()) {
+            if let Some(since) = words()
+                .keyword(kw)
+                .and_then(|k| k.since.clone())
+                .filter(|_| kw != "TABLE" || super::unit::keeps_0_4(&version))
+            {
                 if crate::interp::unit::version_key(&since) > crate::interp::unit::version_key(&version) {
                     let msg = format!("unknown keyword @{written}: the language {since} adds it, and this file is of {version} (16.1)");
                     return self.fail(ctx, codes::KEYWORD_UNKNOWN, msg, call.start);

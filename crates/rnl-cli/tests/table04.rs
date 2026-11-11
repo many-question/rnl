@@ -379,3 +379,89 @@ fn failed_member_diagnostic_keeps_its_original_cause() {
     assert!(error.cause.is_some());
     assert!(error.loc.is_some());
 }
+
+#[test]
+fn new_table_words_do_not_expand_old_alias_originals() {
+    for version in ["0.2", "0.3", "0.4"] {
+        let head = r#"; @ALIAS("@T","@TABLE"); @ALIAS("flip","transpose")"#;
+        let text = source(version, "{#R1 #R2} @T(flip=true)")
+            .replace(&format!("@VERSION(\"{version}\")"), &format!("@VERSION(\"{version}\"){head}"));
+        let r = interpret_file(
+            Path::new("t.sp"),
+            None,
+            &MemoryProvider::new().with("t.sp", &text),
+            &Options { std: false, ..Options::solver() },
+        )
+        .unwrap();
+        if version == "0.4" {
+            clean(&r);
+            assert!(r.problems.iter().any(|p| p.facts.iter().any(|f| matches!(f.kind, FactKind::Table { .. }))));
+        } else {
+            assert_eq!(
+                r.diagnostics()
+                    .iter()
+                    .filter(|d| d.code == rnl_runtime::diag::codes::ALIAS_ORIGINAL_NOT_STANDARD)
+                    .count(),
+                2
+            );
+            assert!(r.diagnostics().iter().any(
+                |d| d.code == rnl_runtime::diag::codes::KEYWORD_UNKNOWN && d.message == "unknown keyword @T (16.4)"
+            ));
+        }
+    }
+}
+
+#[test]
+fn old_table_keyword_spelling_can_still_be_an_alias_and_unknown_text_is_unchanged() {
+    for version in ["0.2", "0.3"] {
+        let text = source(version, r#"(0,0) @TABLE("old alias")"#).replace(
+            &format!("@VERSION(\"{version}\")"),
+            &format!("@VERSION(\"{version}\"); @ALIAS(\"@TABLE\",\"@TEXT\")"),
+        );
+        let r = interpret_file(
+            Path::new("t.sp"),
+            None,
+            &MemoryProvider::new().with("t.sp", &text),
+            &Options { std: false, ..Options::solver() },
+        )
+        .unwrap();
+        clean(&r);
+        let r = read_version(version, "{#R1 #R2} @TABLE");
+        assert!(
+            r.diagnostics()
+                .iter()
+                .any(|d| d.code == rnl_runtime::diag::codes::KEYWORD_UNKNOWN
+                    && d.message == "unknown keyword @TABLE (16.4)"),
+            "{:?}",
+            r.diagnostics()
+        );
+    }
+}
+
+#[test]
+fn table_aliases_imported_and_declared_in_packages_keep_version_boundaries() {
+    for version in ["0.2", "0.3", "0.4"] {
+        let text = source(version, "{#R1 #R2} @T(flip=true)").replace(
+            &format!("@VERSION(\"{version}\")"),
+            &format!("@VERSION(\"{version}\"); @USE-ALIASES(name=\"alias\"); @USE-PACKAGE(name=\"ordinary\")"),
+        );
+        let a=format!("@RNL(type=\"header\") {{ @VERSION(\"{version}\"); @PACKAGE(name=\"alias\",version=\"1.0\"); @ALIAS(\"@T\",\"@TABLE\"); @ALIAS(\"flip\",\"transpose\") }}\n");
+        let p=format!("@RNL(type=\"header\") {{ @VERSION(\"{version}\"); @PACKAGE(name=\"ordinary\",version=\"1.0\"); @ALIAS(\"flip\",\"transpose\") }}\n@RNL {{ $D = @DEFINE(roles=[\"p\"]) {{}} }}\n");
+        let mut fs = MemoryProvider::new().with("t.sp", &text).with("pkg/a.rnl", &a).with("pkg/p.rnl", &p);
+        fs.package_dirs.push("pkg".into());
+        let r = interpret_file(Path::new("t.sp"), None, &fs, &Options { std: false, ..Options::solver() }).unwrap();
+        if version == "0.4" {
+            clean(&r);
+            assert!(r.problems.iter().any(|p| p.facts.iter().any(|f| matches!(f.kind, FactKind::Table { .. }))));
+        } else {
+            assert_eq!(
+                r.diagnostics()
+                    .iter()
+                    .filter(|d| d.code == rnl_runtime::diag::codes::USE_ALIASES_ORIGINAL_NOT_IN_VERSION)
+                    .count(),
+                2
+            );
+            assert!(r.diagnostics().iter().any(|d| d.code == rnl_runtime::diag::codes::ALIAS_ORIGINAL_NOT_STANDARD));
+        }
+    }
+}

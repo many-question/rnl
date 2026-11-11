@@ -1665,7 +1665,7 @@ impl Interp<'_> {
                     "@USE-ALIASES cannot have an alias: the aliases are not known before it is read (16.5)".into(),
                 );
             }
-            if check_original && !standard_original(orig) {
+            if check_original && !standard_original_in(orig, version) {
                 return bad(
                     self,
                     codes::ALIAS_ORIGINAL_NOT_STANDARD,
@@ -1673,7 +1673,10 @@ impl Interp<'_> {
                 );
             }
             let a = &alias[1..];
-            if words().is_keyword(a) || a.is_empty() || !a.chars().all(syntax::is_word_char) {
+            if (words().is_keyword(a) && (a != "TABLE" || keeps_0_4(version)))
+                || a.is_empty()
+                || !a.chars().all(syntax::is_word_char)
+            {
                 return bad(
                     self,
                     codes::ALIAS_MALFORMED_OR_KEYWORD,
@@ -1681,7 +1684,7 @@ impl Interp<'_> {
                 );
             }
         } else {
-            if check_original && !standard_original(orig) {
+            if check_original && !standard_original_in(orig, version) {
                 return bad(
                     self,
                     codes::ALIAS_ORIGINAL_NOT_STANDARD,
@@ -1896,7 +1899,7 @@ impl Interp<'_> {
         let decls = self.units[pk].alias_decls.clone();
         let level = self.units[u].level;
         for d in decls {
-            if d.definition.is_none() && !d.original.starts_with('$') && !standard_original(&d.original) {
+            if d.definition.is_none() && !d.original.starts_with('$') && !standard_original_in(&d.original, &version) {
                 let what = if d.original.starts_with('@') { "standard keyword" } else { "standard word" };
                 self.diag_in(
                     Severity::Error,
@@ -1944,7 +1947,7 @@ impl Interp<'_> {
 
     /// The standard keyword for a written keyword, through the file's aliases (16.5).
     pub(crate) fn kw(&self, written: &str, u: UnitId) -> String {
-        if words().is_keyword(written) {
+        if words().is_keyword(written) && (written != "TABLE" || self.follows_0_4(u)) {
             return written.to_string();
         }
         if let Some(orig) = self.alias(u, &format!("@{written}")) {
@@ -2458,7 +2461,7 @@ impl Interp<'_> {
         let pending = std::mem::take(&mut self.units[u].alias_pending);
         let pkg = self.units[u].pkg_name.clone();
         for (alias, orig, loc) in pending {
-            if standard_original(&orig) {
+            if standard_original_in(&orig, &self.version_of(Some(u))) {
                 continue;
             }
             let what = if orig.starts_with('@') { "standard keyword" } else { "standard word" };
@@ -2621,6 +2624,14 @@ pub fn standard_original(orig: &str) -> bool {
         Some(k) => words().is_keyword(k),
         None => words().all_words().contains(orig),
     }
+}
+
+/// Keep the released alias vocabulary unchanged when introducing draft words.
+fn standard_original_in(orig: &str, version: &str) -> bool {
+    if !keeps_0_4(version) && matches!(orig, "@TABLE" | "transpose") {
+        return false;
+    }
+    standard_original(orig)
 }
 
 /// Read `$` aliases as their originals, whole token, wherever a `$` name is written (16.5).
