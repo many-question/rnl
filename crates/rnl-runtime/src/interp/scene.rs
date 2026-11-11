@@ -1317,6 +1317,9 @@ impl Interp<'_> {
     ) -> Vec<InputMember> {
         let mut out = Vec::new();
         for member in self.input_items(s, obj, phase, ctx) {
+            if self.is_empty_node(member.object) {
+                continue;
+            }
             if self.is_set(member.object) {
                 for mut child in self.flatten_inputs(s, member.object, phase, ctx) {
                     child.depend_on(&member.dependencies);
@@ -1335,6 +1338,9 @@ impl Interp<'_> {
     }
 
     pub(super) fn input_items(&mut self, s: SceneId, obj: ObjId, phase: usize, ctx: Option<&Ctx>) -> Vec<InputMember> {
+        if self.is_empty_node(obj) {
+            return Vec::new();
+        }
         if let Some(view) =
             self.role_inputs.get(&obj).cloned().filter(|view| view.collection && view.resolved.is_none())
         {
@@ -1428,7 +1434,7 @@ impl Interp<'_> {
             SetKind::Plain => {
                 let mut out = Vec::new();
                 for (index, (o, spread)) in self.set(obj).items.clone().into_iter().enumerate() {
-                    if self.is_failed(o) && !self.late_input(o) {
+                    if self.is_empty_node(o) || (self.is_failed(o) && !self.late_input(o)) {
                         continue;
                     }
                     let dependencies = self.set(obj).item_dependencies.get(index).cloned().unwrap_or_default();

@@ -774,6 +774,9 @@ impl Interp<'_> {
     /// coordinates. None when a part cannot be referred to by a name the level writes.
     fn written_filler(&mut self, s: SceneId, ix: &Index, o: ObjId) -> Option<(String, usize)> {
         let o = self.written_input(o);
+        if self.is_empty_node(o) {
+            return Some(("&".into(), 0));
+        }
         if let ObjData::Set(_) = self.o(o) {
             let items = self.items_of(s, o, 7, None);
             let (mut out, mut points) = (Vec::new(), 0);

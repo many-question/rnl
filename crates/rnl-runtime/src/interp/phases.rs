@@ -945,9 +945,19 @@ impl Interp<'_> {
                     ObjData::ScenePin { owner, index } => (self.scene_pin_nets(s, owner, index), "pin"),
                     _ => continue,
                 };
-                if !tn.is_empty() && !tn.iter().any(|n| nets.contains(n)) {
-                    let wn: Vec<String> = nets.iter().map(|n| self.net_display(*n)).collect();
-                    let names: Vec<String> = tn.iter().map(|n| self.net_display(*n)).collect();
+                let empty_pin = matches!(self.o(self.scene_value(*q)), ObjData::ScenePin { owner, index }
+                    if self.scene_pin_has_empty_node(s, *owner, *index));
+                if (!tn.is_empty() && !tn.iter().any(|n| nets.contains(n)))
+                    || (tn.is_empty() && empty_pin && !nets.is_empty())
+                {
+                    let mut wn: Vec<String> = nets.iter().map(|n| self.net_display(*n)).collect();
+                    let mut names: Vec<String> = tn.iter().map(|n| self.net_display(*n)).collect();
+                    if wn.is_empty() {
+                        wn.push("no net".into());
+                    }
+                    if names.is_empty() {
+                        names.push("no net".into());
+                    }
                     let ql = self.label(*q);
                     self.diag_site(
                         Severity::Warning,

@@ -46,6 +46,7 @@ impl Interp<'_> {
     pub(super) fn role_kind_matches(&self, object: ObjId, wanted: &str) -> bool {
         let actual = self.kind_of(object);
         actual == wanted
+            || (wanted == "net" && self.is_empty_node(object))
             || self.obj_kind(object) == Some(wanted)
             || (wanted == "instance" && actual == "bundle")
             || (wanted == "point" && actual == "position")
@@ -275,7 +276,8 @@ impl Interp<'_> {
                     self.scene_pin_terminals(scene, owner, index)
                 };
                 if values.is_empty() {
-                    None
+                    (target == Some("net") && self.scene_pin_has_empty_node(scene, owner, index))
+                        .then(|| self.new_obj(ObjData::EmptyNode { direct: false }))
                 } else if values.len() == 1 && !self.scene_pin_is_bus(scene, owner, index) {
                     Some(values[0])
                 } else {

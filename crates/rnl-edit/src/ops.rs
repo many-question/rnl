@@ -207,6 +207,10 @@ pub fn parse(k: usize, value: &Value) -> Result<LevelOp, String> {
 
 /// Read an op, retaining its diagnostic kind independently of its message.
 pub fn parse_diagnosed(k: usize, value: &Value) -> Result<LevelOp, Refusal> {
+    parse_for_language(k, value, false)
+}
+
+pub(crate) fn parse_for_language(k: usize, value: &Value, modern: bool) -> Result<LevelOp, Refusal> {
     let fail = |code, op: &str, why: String| Refusal::new(code, format!("op {k} ({op}): {why}"));
     let Some(obj) = value.as_object() else {
         return Err(Refusal::new(codes::EDIT_OP_NOT_OBJECT, format!("op {k}: not an object")));
@@ -357,7 +361,11 @@ pub fn parse_diagnosed(k: usize, value: &Value) -> Result<LevelOp, Refusal> {
         }
         "add-wire" => Op::AddWire {
             name: r.opt_string("name")?,
-            nets: r.strings("nets")?,
+            nets: if modern && obj.get("nets").and_then(Value::as_array).is_some_and(Vec::is_empty) {
+                Vec::new()
+            } else {
+                r.strings("nets")?
+            },
             via: r.via()?,
             mode: r.opt_string("mode")?,
             style: r.style()?,

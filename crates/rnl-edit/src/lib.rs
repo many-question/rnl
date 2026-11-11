@@ -142,8 +142,12 @@ fn write_in(request: &WriteRequest, files: Option<&dyn rnl_runtime::source::Prov
             format!("dialect \"{dialect}\" is not {}", names.join(" or ")),
         ));
     }
-    let ops: Vec<LevelOp> =
-        request.ops.iter().enumerate().map(|(k, v)| ops::parse_diagnosed(k, v)).collect::<Result<_, _>>()?;
+    let ops: Vec<LevelOp> = request
+        .ops
+        .iter()
+        .enumerate()
+        .map(|(k, v)| ops::parse_for_language(k, v, request.language_version.as_deref() == Some("0.4")))
+        .collect::<Result<_, _>>()?;
 
     for op in &ops {
         match &op.op {
@@ -256,7 +260,7 @@ fn write_in(request: &WriteRequest, files: Option<&dyn rnl_runtime::source::Prov
             _ => None,
         };
         levels.entry(level).or_default().extend(if version == "0.4" {
-            form::statements_with_junction(&lop.op, style.as_deref(), None)
+            form::statements_for_language(&lop.op, style.as_deref(), None, true)
         } else {
             form::statements(&lop.op, style.as_deref())
         });
@@ -357,8 +361,12 @@ fn add_junctions(
     if request.language_version.as_deref() != Some("0.4") {
         return Ok(written);
     }
-    let ops: Vec<_> =
-        request.ops.iter().enumerate().map(|(k, v)| ops::parse_diagnosed(k, v)).collect::<Result<_, _>>()?;
+    let ops: Vec<_> = request
+        .ops
+        .iter()
+        .enumerate()
+        .map(|(k, v)| ops::parse_for_language(k, v, request.language_version.as_deref() == Some("0.4")))
+        .collect::<Result<_, _>>()?;
     if !ops.iter().any(|op| matches!(op.op, Op::AddPoint { junction: true, .. })) {
         return Ok(written);
     }

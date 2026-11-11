@@ -132,6 +132,10 @@ impl<'p> Interp<'p> {
         }
     }
 
+    pub(crate) fn is_empty_node(&self, id: ObjId) -> bool {
+        matches!(self.o(self.scene_value(id)), ObjData::EmptyNode { .. })
+    }
+
     pub(crate) fn is_set(&self, id: ObjId) -> bool {
         matches!(self.o(id), ObjData::Set(_))
     }
@@ -163,6 +167,7 @@ impl<'p> Interp<'p> {
         match self.o(id) {
             ObjData::Failed(_) => "failed",
             ObjData::Marker => "marker",
+            ObjData::EmptyNode { .. } => "empty node",
             ObjData::LevelObj { .. } => "level",
             ObjData::Inst { .. } => "instance",
             ObjData::Net { .. } => "net",
@@ -211,6 +216,7 @@ impl<'p> Interp<'p> {
         match &o.data {
             ObjData::Failed(_) => "a failed object".into(),
             ObjData::Marker => "?".into(),
+            ObjData::EmptyNode { .. } => "&".into(),
             ObjData::LevelObj { .. } => "#".into(),
             ObjData::Inst { .. } => format!("#{}", self.inst_name(id)),
             ObjData::Net { display, .. } => format!("&{display}"),
@@ -864,6 +870,15 @@ impl<'p> Interp<'p> {
             }
             pipe_dependencies = segment_ctx.reference_dependencies.borrow().clone();
             for b in m.binds.iter().filter(|b| b.after == k) {
+                if self.is_empty_node(val) {
+                    let diagnostic = self.err(
+                        ctx,
+                        codes::NAME_EMPTY_NODE,
+                        "the empty node has no object handle and cannot be bound to a name (6.3)",
+                        seg.start,
+                    );
+                    val = self.new_obj(ObjData::Failed(Some(diagnostic)));
+                }
                 bound.push(((b.prefix, b.name.clone()), val, pipe_dependencies.clone()));
                 // a name of a member of a record or of a definition body, which other members can
                 // use; one bound inside a `{…}` holds only there (6.7) and is no name for 5.9
@@ -982,6 +997,18 @@ impl<'p> Interp<'p> {
             return Ok((NOTHING, false));
         };
         let kw = self.kw(&call.kw, ctx.unit);
+        if !matches!(kw.as_str(), "AS" | "ATTACH" | "WIRE") {
+            for arg in &args {
+                if matches!(self.o(arg.obj), ObjData::EmptyNode { direct: true }) {
+                    self.warn(
+                        ctx,
+                        codes::EMPTY_NODE_IGNORED,
+                        "the empty node written directly counts as an empty set here (6.3)",
+                        arg.off,
+                    );
+                }
+            }
+        }
         let call_ctx = self.language_call_context(ctx, &args);
         let ctx = &call_ctx;
         if self.follows_0_4(self.source_unit(ctx))
@@ -1270,6 +1297,17 @@ impl<'p> Interp<'p> {
                         }
                         Err(o) => return Err(o),
                     };
+                    if self.is_empty_node(obj) {
+                        if matches!(self.o(obj), ObjData::EmptyNode { direct: true }) {
+                            self.warn(
+                                ctx,
+                                codes::EMPTY_NODE_IGNORED,
+                                "the empty node written directly is not a set member (6.3)",
+                                a.start,
+                            );
+                        }
+                        continue;
+                    }
                     lazy = lazy || self.is_lazy(obj);
                     items.push((obj, !matches!(a.obj, ObjExpr::Set(_))));
                     item_dependencies.push(arg_ctx.reference_dependencies.borrow().clone());
@@ -1282,6 +1320,9 @@ impl<'p> Interp<'p> {
                 Err(Stop::OwnLevel) if self.follows_0_4(self.source_unit(ctx)) && ctx.body_scene.is_some() => continue,
                 Err(o) => return Err(o),
             };
+            if self.is_empty_node(obj) {
+                continue;
+            }
             lazy = lazy || self.is_lazy(obj);
             items.push((obj, false));
             item_dependencies.push(sub.reference_dependencies.borrow().clone());
@@ -1325,6 +1366,9 @@ impl<'p> Interp<'p> {
         let mut obj;
         if e.prefix == '?' {
             obj = self.resolve_hole(e, ctx)?;
+            if self.is_empty_node(obj) {
+                obj = self.new_obj(ObjData::EmptyNode { direct: false });
+            }
             sel = ctx.frame.as_ref().is_some_and(|f| f.borrow().selected);
         } else if e.prefix == '#' || e.prefix == '&' {
             obj = self.resolve_host(e, ctx)?;
@@ -1488,6 +1532,10 @@ impl<'p> Interp<'p> {
     }
 
     fn resolve_host(&mut self, e: &Ref, ctx: &Ctx) -> R<ObjId> {
+        if self.follows_0_4(self.source_unit(ctx)) && e.prefix == '&' && e.name.is_none() {
+            // Allocate only when a modern file uses this value: released object ids stay intact.
+            return Ok(self.new_obj(ObjData::EmptyNode { direct: true }));
+        }
         if self.follows_0_4(self.source_unit(ctx))
             && ctx.frame_kind() == Some(FrameKind::Definition)
             && e.is_bare_level()
