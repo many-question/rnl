@@ -1601,6 +1601,7 @@ impl Interp<'_> {
                 && it.halign.as_deref().unwrap_or("start") == items.halign.as_deref().unwrap_or("start")
                 && it.valign.as_deref().unwrap_or("baseline") == items.valign.as_deref().unwrap_or("baseline")
                 && it.rotate.unwrap_or(0.0) == items.rotate.unwrap_or(0.0)
+                && it.fix_rotate.unwrap_or(false) == items.fix_rotate.unwrap_or(false)
             {
                 column.push((other, pos));
             }

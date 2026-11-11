@@ -1152,7 +1152,7 @@ fn pin_editing_rejects_unwriteable_vertices_and_invalid_metadata() {
 fn fixed_rotation_round_trips_explicit_false_over_a_symbol_label() {
     let net = "* text\nR1 a b 1k\n.end\n";
     let symbol = r#"* @RNL {
-* $S = @DEFINE-SYMBOL { ? @TEXT("old", key="name", fix_rotate=true) => @PLACE(2,3) };
+* $S = @DEFINE-SYMBOL { ? @TEXT("old", key="name", fix_rotate=true, halign="middle", valign="bottom") => @PLACE(2,3) };
 * #R1 @SET-SYMBOL $S => @PLACE(10,20) => @ORIENT("R90")
 * }
 .end"#;
@@ -1174,8 +1174,32 @@ fn fixed_rotation_round_trips_explicit_false_over_a_symbol_label() {
         let text = &r.model.levels[0].texts[0];
         assert_eq!(text.fix_rotate, Some(fixed));
         assert_eq!(text.anchor, (7.0, 22.0));
-        assert_eq!(text.orient, if fixed { rnl_runtime::geom::Orient::R0 } else { rnl_runtime::geom::Orient::R90 });
+        // The owner orientation moves the box side even when the glyph direction is fixed.
+        assert_eq!(text.orient, rnl_runtime::geom::Orient::R90);
         assert_eq!(text.markup, "new");
+        let document = rnl_view::build(
+            entry("spice"),
+            &files,
+            &rnl_view::BuildOptions {
+                runtime: Options { std: false, ..Options::default() },
+                primitives: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let document = serde_json::to_value(document).unwrap();
+        let drawn = document["levels"][0]["primitives"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|primitive| primitive["kind"] == "text")
+            .unwrap();
+        assert_eq!(drawn["anchor"], json!([7.0, 22.0]));
+        assert_eq!(drawn["vertical"], json!(!fixed));
+        if fixed {
+            assert_eq!(drawn["halign"], "end");
+            assert_eq!(drawn["valign"], "middle");
+        }
     }
     assert!(ops::parse(0, &json!({"level":"file", "op":"add-text", "at":[0,0], "markup":"bad", "fix_rotate":"true"}))
         .is_err());

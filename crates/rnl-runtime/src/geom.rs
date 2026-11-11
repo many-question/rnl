@@ -107,6 +107,49 @@ impl Orient {
     }
 }
 
+/// Turn the side indicated by an alignment while keeping fixed text's own rotation (13.3).
+/// Alignments describe directions, so quarter turns exchange axes rather than text dimensions.
+pub fn fixed_text_alignment(halign: &str, valign: &str, rotate: f64, owner: Orient) -> (&'static str, &'static str) {
+    let x = match halign {
+        "start" => 1.0,
+        "end" => -1.0,
+        _ => 0.0,
+    };
+    let y = match valign {
+        "bottom" | "baseline" => 1.0,
+        "top" => -1.0,
+        _ => 0.0,
+    };
+    // The written alignment is in the text's axes. Turn its direction into scene axes,
+    // apply the owner, then express it in the unchanged text axes (9.2.5, 13.3).
+    let (rotation, inverse) = match (rotate as i64).rem_euclid(360) {
+        90 => (Orient::R90, Orient::R270),
+        180 => (Orient::R180, Orient::R180),
+        270 => (Orient::R270, Orient::R90),
+        _ => (Orient::R0, Orient::R0),
+    };
+    let (x, y) = rotation.then(owner).then(inverse).apply((x, y));
+    let horizontal = if x > 0.0 {
+        "start"
+    } else if x < 0.0 {
+        "end"
+    } else {
+        "middle"
+    };
+    let vertical = if y > 0.0 {
+        if valign == "baseline" {
+            "baseline"
+        } else {
+            "bottom"
+        }
+    } else if y < 0.0 {
+        "top"
+    } else {
+        "middle"
+    };
+    (horizontal, vertical)
+}
+
 pub const TOL: f64 = 1e-6;
 
 /// The vertices of a wire through its points for a routing mode (13.1). `auto` is drawn

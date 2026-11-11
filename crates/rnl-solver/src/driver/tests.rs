@@ -2461,3 +2461,62 @@ fn mirrored_baselines_use_the_same_box_side_in_the_solver() {
     text.baseline_mirrors = false;
     assert_eq!(crate::structure::text_box(&text, &(int(0), int(0)), Orient::MX).unwrap(), upright);
 }
+
+#[test]
+fn modern_fixed_text_boxes_follow_the_owner_side() {
+    use rnl_runtime::problem::{Filler, TextInfo};
+    let text = TextInfo {
+        attach: Filler::Other(String::new()),
+        key: None,
+        lines: rnl_runtime::markup::parse("outside"),
+        halign: "middle".into(),
+        valign: "bottom".into(),
+        rotate: 0.0,
+        fix_rotate: true,
+        baseline_mirrors: true,
+        column_position: None,
+        style: Vec::new(),
+    };
+    for (turn, h, v) in [
+        (Orient::R0, "middle", "bottom"),
+        (Orient::R90, "end", "middle"),
+        (Orient::R180, "middle", "top"),
+        (Orient::R270, "start", "middle"),
+        (Orient::MY, "middle", "bottom"),
+        (Orient::MX, "middle", "top"),
+        (Orient::MYR90, "end", "middle"),
+        (Orient::MXR90, "start", "middle"),
+    ] {
+        let mut control = text.clone();
+        control.halign = h.into();
+        control.valign = v.into();
+        let at = turn.apply((2.0, 3.0));
+        let expected =
+            crate::structure::text_box(&control, &(from_f64(at.0).unwrap(), from_f64(at.1).unwrap()), Orient::R0);
+        let actual = crate::structure::text_box(&text, &(int(2), int(3)), turn);
+        assert_eq!(actual, expected, "{turn:?}");
+    }
+}
+
+#[test]
+fn modern_fixed_quarter_turn_mirrors_the_box_in_scene_axes() {
+    use rnl_runtime::problem::{Filler, TextInfo};
+    let text = TextInfo {
+        attach: Filler::Other(String::new()),
+        key: None,
+        lines: rnl_runtime::markup::parse("side"),
+        halign: "middle".into(),
+        valign: "bottom".into(),
+        rotate: 90.0,
+        fix_rotate: true,
+        baseline_mirrors: true,
+        column_position: None,
+        style: Vec::new(),
+    };
+    let mut control = text.clone();
+    control.valign = "top".into();
+    assert_eq!(
+        crate::structure::text_box(&text, &(int(0), int(2)), Orient::MY),
+        crate::structure::text_box(&control, &(int(0), int(2)), Orient::R0),
+    );
+}

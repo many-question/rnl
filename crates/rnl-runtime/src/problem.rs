@@ -279,7 +279,7 @@ pub struct TextInfo {
     pub halign: String,
     pub valign: String,
     pub rotate: f64,
-    /// Rotate in scene axes while the anchor still follows its owner (13.3).
+    /// Keep glyph rotation in scene axes; the anchor and box side follow the owner (13.3).
     pub fix_rotate: bool,
     /// Reflect the baseline text box with its transformed vertical axis (9.2.5).
     pub baseline_mirrors: bool,
@@ -1025,6 +1025,9 @@ pub fn canonical_sig1(p: &LevelProblem) -> String {
             }
             if t.baseline_mirrors {
                 c.word("baseline-mirrors");
+                if t.fix_rotate {
+                    c.word("fixed-box-side");
+                }
             }
             if let Some((x, y)) = t.column_position {
                 c.word("column-position");

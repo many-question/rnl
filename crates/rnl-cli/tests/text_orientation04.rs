@@ -62,11 +62,12 @@ fn baseline_boxes_reflect_for_all_symbol_orientations_and_text_rotations() {
 }
 
 #[test]
-fn fixed_rotation_reflects_only_its_own_rotation() {
-    for rotate in [0, 90, 180, 270] {
-        let base = drawing("0.4", Orient::R0, rotate, true, true).1.bbox;
-        for orientation in Orient::ALL {
-            assert_eq!(drawing("0.4", orientation, rotate, true, true).1.bbox, base);
+fn fixed_rotation_preserves_its_own_box_when_the_owner_has_no_turn() {
+    for keyed in [false, true] {
+        for rotate in [0, 90, 180, 270] {
+            let normal = drawing("0.4", Orient::R0, rotate, false, keyed).1;
+            let fixed = drawing("0.4", Orient::R0, rotate, true, keyed).1;
+            assert_eq!(fixed, normal);
         }
     }
 }
@@ -172,6 +173,7 @@ fn columns_exclude_empty_content_other_alignments_and_scene_positions() {
         ? @TEXT("MIDDLE",key="middle",valign="middle") => @PLACE(2,8);
         ? @TEXT("END",key="end",halign="end") => @PLACE(2,7);
         ? @TEXT("ROTATED",key="rot",rotate=90) => @PLACE(2,6);
+        ? @TEXT("FIXED",key="fixed",fix_rotate=true) => @PLACE(2,11);
         ? @TEXT("OTHER",key="other") => @PLACE(3,5);
         ? @TEXT("SCENE",key="scene") => @PLACE(2,4);
         ? @TEXT("OFFSET",key="offset") => @PLACE(2,9)
@@ -240,4 +242,20 @@ fn unplaced_owner_is_solved_from_reversed_labels_without_freezing_them() {
     assert_eq!(anchor(&reread, "a"), (12.0, 22.0));
     assert_eq!(anchor(&reread, "mid"), (12.0, 19.0));
     assert_eq!(anchor(&reread, "b"), (12.0, 17.0));
+}
+
+#[test]
+fn fixed_columns_reorder_even_when_their_glyphs_stay_horizontal() {
+    let body = COLUMN.replace("key=", "fix_rotate=true,key=");
+    for turn in Orient::ALL {
+        let result = columns("0.4", turn, &body, "");
+        let reverse = matches!(turn, Orient::MX | Orient::R180 | Orient::R270 | Orient::MXR90);
+        for (key, y) in [("a", if reverse { -2.0 } else { 3.0 }), ("b", if reverse { 3.0 } else { -2.0 })] {
+            let offset = turn.apply((2.0, y));
+            assert_eq!(anchor(&result, key), (10.0 + offset.0, 20.0 + offset.1));
+        }
+        assert!(rnl_render::primitives(&result.model.levels[0], &Default::default())
+            .iter()
+            .all(|p| { !matches!(&p.kind, rnl_render::Kind::Text(t) if t.vertical) }));
+    }
 }

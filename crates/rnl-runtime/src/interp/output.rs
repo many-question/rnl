@@ -1149,8 +1149,12 @@ impl Interp<'_> {
             let Some(text) = it.text.clone() else { continue };
             let att = self.text_attach(t);
             let drawable_att = matches!(self.o(att), ObjData::Inst { .. } | ObjData::Usage(_) | ObjData::Bundle { .. });
-            let orient =
-                if from_symbol && !it.fix_rotate.unwrap_or(false) { self.orientation(s, att) } else { Orient::R0 };
+            let modern_text = text.unit.is_some_and(|u| self.follows_0_4(u));
+            let orient = if from_symbol && (modern_text || !it.fix_rotate.unwrap_or(false)) {
+                self.orientation(s, att)
+            } else {
+                Orient::R0
+            };
             let lines = self.text_lines(s, &text, att);
             let mut layer = self.layer_of(s, t);
             if drawable_att && layer == Layer::Middle {
