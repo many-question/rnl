@@ -240,6 +240,7 @@ fn reaches(f: &FactKind, objects: &[usize]) -> bool {
         FactKind::Align { members, .. } | FactKind::Order { members, .. } | FactKind::Distribute { members, .. } => {
             members.iter().any(|m| point(m, objects))
         }
+        FactKind::Table { rows, .. } => rows.points().iter().any(|m| point(m, objects)),
         FactKind::Distance { from, to, .. } => from.iter().chain(to).any(|m| point(m, objects)),
         FactKind::OrientRelation { from, to, .. } => from.iter().chain(to).any(|k| objects.contains(k)),
     }

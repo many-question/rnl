@@ -5,7 +5,7 @@
 
 use crate::{
     Constraint, ConstraintDirectedPin, ConstraintGroup, ConstraintKind, ConstraintObject, ConstraintPoint,
-    ConstraintReference, ConstraintRoute, ConstraintSource, ConstraintUsage, LevelConstraints,
+    ConstraintReference, ConstraintRoute, ConstraintSource, ConstraintTableCell, ConstraintUsage, LevelConstraints,
 };
 use crate::{CurrentArrow, UsageFrame};
 use crate::{FormatInfo, InspectedLabel, InspectedPin, InspectedSymbol, SourceInclude, Usage, UsageRole};
@@ -146,6 +146,7 @@ fn all() -> Vec<(String, String)> {
         one::<ConstraintPoint>(&cfg),
         one::<ConstraintDirectedPin>(&cfg),
         one::<ConstraintKind>(&cfg),
+        one::<ConstraintTableCell>(&cfg),
         one::<Constraint>(&cfg),
         one::<ConstraintSource>(&cfg),
         one::<ConstraintUsage>(&cfg),

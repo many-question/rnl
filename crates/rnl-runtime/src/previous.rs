@@ -181,6 +181,7 @@ fn reaches(f: &FactKind, k: usize) -> bool {
         FactKind::Align { members, .. } | FactKind::Order { members, .. } | FactKind::Distribute { members, .. } => {
             members.iter().any(|m| on(m, k))
         }
+        FactKind::Table { rows, .. } => rows.points().iter().any(|point| on(point, k)),
         FactKind::Distance { from, to, .. } => from.iter().chain(to).any(|m| on(m, k)),
         FactKind::Orient { .. }
         | FactKind::OrientRelation { .. }

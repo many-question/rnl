@@ -431,11 +431,13 @@ pub enum ConstraintKind {
     Distribute,
     Distance,
     OrientRelation,
+    Table,
 }
 
 impl ConstraintKind {
     pub fn parse(kw: &str) -> Option<ConstraintKind> {
         Some(match kw {
+            "TABLE" => ConstraintKind::Table,
             "ALIGN" => ConstraintKind::Align,
             "ORDER" => ConstraintKind::Order,
             "DISTRIBUTE" => ConstraintKind::Distribute,
@@ -447,6 +449,7 @@ impl ConstraintKind {
 
     pub fn as_str(self) -> &'static str {
         match self {
+            ConstraintKind::Table => "TABLE",
             ConstraintKind::Align => "ALIGN",
             ConstraintKind::Order => "ORDER",
             ConstraintKind::Distribute => "DISTRIBUTE",
@@ -487,6 +490,7 @@ pub struct ConstraintData {
     pub kind: ConstraintKind,
     pub args: Vec<ObjId>,
     pub params: ConstraintParams,
+    pub table: Option<crate::problem::TableCell<ObjId>>,
     pub priority_param: Option<Priority>,
     pub chain: Vec<ObjId>,
     pub status: Option<&'static str>,

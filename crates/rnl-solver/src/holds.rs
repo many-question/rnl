@@ -46,6 +46,23 @@ pub(crate) fn check(kind: &FactKind, at: At, ori: Ori, tol: &Q, equal: &Q) -> Op
             let v = along(members, *axis)?;
             v.iter().all(|x| (x - &v[0]).abs() <= *equal)
         }
+        FactKind::Table { axis, rows } => {
+            let mut unknown = false;
+            for (axis, from, to) in rows.orders(*axis) {
+                let (Some(from), Some(to)) = (at(from, axis), at(to, axis)) else {
+                    unknown = true;
+                    continue;
+                };
+                let gap = if axis == Axis::X { to - from } else { from - to };
+                if gap < Q::one() - tol {
+                    return Some(false);
+                }
+            }
+            if unknown {
+                return None;
+            }
+            true
+        }
         FactKind::Order { axis, sense, members } => {
             let v = along(members, *axis)?;
             let step = Q::one() - tol;

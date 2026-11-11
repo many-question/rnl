@@ -360,6 +360,64 @@ impl DirectedPin {
     }
 }
 
+/// A cell or nested list of TABLE (14.11). Lists keep their written depth, including
+/// single-item lists: each nesting changes the direction of its children.
+#[derive(Clone, Debug, PartialEq)]
+pub enum TableCell<P> {
+    Point(P),
+    List(Vec<TableCell<P>>),
+}
+
+impl<P> TableCell<P> {
+    /// All cells in written order, without changing the nested structure.
+    pub fn points(&self) -> Vec<&P> {
+        match self {
+            Self::Point(point) => vec![point],
+            Self::List(items) => items.iter().flat_map(Self::points).collect(),
+        }
+    }
+
+    /// Map cells while preserving every list. An unrepresentable cell fails the whole table.
+    pub fn try_map<Q>(&self, f: &mut impl FnMut(&P) -> Option<Q>) -> Option<TableCell<Q>> {
+        Some(match self {
+            Self::Point(point) => TableCell::Point(f(point)?),
+            Self::List(items) => TableCell::List(items.iter().map(|item| item.try_map(f)).collect::<Option<_>>()?),
+        })
+    }
+
+    /// Adjacent-item point pairs, each at least one unit apart on its axis. X increases;
+    /// Y decreases. These are parts of one fact, never independently ranked facts.
+    pub fn orders(&self, axis: Axis) -> Vec<(Axis, &P, &P)> {
+        let mut out = Vec::new();
+        self.visit_orders(axis, &mut |a, from, to| {
+            out.push((a, from, to));
+            true
+        });
+        out
+    }
+
+    /// Visit orders without constructing an unbounded Cartesian product. Returning false
+    /// stops the visit, allowing readers to enforce their implementation limit first.
+    pub fn visit_orders<'a>(&'a self, axis: Axis, f: &mut impl FnMut(Axis, &'a P, &'a P) -> bool) -> bool {
+        let Self::List(items) = self else { return true };
+        let points: Vec<_> = items.iter().map(Self::points).filter(|points| !points.is_empty()).collect();
+        for pair in points.windows(2) {
+            for from in &pair[0] {
+                for to in &pair[1] {
+                    if !f(axis, from, to) {
+                        return false;
+                    }
+                }
+            }
+        }
+        let inner = match axis {
+            Axis::X => Axis::Y,
+            Axis::Y => Axis::X,
+        };
+        items.iter().all(|item| item.visit_orders(inner, f))
+    }
+}
+
 /// A geometric fact (8.5) and what it relates.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FactKind {
@@ -390,6 +448,9 @@ pub enum FactKind {
     /// Exact one-point distances also encode body coordinate offsets from the usage point
     /// (0.4, 9.4), keeping the coordinate statement's label, source and rank.
     Distance { axis: Axis, sense: Sense, min: Option<f64>, max: Option<f64>, from: Vec<PointRef>, to: Vec<PointRef> },
+    /// TABLE (14.11): one fact, with the outer axis and all nested lists. X increases,
+    /// Y decreases, and each nested list changes axis.
+    Table { axis: Axis, rows: TableCell<PointRef> },
     /// ORIENT-RELATION (14.9): each side shares one orientation, and `to` is `from` turned by
     /// `relation` in the frame of the drawing.
     OrientRelation { relation: Orient, from: Vec<usize>, to: Vec<usize> },
@@ -408,6 +469,7 @@ impl FactKind {
             FactKind::Orient { .. } => "ORIENT",
             FactKind::PinOrient { .. } => "PIN-ORIENT",
             FactKind::PinOrientRelation { .. } => "PIN-ORIENT-RELATION",
+            FactKind::Table { .. } => "TABLE",
             FactKind::Align { .. } => "ALIGN",
             FactKind::Order { .. } => "ORDER",
             FactKind::Distribute { .. } => "DISTRIBUTE",
@@ -652,6 +714,17 @@ pub fn fact_statement(p: &LevelProblem, k: usize) -> String {
             to.pin + 1,
             point_name(p, &PointRef::Origin(to.object))
         ),
+        FactKind::Table { axis, rows } => {
+            fn show(p: &LevelProblem, cell: &TableCell<PointRef>) -> String {
+                match cell {
+                    TableCell::Point(point) => point_name(p, point),
+                    TableCell::List(items) => {
+                        format!("{{{}}}", items.iter().map(|item| show(p, item)).collect::<Vec<_>>().join(" "))
+                    }
+                }
+            }
+            format!("TABLE {} {}", axis.as_str(), show(p, rows))
+        }
         FactKind::Align { axis, members } => format!("ALIGN {} {}", axis.as_str(), list(members)),
         FactKind::Distribute { axis, sense: Sense::Either, members } => {
             format!("DISTRIBUTE {} {}", axis.as_str(), list(members))
@@ -953,6 +1026,26 @@ pub fn canonical_sig1(p: &LevelProblem) -> String {
                 c.word(axis.as_str());
                 c.word(sense.as_str());
                 c.points(members);
+            }
+            FactKind::Table { axis, rows } => {
+                // Include list boundaries, not just leaves: nesting changes the constraint.
+                fn table(c: &mut Canon, cell: &TableCell<PointRef>) {
+                    match cell {
+                        TableCell::Point(point) => {
+                            c.word("point");
+                            c.points(std::slice::from_ref(point));
+                        }
+                        TableCell::List(items) => {
+                            c.word("list");
+                            c.index(items.len());
+                            for item in items {
+                                table(c, item);
+                            }
+                        }
+                    }
+                }
+                c.word(axis.as_str());
+                table(&mut c, rows);
             }
             FactKind::Order { axis, sense, members } => {
                 c.word(axis.as_str());

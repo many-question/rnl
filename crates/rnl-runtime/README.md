@@ -241,3 +241,17 @@ group produces a warning and keeps the malformed command visible as written;
 other text remains valid. Complete groups accept whitespace after the command,
 nested fractions and opaque attribute values. Formula-mode validation remains
 separate, and released text keeps its original rendering and diagnostics.
+
+Draft 0.4 TABLE preserves nested lists as one geometric fact (14.11). The outer
+list runs down, or right with `transpose=true`; every nested list changes axis.
+Every point of one item precedes every point of the next by at least one unit.
+Empty lists are omitted without splitting single-item lists. Final set edits and
+symbol-dependent pin conversions are resolved before checking the whole table.
+Failed, unlocatable or repeated cells fail the whole fact. The implementation
+limits nesting to 64 lists and the resulting adjacent-point orders to 4096.
+
+`FactKind::Table { axis, rows }` carries the complete `TableCell<PointRef>` tree.
+Its point orders belong to one solver unit, with one priority and conflict result.
+The whole table contributes one group when it has at least two cells; rows and
+columns do not contribute groups. Viewer constraints expose the same nested
+`point`/`list` structure, with their TypeScript interface updated together.

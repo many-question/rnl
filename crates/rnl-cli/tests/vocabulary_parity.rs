@@ -37,7 +37,6 @@ const PENDING_0_4: &[&str] = &[
     "removed",
     // groups and tables (11.5, 14.11)
     "GROUP",
-    "TABLE",
     // the settings of the solver (5.9)
     "SOLVER-CONFIG",
     // gathered from the keywords compared, so whole only when none of them is pending

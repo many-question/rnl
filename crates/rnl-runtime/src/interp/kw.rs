@@ -209,6 +209,7 @@ impl Interp<'_> {
                 let op = TargetOp::Priority { priority: pr, off: seg.call.as_ref().unwrap().start, spread };
                 self.target_each(kw, &args, seg, ctx, 7, op, "target")
             }
+            "TABLE" => self.kw_table(&args, seg, ctx),
             "GROUP" => {
                 let mapped = self.map_args(kw, &args, seg, ctx, sig_positions(kw))?;
                 let obj = mapped["members"].obj;
@@ -224,7 +225,14 @@ impl Interp<'_> {
                 };
                 let chain = self.apply_chain(ctx);
                 let site = Rc::new(ctx.clone());
-                self.scenes[s].groups.push(GroupFact { pos: ctx.pos.clone(), set: obj, chain, site, off: seg.start });
+                self.scenes[s].groups.push(GroupFact {
+                    pos: ctx.pos.clone(),
+                    set: obj,
+                    chain,
+                    site,
+                    off: seg.start,
+                    table: None,
+                });
                 Ok((obj, self.is_lazy(obj)))
             }
             "ADD-TO" => self.kw_mod(kw, &args, seg, ctx, true),
@@ -2753,6 +2761,61 @@ impl Interp<'_> {
         Ok((w, false))
     }
 
+    fn kw_table(&mut self, args: &[ArgV], seg: &Segment, ctx: &Ctx) -> R<(ObjId, bool)> {
+        let p = self.params("TABLE", seg, ctx, &self.sig_params("TABLE", ctx), None, false, None)?;
+        let Some(s) = ctx.scene else { return Err(self.final_set_needs_scene()) };
+        let mapped = self.map_args("TABLE", args, seg, ctx, sig_positions("TABLE"))?;
+        let rows = mapped["rows"].obj;
+        if let Some(cause) = self.failed_obj(rows) {
+            let id = self.err_cause(
+                ctx,
+                codes::TABLE_ROWS_FAILED,
+                "the table of @TABLE failed, so the whole TABLE fails (7.3, 14.11)",
+                seg.start,
+                cause,
+            );
+            return Err(Stop::Fail(Some(id)));
+        }
+        let selected = self.constraint_input(rows, seg.start, 0, ctx)? || self.is_lazy(rows);
+        let chain = self.apply_chain(ctx);
+        let site = Rc::new(ctx.clone());
+        let c = ConstraintData {
+            kind: ConstraintKind::Table,
+            args: vec![rows],
+            table: None,
+            params: ConstraintParams {
+                axis: Some(if get(&p, "transpose").and_then(Lit::boolean).unwrap_or(false) { 'x' } else { 'y' }),
+                sense: None,
+                min: None,
+                max: None,
+                relation: None,
+                relations: Vec::new(),
+            },
+            priority_param: priority_of(&p, ctx),
+            chain: chain.clone(),
+            status: None,
+            eff: None,
+            failed: false,
+            site: Some(site.clone()),
+            off: seg.start,
+            name_owner: None,
+        };
+        let id = self.new_obj(ObjData::Constraint(Box::new(c)));
+        self.scene_add_constraint(s, id, ctx.pos.clone(), ctx);
+        self.scenes[s].groups.push(GroupFact {
+            pos: ctx.pos.clone(),
+            set: rows,
+            chain,
+            site,
+            off: seg.start,
+            table: Some(id),
+        });
+        if selected {
+            self.note_rule(ctx);
+        }
+        Ok((id, false))
+    }
+
     fn kw_constraint(&mut self, kw: &str, args: &[ArgV], seg: &Segment, ctx: &Ctx) -> R<(ObjId, bool)> {
         let call_start = seg.call.as_ref().unwrap().start;
         let follows_0_4 = self.follows_0_4(self.source_unit(ctx));
@@ -2858,6 +2921,7 @@ impl Interp<'_> {
                 kind: ConstraintKind::parse(kw).unwrap(),
                 args: Vec::new(),
                 params: cp,
+                table: None,
                 priority_param: priority_of(&p, ctx),
                 chain: self.apply_chain(ctx),
                 status: None,
@@ -2896,6 +2960,7 @@ impl Interp<'_> {
             kind: ConstraintKind::parse(kw).unwrap(),
             args: arglist,
             params: cp,
+            table: None,
             priority_param: priority_of(&p, ctx),
             chain: self.apply_chain(ctx),
             status: None,

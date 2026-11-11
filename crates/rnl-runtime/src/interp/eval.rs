@@ -2017,6 +2017,7 @@ impl<'p> Interp<'p> {
         let constraint_items = self.follows_0_4(self.source_unit(ctx)) && ConstraintKind::parse(kw).is_some();
         let phase = ctx.scene.map_or(3, |s| self.scenes[s].phase.max(3));
         if total == 1
+            && kw != "TABLE"
             && objs.len() == 1
             && self.is_set(objs[0].obj)
             && (!self.is_lazy(objs[0].obj) || (constraint_items && phase >= 7))

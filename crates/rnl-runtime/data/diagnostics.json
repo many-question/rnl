@@ -5016,6 +5016,60 @@
     "2.7",
     "16.2"
    ]
+  },
+  {
+   "number": "RNL5801",
+   "name": "table-member-failed",
+   "severity": "error",
+   "message": "a member of TABLE failed, so the whole TABLE fails (7.3, 14.11)",
+   "sections": [
+    "14.11"
+   ]
+  },
+  {
+   "number": "RNL5802",
+   "name": "table-member-not-locatable",
+   "severity": "error",
+   "message": "a member of {table}: {why}; the whole TABLE fails (14.1, 14.11)",
+   "sections": [
+    "14.11"
+   ]
+  },
+  {
+   "number": "RNL5803",
+   "name": "table-object-in-two-cells",
+   "severity": "error",
+   "message": "{object} is in two cells of {table}, and would have to lie strictly before itself; the TABLE fails (8.5, 14.11)",
+   "sections": [
+    "14.11"
+   ]
+  },
+  {
+   "number": "RNL5805",
+   "name": "table-rows-failed",
+   "severity": "error",
+   "message": "the table of @TABLE failed, so the whole TABLE fails (7.3, 14.11)",
+   "sections": [
+    "14.11"
+   ]
+  },
+  {
+   "number": "RNL5806",
+   "name": "table-too-deep",
+   "severity": "error",
+   "message": "the lists of TABLE nest more than 64 deep, a limit of this implementation; the TABLE fails (3.7, 14.11)",
+   "sections": [
+    "14.11"
+   ]
+  },
+  {
+   "number": "RNL5807",
+   "name": "table-too-many-orders",
+   "severity": "error",
+   "message": "TABLE requires more than 4096 point orders, a limit of this implementation; write a smaller table (3.7, 14.11)",
+   "sections": [
+    "14.11"
+   ]
   }
  ]
 }

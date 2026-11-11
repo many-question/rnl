@@ -682,9 +682,12 @@ mod tests {
         assert_eq!(w.language_version, "0.2");
         assert_eq!(w.keywords_in("0.2").count(), 46);
         assert_eq!(w.keywords_in("0.3").count(), 46);
-        // and the pin selection and assertions of 0.4 (10.1, 15.3, 15.4)
+        // and the pin selection, table and assertions of 0.4 (10.1, 14.11, 15.3, 15.4)
         let added: Vec<_> = w.keywords.iter().filter(|k| !k.in_version("0.3")).map(|k| k.name.as_str()).collect();
-        assert_eq!(added, ["SELECT-PIN", "ASSERT-INSTANCE", "ASSERT-TERMINAL", "ASSERT-NET", "ASSERT-TOPOLOGY"]);
+        assert_eq!(
+            added,
+            ["SELECT-PIN", "TABLE", "ASSERT-INSTANCE", "ASSERT-TERMINAL", "ASSERT-NET", "ASSERT-TOPOLOGY"]
+        );
         assert!(!w.all_words_in("0.3").contains("different") && w.all_words_in("0.4").contains("different"));
         let place = w.keyword("PLACE").unwrap();
         assert_eq!(place.positional, vec!["x", "y"]);

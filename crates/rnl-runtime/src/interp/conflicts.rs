@@ -309,6 +309,11 @@ impl Interp<'_> {
         // the most facts searched through, and the most sets checked
         const MOST_FACTS: usize = 16;
         const MOST_CHECKS: usize = 4096;
+        if cd.kind == ConstraintKind::Table {
+            // Both axes and nested items belong to one fact. The solver identifies its
+            // conflicting units; this single-axis preview search cannot enumerate them.
+            return (Vec::new(), false);
+        }
         let relation = cd.kind == ConstraintKind::OrientRelation;
         if relation && cd.args.iter().any(|object| self.is_pin_direction_input(*object)) {
             // Direction alternatives need the solver's orientation search, not the preview's
@@ -384,6 +389,7 @@ impl Interp<'_> {
         let holds = |set: u64| -> bool {
             let fixed = |bits: u64| bits & !set == 0;
             match cd.kind {
+                ConstraintKind::Table => unreachable!("TABLE uses the solver conflict search"),
                 ConstraintKind::Align => {
                     let mut vals = items.iter().filter(|it| fixed(it.1)).map(|it| it.0);
                     let Some(first) = vals.next() else { return true };

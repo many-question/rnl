@@ -282,6 +282,31 @@ pub(crate) fn semantic_holds(problem: &LevelProblem, kind: &FactKind, g: &Geomet
             let vals: Vec<Q> = members.iter().map(|m| v(m, axis_of(axis))).collect();
             vals.windows(2).all(|w| w[0] == w[1])
         }
+        FactKind::Table { axis, rows } => {
+            fn holds(
+                rows: &rnl_runtime::problem::TableCell<PointRef>,
+                axis: Axis,
+                value: &impl Fn(&PointRef, usize) -> Q,
+                tol: &Q,
+            ) -> bool {
+                let rnl_runtime::problem::TableCell::List(items) = rows else { return true };
+                let extents: Vec<_> = items
+                    .iter()
+                    .filter_map(|item| {
+                        let values: Vec<_> =
+                            item.points().iter().map(|point| value(point, crate::model::ax(axis))).collect();
+                        values.iter().min().cloned().zip(values.iter().max().cloned())
+                    })
+                    .collect();
+                let ordered = extents.windows(2).all(|pair| {
+                    let gap = if axis == Axis::X { &pair[1].0 - &pair[0].1 } else { &pair[0].0 - &pair[1].1 };
+                    gap >= Q::one() - tol
+                });
+                let inner = if axis == Axis::X { Axis::Y } else { Axis::X };
+                ordered && items.iter().all(|item| holds(item, inner, value, tol))
+            }
+            holds(rows, *axis, &v, tol)
+        }
         FactKind::Order { axis, sense, members } => {
             let vals: Vec<Q> = members.iter().map(|m| v(m, axis_of(axis))).collect();
             let step = Q::one() - tol;

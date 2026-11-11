@@ -641,6 +641,15 @@ impl Model {
                 }
                 on.extend(ps.iter().map(|p| (a, *p)));
             }
+            FactKind::Table { axis, rows } => {
+                for (axis, from, to) in rows.orders(*axis) {
+                    let a = ax(axis);
+                    let ps = self.points_of(problem, &[from.clone(), to.clone()]);
+                    let (lo, hi) = if axis == Axis::X { (ps[0], ps[1]) } else { (ps[1], ps[0]) };
+                    fixed.push(Bound::at_least(a, LinExpr::diff(self.var(hi), self.var(lo)), Q::one() - &tol));
+                    on.extend(ps.iter().map(|point| (a, *point)));
+                }
+            }
             FactKind::Order { axis, sense, members } => {
                 let a = ax(*axis);
                 let ps = self.points_of(problem, members);

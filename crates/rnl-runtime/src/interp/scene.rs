@@ -247,6 +247,8 @@ pub struct Scene {
 /// first (14.8), with the context of its statement and where GROUP is in it.
 #[derive(Clone, Debug)]
 pub struct GroupFact {
+    /// A TABLE contributes one group, governed by its constraint handle.
+    pub table: Option<ObjId>,
     pub pos: Pos,
     pub set: ObjId,
     pub chain: Vec<ObjId>,

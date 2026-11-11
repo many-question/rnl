@@ -62,6 +62,17 @@ impl Interp<'_> {
     }
 
     pub(super) fn written_input_items(&mut self, s: SceneId, obj: ObjId, phase: usize, ctx: &Ctx) -> Vec<InputMember> {
+        self.written_items_with_failures(s, obj, phase, ctx, false)
+    }
+
+    pub(super) fn written_items_with_failures(
+        &mut self,
+        s: SceneId,
+        obj: ObjId,
+        phase: usize,
+        ctx: &Ctx,
+        keep_failed: bool,
+    ) -> Vec<InputMember> {
         self.materialize_constraint(obj);
         if !self.is_set(obj) {
             return vec![InputMember::plain(obj)];
@@ -72,7 +83,7 @@ impl Interp<'_> {
                 .items
                 .iter()
                 .enumerate()
-                .filter(|(_, (o, _))| !self.is_failed(*o))
+                .filter(|(_, (o, _))| keep_failed || !self.is_failed(*o))
                 .map(|(index, &(object, _))| InputMember {
                     object,
                     dependencies: sd.item_dependencies.get(index).cloned().unwrap_or_default(),
@@ -113,7 +124,7 @@ impl Interp<'_> {
                     .collect();
                 items = items
                     .into_iter()
-                    .filter_map(|item| self.constraint_item_without(s, item, phase, ctx, &removed))
+                    .filter_map(|item| self.constraint_item_without(s, item, phase, ctx, &removed, keep_failed))
                     .collect();
             }
         }
@@ -127,6 +138,7 @@ impl Interp<'_> {
         phase: usize,
         ctx: &Ctx,
         removed: &HashSet<ObjId>,
+        keep_failed: bool,
     ) -> Option<InputMember> {
         if removed.contains(&self.written_input(item.object)) {
             return None;
@@ -134,9 +146,11 @@ impl Interp<'_> {
         if !self.is_set(item.object) {
             return Some(item);
         }
-        let before = self.written_input_items(s, item.object, phase, ctx);
-        let after: Vec<_> =
-            before.iter().filter_map(|o| self.constraint_item_without(s, o.clone(), phase, ctx, removed)).collect();
+        let before = self.written_items_with_failures(s, item.object, phase, ctx, keep_failed);
+        let after: Vec<_> = before
+            .iter()
+            .filter_map(|o| self.constraint_item_without(s, o.clone(), phase, ctx, removed, keep_failed))
+            .collect();
         if before == after {
             Some(item)
         } else {

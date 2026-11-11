@@ -6,7 +6,31 @@ use super::scene::GroupFact;
 use super::Interp;
 
 impl Interp<'_> {
+    pub(super) fn group_disabled(&mut self, scene: SceneId, group: &GroupFact) -> bool {
+        let (handle, priority) = match group.table {
+            Some(table) => match self.o(table) {
+                ObjData::Constraint(data) => (table, data.priority_param),
+                _ => return true,
+            },
+            None => (group.set, None),
+        };
+        self.eff_priority(scene, priority, &group.chain, Some(handle)) == super::obj::Priority::Disabled
+            || (group.table.is_some()
+                && self.scenes[scene].prioritys.iter().any(|fact| fact.target == group.set)
+                && self.eff_priority(scene, None, &group.chain, Some(group.set)) == super::obj::Priority::Disabled)
+    }
+
     pub(super) fn failed_group(&self, group: &GroupFact) -> bool {
+        if let Some(table) = group.table {
+            let ObjData::Constraint(data) = self.o(table) else { return true };
+            if data.failed
+                || self.is_failed(table)
+                || data.status == Some("ignored")
+                || data.table.as_ref().is_none_or(|rows| rows.points().len() < 2)
+            {
+                return true;
+            }
+        }
         self.follows_0_4(self.source_unit(&group.site)) && (self.failed_body(&group.site) || self.is_failed(group.set))
     }
 

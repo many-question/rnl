@@ -1880,7 +1880,7 @@ impl Interp<'_> {
                 self.constraint_mut(c).status = Some("failed");
                 continue;
             }
-            let ObjData::Constraint(cd) = self.o(c).clone() else { continue };
+            let ObjData::Constraint(mut cd) = self.o(c).clone() else { continue };
             let site = cd.site.clone();
             let p = self.eff_priority(s, cd.priority_param, &cd.chain, Some(c));
             self.constraint_mut(c).eff = Some(p);
@@ -1888,9 +1888,20 @@ impl Interp<'_> {
                 self.constraint_mut(c).status = Some("disabled");
                 continue;
             }
+            if cd.kind == ConstraintKind::Table {
+                if !self.prepare_table(s, c, &cd) {
+                    continue;
+                }
+                cd = match self.o(c) {
+                    ObjData::Constraint(data) => data.clone(),
+                    _ => unreachable!(),
+                };
+            }
             let relation = cd.kind == ConstraintKind::OrientRelation;
             let ctx = site.as_deref();
-            let members: Vec<ObjId> = if cd.kind == ConstraintKind::Distance || relation {
+            let members: Vec<ObjId> = if let Some(rows) = &cd.table {
+                rows.points().into_iter().copied().collect()
+            } else if cd.kind == ConstraintKind::Distance || relation {
                 let mut out = Vec::new();
                 for a in &cd.args {
                     if self.is_set(*a) {
@@ -2127,7 +2138,7 @@ impl Interp<'_> {
         out
     }
 
-    fn locatable(&mut self, s: SceneId, m: ObjId) -> Option<String> {
+    pub(super) fn locatable(&mut self, s: SceneId, m: ObjId) -> Option<String> {
         let l = self.label(m);
         match self.o(m).clone() {
             ObjData::Usage(_) => {
@@ -2190,6 +2201,21 @@ impl Interp<'_> {
     fn satisfied(&mut self, s: SceneId, c: ObjId, members: &[ObjId]) -> Option<bool> {
         let ObjData::Constraint(cd) = self.o(c).clone() else { return Some(true) };
         let tol = self.tol;
+        if let Some(rows) = &cd.table {
+            let mut unknown = false;
+            for (axis, from, to) in rows.orders(crate::problem::Axis::of(cd.params.axis.unwrap_or('y'))) {
+                let axis = if axis == crate::problem::Axis::X { 'x' } else { 'y' };
+                let (Some(from), Some(to)) = (self.coord_of(s, *from, axis), self.coord_of(s, *to, axis)) else {
+                    unknown = true;
+                    continue;
+                };
+                let gap = if axis == 'x' { to - from } else { from - to };
+                if gap < 1.0 - tol {
+                    return Some(false);
+                }
+            }
+            return if unknown { None } else { Some(true) };
+        }
         if cd.kind == ConstraintKind::OrientRelation {
             if cd.site.as_ref().is_some_and(|ctx| self.follows_0_4(self.source_unit(ctx)))
                 && cd.args.len() == 2

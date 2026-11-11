@@ -100,6 +100,10 @@ fn holds(p: &LevelProblem, r: &Resolved, kind: &FactKind, tol: f64) -> bool {
             let v: Vec<f64> = members.iter().map(|m| at(m, *axis)).collect();
             v.iter().all(|x| (x - v[0]).abs() <= tol)
         }
+        FactKind::Table { axis, rows } => rows.orders(*axis).iter().all(|(axis, from, to)| {
+            let gap = if *axis == Axis::X { at(to, *axis) - at(from, *axis) } else { at(from, *axis) - at(to, *axis) };
+            gap >= 1.0 - tol
+        }),
         FactKind::Order { axis, sense, members } => {
             let v: Vec<f64> = members.iter().map(|m| at(m, *axis)).collect();
             let inc = v.windows(2).all(|w| w[1] - w[0] >= 1.0 - tol);
