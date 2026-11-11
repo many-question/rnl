@@ -1,4 +1,4 @@
-//! The assertions ASSERT-INSTANCE, ASSERT-TERMINAL and ASSERT-NET (15.3): a check that what a file
+//! Assertions of circuit attributes, usage definitions and set membership (15.3): what a file
 //! or a definition says agrees with the circuit. Each takes a set of objects of its kind and checks
 //! that every member meets the conditions written, which have the names and meanings of the
 //! conditions of the selection keyword of that kind (10.1), that the attributes listed in `same`
@@ -49,6 +49,8 @@ struct Assertion {
     has: Vec<String>,
     message: Option<String>,
     members: ObjId,
+    definition: Option<ObjId>,
+    contained_in: Option<ObjId>,
     site: Rc<Ctx>,
     off: usize,
     /// The usages whose bodies it is in, outermost first: one of them disabled, it is not checked.
@@ -60,6 +62,8 @@ fn conditions(kw: &str) -> &'static [&'static str] {
     match kw {
         "ASSERT-INSTANCE" => &["name", "model", "type", "terminals", "symbol", "drawn"],
         "ASSERT-TERMINAL" => &["name", "model", "type", "terminal", "net", "current"],
+        "ASSERT-USAGE" => &["symbol", "drawn"],
+        "ASSERT-IN" => &[],
         _ => &["name", "port", "wired", "global"],
     }
 }
@@ -69,6 +73,7 @@ fn kind_of_assertion(kw: &str) -> &'static str {
     match kw {
         "ASSERT-INSTANCE" => "instance",
         "ASSERT-TERMINAL" => "terminal",
+        "ASSERT-USAGE" => "usage",
         _ => "net",
     }
 }
@@ -156,6 +161,7 @@ impl Interp<'_> {
         let allowed: Option<(&str, &str)> = match kw {
             "ASSERT-TERMINAL" => Some(("net", "a terminal has the attribute net")),
             "ASSERT-NET" => Some(("name", "a net has the attribute name")),
+            "ASSERT-USAGE" => Some(("definition", "a usage has the attribute definition")),
             _ => None,
         };
         if let Some((allowed, what)) = allowed {
@@ -189,6 +195,31 @@ impl Interp<'_> {
         let positions = words().keyword(kw).map(|s| s.position_list()).unwrap_or(&[]);
         let mapped = self.map_args(kw, args, seg, ctx, positions)?;
         let members = mapped["members"].obj;
+        let definition = mapped.get("definition").map(|a| self.anon_def(a.obj));
+        if let Some(definition) = definition {
+            if !matches!(self.o(definition), ObjData::Definition(_)) {
+                return self.fail(
+                    ctx,
+                    codes::USAGE_NOT_A_DEFINITION,
+                    format!(
+                        "the last object of @{kw} must be an ordinary definition, not {} (5.6, 15.3)",
+                        self.label(definition)
+                    ),
+                    seg.start,
+                );
+            }
+        }
+        let contained_in = mapped.get("set").map(|a| a.obj);
+        if let Some(target) = contained_in {
+            if !self.is_set(target) {
+                return self.fail(
+                    ctx,
+                    codes::SET_EDIT_TARGET_NOT_SET,
+                    "the target of ASSERT-IN must be a set; nothing is wrapped (15.3)",
+                    mapped["set"].off,
+                );
+            }
+        }
         if let Some(d) = self.failed_obj(members).or_else(|| self.failed_written_member(members)) {
             let id = self.err_cause(
                 ctx,
@@ -203,7 +234,7 @@ impl Interp<'_> {
         if ctx.header.priority == Some(Priority::Disabled) {
             return Ok((NOTHING, false));
         }
-        let lazy = self.is_lazy(members);
+        let lazy = self.is_lazy(members) || contained_in.is_some_and(|target| self.is_lazy(target));
         let Some(s) = ctx.scene else {
             if lazy {
                 self.note_rule(ctx);
@@ -219,6 +250,8 @@ impl Interp<'_> {
             has,
             message,
             members,
+            definition,
+            contained_in,
             site: Rc::new(ctx.clone()),
             off: at,
             chain: self.apply_chain(ctx),
@@ -238,7 +271,9 @@ impl Interp<'_> {
 
     /// A failed object among the members written in a plain set, also in a nested one.
     fn failed_written_member(&self, set: ObjId) -> Option<Option<crate::diag::DiagId>> {
-        let ObjData::Set(sd) = self.o(set) else { return None };
+        let ObjData::Set(sd) = self.o(set) else {
+            return None;
+        };
         if !matches!(sd.kind, SetKind::Plain) {
             return None;
         }
@@ -259,7 +294,9 @@ impl Interp<'_> {
     /// Where an assertion is checked, as its message says it: in the body of a usage, the usage, its
     /// definition and where the usage is written, such as ` in %dp1, a usage of $PAIR at t.sp:12`.
     pub(super) fn assertion_where(&self, site: &Ctx) -> String {
-        let Some(u) = site.frame_usage() else { return String::new() };
+        let Some(u) = site.frame_usage() else {
+            return String::new();
+        };
         let ud = self.usage(u);
         let def = self.label(ud.definition);
         let at = ud
@@ -310,7 +347,7 @@ impl Interp<'_> {
                     None => format!("{of} no {cond}"),
                 })
             }
-            "ASSERT-INSTANCE" => {
+            "ASSERT-INSTANCE" | "ASSERT-USAGE" => {
                 if cond == "drawn" {
                     let drawn = self.object_drawn(s, m);
                     return (Some(drawn) != v.boolean())
@@ -331,7 +368,9 @@ impl Interp<'_> {
                 (n as f64 != want).then(|| format!("has {n} terminal{}", if n == 1 { "" } else { "s" }))
             }
             "ASSERT-TERMINAL" => {
-                let ObjData::Term { owner, index, name } = self.o(m).clone() else { return None };
+                let ObjData::Term { owner, index, name } = self.o(m).clone() else {
+                    return None;
+                };
                 match cond {
                     // as SELECT-TERMINAL compares it (10.1)
                     "terminal" => {
@@ -375,7 +414,9 @@ impl Interp<'_> {
                 }
             }
             _ => {
-                let ObjData::Net { key, .. } = self.o(m).clone() else { return None };
+                let ObjData::Net { key, .. } = self.o(m).clone() else {
+                    return None;
+                };
                 let want = v.boolean();
                 let (yes, no, is) = match cond {
                     "name" => {
@@ -427,10 +468,22 @@ impl Interp<'_> {
     /// The value of an attribute of a member (13.6), none when it has none.
     fn attribute_of(&mut self, s: SceneId, kw: &str, m: ObjId, attr: &str) -> Option<AttrValue> {
         match kw {
+            "ASSERT-USAGE" => {
+                let ObjData::Usage(usage) = self.o(m) else {
+                    return None;
+                };
+                Some(AttrValue { shown: self.label(usage.definition), key: usage.definition.0.to_string() })
+            }
             "ASSERT-INSTANCE" => {
                 let i = self.asserted_instance(m)?;
                 let inst = self.inst_of(i).clone();
-                let fold = |x: &str| if inst.case_sensitive { x.to_string() } else { x.to_lowercase() };
+                let fold = |x: &str| {
+                    if inst.case_sensitive {
+                        x.to_string()
+                    } else {
+                        x.to_lowercase()
+                    }
+                };
                 let (shown, key) = match attr {
                     "name" => (inst.name.clone(), fold(&inst.name)),
                     "model" => {
@@ -463,7 +516,9 @@ impl Interp<'_> {
                 Some(AttrValue { shown: format!("net {}", shown.join(",")), key: format!("{ids:?}") })
             }
             _ => {
-                let ObjData::Net { key, .. } = self.o(m).clone() else { return None };
+                let ObjData::Net { key, .. } = self.o(m).clone() else {
+                    return None;
+                };
                 Some(AttrValue { shown: quoted(&self.net_display(m)), key })
             }
         }
@@ -472,8 +527,55 @@ impl Interp<'_> {
     /// What an attribute is called in a message: a parameter of an instance as such.
     fn attribute_called(kw: &str, attr: &str) -> String {
         match (kw, attr) {
-            ("ASSERT-INSTANCE", "name" | "model" | "type" | "value") | (_, "net" | "name") => attr.to_string(),
+            ("ASSERT-INSTANCE", "name" | "model" | "type" | "value")
+            | ("ASSERT-USAGE", "definition")
+            | (_, "net" | "name") => attr.to_string(),
             _ => format!("parameter {attr}"),
+        }
+    }
+
+    /// Membership is about written handles, not the final pin reached by a named handle.
+    fn check_assert_in(&mut self, scene: SceneId, assertion: &Assertion) {
+        let target = assertion.contained_in.expect("ASSERT-IN has a target set");
+        let members = self.scene_input_members(scene, assertion.members, Some(&assertion.site));
+        let accepted = self.scene_input_members(scene, target, Some(&assertion.site));
+        if self.failed_body(&assertion.site)
+            || self.failed_obj(assertion.members).is_some()
+            || self.failed_obj(target).is_some()
+            || self.failed_written_member(assertion.members).is_some()
+            || self.failed_written_member(target).is_some()
+            || members.iter().chain(&accepted).any(|input| {
+                self.is_failed(input.object) || input.dependencies.iter().any(|dependency| self.is_failed(*dependency))
+            })
+        {
+            self.assertion_diag(
+                Severity::Error,
+                codes::ASSERT_MEMBER_FAILED,
+                assertion,
+                "an object used by @ASSERT-IN failed; the assertion is not checked (7.3, 15.3)".into(),
+            );
+            return;
+        }
+        let accepted: HashSet<_> = accepted.iter().map(|input| self.written_input(input.object)).collect();
+        let mut seen = HashSet::new();
+        let missing: Vec<_> = members
+            .into_iter()
+            .filter(|input| {
+                let handle = self.written_input(input.object);
+                !accepted.contains(&handle) && seen.insert(handle)
+            })
+            .map(|input| self.label(input.object))
+            .collect();
+        if !missing.is_empty() {
+            let place = self.assertion_where(&assertion.site);
+            let note = assertion.message.as_ref().map(|message| format!("; {message}")).unwrap_or_default();
+            let message = format!(
+                "@ASSERT-IN does not hold{place}: {} {} not members of {}{note} (15.3)",
+                and_list(&missing),
+                if missing.len() == 1 { "is" } else { "are" },
+                self.label(target)
+            );
+            self.assertion_diag(Severity::Violation, codes::VIOLATION_IN, assertion, message);
         }
     }
 
@@ -481,6 +583,10 @@ impl Interp<'_> {
     fn check_assertion(&mut self, s: SceneId, a: &Assertion) {
         // in the body of a usage that is disabled, as in a disabled record, nothing is checked (15.3)
         if !a.chain.is_empty() && self.eff_priority(s, None, &a.chain, None) == Priority::Disabled {
+            return;
+        }
+        if a.kw == "ASSERT-IN" {
+            self.check_assert_in(s, a);
             return;
         }
         let kw = a.kw.as_str();
@@ -544,6 +650,7 @@ impl Interp<'_> {
             .iter()
             .filter(|&&m| !match want {
                 "instance" => matches!(self.o(m), ObjData::Inst { .. } | ObjData::Bundle { .. }),
+                "usage" => matches!(self.o(m), ObjData::Usage(_)),
                 "terminal" => {
                     matches!(self.o(m), ObjData::Term { owner, .. } if !matches!(self.o(*owner), ObjData::Usage(_)))
                 }
@@ -570,6 +677,24 @@ impl Interp<'_> {
         let place = self.assertion_where(&a.site);
         let note = a.message.as_ref().map(|m| format!("; {m}")).unwrap_or_default();
         let mut problems: Vec<(Code, String)> = Vec::new();
+        if let Some(definition) = a.definition {
+            let wrong: Vec<_> = members
+                .iter()
+                .filter(|&&member| !matches!(self.o(member), ObjData::Usage(usage) if usage.definition == definition))
+                .map(|&member| self.label(member))
+                .collect();
+            if !wrong.is_empty() {
+                problems.push((
+                    codes::VIOLATION_USAGE_DEFINITION,
+                    format!(
+                        "every member should be a usage of {}, but {} {} not",
+                        self.label(definition),
+                        and_list(&wrong),
+                        if wrong.len() == 1 { "is" } else { "are" }
+                    ),
+                ));
+            }
+        }
         for (cond, v) in &a.conds {
             let mut bad = Vec::new();
             for &m in &members {
