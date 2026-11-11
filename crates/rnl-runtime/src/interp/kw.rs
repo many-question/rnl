@@ -761,6 +761,56 @@ impl Interp<'_> {
         }
     }
 
+    /// Standard sub-object paths can contradict the kinds declared for a role (6.9).
+    /// User-defined names and collection cardinalities still require an application.
+    fn check_definition_role_path(&mut self, role: &Role, reference: &crate::syntax::Ref, ctx: &Ctx) {
+        use crate::syntax::Sep;
+        let Some(mut kinds) = role.kinds.clone() else { return };
+        if role.is_set || reference.places.is_some() || kinds.is_empty() {
+            return;
+        }
+        for part in &reference.path {
+            let (allowed, next, code, subject): (&[&str], &str, _, _) = if part.sep == Sep::Term {
+                (&["instance", "bundle"], "terminal", codes::REF_NO_TERMINALS, "terminals")
+            } else {
+                let name = if words().is_subobject(&part.name) {
+                    part.name.clone()
+                } else if kinds.iter().any(|kind| kind == "usage") {
+                    // A usage's own names and scoped aliases precede global sub-object aliases.
+                    return;
+                } else {
+                    self.word(&part.name, ctx.unit)
+                };
+                match name.as_str() {
+                    "net" => (&["terminal", "pin"], "net", codes::REF_NO_SUBOBJECT, "a net sub-object"),
+                    "position" => (
+                        &["instance", "bundle", "usage", "terminal", "pin", "point", "text", "label", "annotation"],
+                        "point",
+                        codes::REF_NO_SUBOBJECT,
+                        "a position sub-object",
+                    ),
+                    _ => return,
+                }
+            };
+            if !kinds.iter().any(|kind| allowed.contains(&kind.as_str())) {
+                self.definition_error(
+                    reference,
+                    ctx,
+                    code,
+                    format!(
+                        "{} cannot have {subject}: role ?{} is declared as {} (6.5, 6.9)",
+                        reference.text(),
+                        role.name,
+                        role.kinds.as_ref().unwrap().join("/")
+                    ),
+                    reference.start,
+                );
+                return;
+            }
+            kinds = vec![next.to_string()];
+        }
+    }
+
     /// Checks that do not depend on the arguments, once per definition (6.9, M5).
     fn check_definition(&mut self, id: ObjId, ctx: &Ctx) {
         let d = self.def(id).clone();
@@ -847,6 +897,11 @@ impl Interp<'_> {
                         }
                         if r.prefix == '?' {
                             if let Some(n) = &r.name {
+                                if self.follows_0_4(self.source_unit(ctx)) {
+                                    if let Some(role) = d.roles.iter().find(|role| &role.name == n) {
+                                        self.check_definition_role_path(role, r, ctx);
+                                    }
+                                }
                                 if !roles.contains(n) {
                                     if params.contains(n) {
                                         self.definition_error(
