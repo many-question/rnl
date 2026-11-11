@@ -152,6 +152,10 @@
   {
    "name": "set",
    "meaning": "a set, written as a name; in ASSERT-TOPOLOGY also an item that is a `{…}` written out (15.4)"
+  },
+  {
+   "name": "empty node",
+   "meaning": "`&` alone: no net; taken by roles of kind net and by the net slot of WIRE, and elsewhere as an empty set of nets (6.3)"
   }
  ],
  "takes": [
@@ -1972,7 +1976,8 @@
      "name": "net",
      "takes": "any",
      "kinds": [
-      "net"
+      "net",
+      "empty node"
      ],
      "mode": "absorb"
     },
@@ -3035,6 +3040,105 @@
    "output": "none",
    "form": "{members} @ASSERT-NET(…)",
    "sentence": "{&inp &inn} have @ASSERT-NET(port=true)"
+  },
+  {
+   "keyword": "ASSERT-USAGE",
+   "since": "0.4",
+   "group": "Electrical semantics",
+   "summary": "Checks that the usages are usages of the definition, meet the conditions, and are of the same or of different definitions; only reports.",
+   "section": "15.3",
+   "where": [
+    "level"
+   ],
+   "slots": [
+    {
+     "name": "members",
+     "takes": "set",
+     "kinds": [
+      "usage"
+     ],
+     "mode": "absorb"
+    },
+    {
+     "name": "definition",
+     "takes": "definition",
+     "kinds": [
+      "general"
+     ],
+     "mode": "absorb",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "symbol",
+     "type": "string",
+     "since": "0.4"
+    },
+    {
+     "name": "drawn",
+     "type": "bool",
+     "since": "0.4"
+    },
+    {
+     "name": "same",
+     "type": "array",
+     "items": "the attribute name \"definition\"",
+     "since": "0.4"
+    },
+    {
+     "name": "different",
+     "type": "array",
+     "items": "the attribute name \"definition\"",
+     "since": "0.4"
+    },
+    {
+     "name": "message",
+     "type": "string",
+     "since": "0.4"
+    }
+   ],
+   "output": "none",
+   "form": "{members} @ASSERT-USAGE {definition} (optional)",
+   "sentence": "%dp1 is, by @ASSERT-USAGE, a usage of $DIFFERENTIAL_PAIR_N"
+  },
+  {
+   "keyword": "ASSERT-IN",
+   "since": "0.4",
+   "group": "Electrical semantics",
+   "summary": "Checks that every member is a member of the set written last; only reports.",
+   "section": "15.3",
+   "where": [
+    "level"
+   ],
+   "slots": [
+    {
+     "name": "members",
+     "takes": "set",
+     "kinds": [
+      "any"
+     ],
+     "mode": "absorb"
+    },
+    {
+     "name": "set",
+     "takes": "any",
+     "kinds": [
+      "set"
+     ],
+     "mode": "absorb"
+    }
+   ],
+   "params": [
+    {
+     "name": "message",
+     "type": "string",
+     "since": "0.4"
+    }
+   ],
+   "output": "none",
+   "form": "{members} @ASSERT-IN {set}",
+   "sentence": "{&vss} is, by @ASSERT-IN, in $GROUND_NET_SET"
   },
   {
    "keyword": "ASSERT-TOPOLOGY",

@@ -693,7 +693,9 @@ mod tests {
                 "ASSERT-INSTANCE",
                 "ASSERT-TERMINAL",
                 "ASSERT-NET",
-                "ASSERT-TOPOLOGY"
+                "ASSERT-TOPOLOGY",
+                "ASSERT-USAGE",
+                "ASSERT-IN"
             ]
         );
         assert!(!w.all_words_in("0.3").contains("different") && w.all_words_in("0.4").contains("different"));

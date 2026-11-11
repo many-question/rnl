@@ -346,7 +346,9 @@ impl Interp<'_> {
             "ALIGN" | "ORDER" | "DISTRIBUTE" | "DISTANCE" | "ORIENT-RELATION" => {
                 self.kw_constraint(kw, &args, seg, ctx)
             }
-            "ASSERT-INSTANCE" | "ASSERT-TERMINAL" | "ASSERT-NET" => self.kw_assert(kw, &args, seg, ctx),
+            "ASSERT-INSTANCE" | "ASSERT-TERMINAL" | "ASSERT-NET" | "ASSERT-USAGE" | "ASSERT-IN" => {
+                self.kw_assert(kw, &args, seg, ctx)
+            }
             "ASSERT-TOPOLOGY" => self.kw_assert_topology(kw, &args, seg, ctx),
             _ => {
                 let at = seg.call.as_ref().unwrap().start;

@@ -3629,6 +3629,26 @@
    ]
   },
   {
+   "number": "RNL6006",
+   "name": "violation-usage-definition",
+   "severity": "violation",
+   "message": "@ASSERT-USAGE does not hold{where}: every member should be a usage of {definition}, but {members} are not{; message} (15.3)",
+   "sections": [
+    "15.3",
+    "7.6"
+   ]
+  },
+  {
+   "number": "RNL6007",
+   "name": "violation-in",
+   "severity": "violation",
+   "message": "@ASSERT-IN does not hold{where}: {members} are not members of {set}{; message} (15.3)",
+   "sections": [
+    "15.3",
+    "7.6"
+   ]
+  },
+  {
    "number": "RNL7000",
    "name": "close",
    "severity": "hint",
