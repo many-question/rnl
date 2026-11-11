@@ -281,6 +281,10 @@ pub struct TextInfo {
     pub rotate: f64,
     /// Rotate in scene axes while the anchor still follows its owner (13.3).
     pub fix_rotate: bool,
+    /// Reflect the baseline text box with its transformed vertical axis (9.2.5).
+    pub baseline_mirrors: bool,
+    /// Local anchor in the reversed label column, used only by reversing orientations (9.2.5).
+    pub column_position: Option<Pt>,
     /// The style properties that decide its extent and that some RNL gives it: `size`, `font`,
     /// `bold`, `italic` (9.3). The renderer's defaults fill in the rest.
     pub style: Vec<(String, Lit)>,
@@ -308,6 +312,18 @@ pub struct ProblemObject {
     /// to, a net, a wire or a terminal (13.3). Empty for the others: the nets of an instance or a
     /// bundle are those its pins are on ([`ProblemNet::pins`]).
     pub nets: Vec<usize>,
+}
+
+impl ProblemObject {
+    /// The local anchor after the symbol's label column ordering (9.2.5).
+    pub fn symbol_local(&self, orient: Orient) -> Option<Pt> {
+        let Position::InSymbol { local, .. } = self.position else { return None };
+        Some(if orient.reverses_text_column() {
+            self.text.as_ref().and_then(|t| t.column_position).unwrap_or(local)
+        } else {
+            local
+        })
+    }
 }
 
 /// A net of the level (6.3), with how a solver reaches it.
@@ -1006,6 +1022,14 @@ pub fn canonical_sig1(p: &LevelProblem) -> String {
             c.num(t.rotate);
             if t.fix_rotate {
                 c.word("fix-rotate");
+            }
+            if t.baseline_mirrors {
+                c.word("baseline-mirrors");
+            }
+            if let Some((x, y)) = t.column_position {
+                c.word("column-position");
+                c.num(x);
+                c.num(y);
             }
             for (k, v) in &t.style {
                 c.str(k);

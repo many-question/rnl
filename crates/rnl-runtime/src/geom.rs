@@ -65,6 +65,11 @@ impl Orient {
         }
     }
 
+    /// Whether a symbol's top-to-bottom label column would read in reverse (9.2.5).
+    pub fn reverses_text_column(self) -> bool {
+        matches!(self, Self::MX | Self::R180 | Self::R270 | Self::MXR90)
+    }
+
     pub fn apply(self, p: Pt) -> Pt {
         let (a, b, c, d) = self.matrix();
         (a as f64 * p.0 + b as f64 * p.1, c as f64 * p.0 + d as f64 * p.1)

@@ -1564,6 +1564,53 @@ impl Interp<'_> {
         }
     }
 
+    /// A label eligible for a symbol column, after scene edits and text expansion (9.2.5).
+    fn column_label(&mut self, s: SceneId, t: ObjId) -> Option<(Pt, TextItems)> {
+        let at = self.text_sym_pos(t)?;
+        let items = self.text_items(t);
+        let text = items.text.as_ref()?;
+        if !text.unit.is_some_and(|u| self.follows_0_4(u)) || items.dx.is_some() || items.dy.is_some() {
+            return None;
+        }
+        let sc = &self.scenes[s];
+        if sc.at_by_target.get(&t).into_iter().flatten().any(|&j| {
+            let f = &sc.at[j];
+            matches!(f.data, FactData::Coord(..) | FactData::RelativeCoord(..))
+                && self.fact_priority(s, f) != Priority::Disabled
+        }) {
+            return None;
+        }
+        let owner = self.text_attach(t);
+        if self.text_lines(s, text, owner).iter().all(|line| crate::markup::plain(line).is_empty()) {
+            return None;
+        }
+        Some((at, items))
+    }
+
+    /// Alternate local position when the owning object's orientation reverses a column.
+    pub(crate) fn text_column_position(&mut self, s: SceneId, t: ObjId) -> Option<Pt> {
+        let (at, items) = self.column_label(s, t)?;
+        let owner = self.text_attach(t);
+        let mut column = Vec::new();
+        for other in self.scenes[s].texts.clone() {
+            if self.text_attach(other) != owner {
+                continue;
+            }
+            let Some((pos, it)) = self.column_label(s, other) else { continue };
+            if pos.0 == at.0
+                && it.halign.as_deref().unwrap_or("start") == items.halign.as_deref().unwrap_or("start")
+                && it.valign.as_deref().unwrap_or("baseline") == items.valign.as_deref().unwrap_or("baseline")
+                && it.rotate.unwrap_or(0.0) == items.rotate.unwrap_or(0.0)
+            {
+                column.push((other, pos));
+            }
+        }
+        column.sort_by(|a, b| b.1 .1.total_cmp(&a.1 .1));
+        let index = column.iter().position(|(id, _)| *id == t)?;
+        let other = column[column.len() - 1 - index].1;
+        (other != at).then_some(other)
+    }
+
     pub(crate) fn text_anchor(&mut self, s: SceneId, t: ObjId) -> Option<Pt> {
         self.text_anchor_source(s, t).map(|(at, _)| at)
     }
@@ -1631,7 +1678,10 @@ impl Interp<'_> {
             if let Some(sp) = self.text_sym_pos(t) {
                 if matches!(self.o(att), ObjData::Inst { .. } | ObjData::Usage(_) | ObjData::Bundle { .. }) {
                     from_symbol = xy.iter().any(Option::is_none);
-                    let d = self.orientation(s, att).apply(sp);
+                    let orient = self.orientation(s, att);
+                    let sp =
+                        if orient.reverses_text_column() { self.text_column_position(s, t).unwrap_or(sp) } else { sp };
+                    let d = orient.apply(sp);
                     xy = [xy[0].or(Some(b.0 + d.0)), xy[1].or(Some(b.1 + d.1))];
                 }
             }

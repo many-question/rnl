@@ -1815,6 +1815,8 @@ fn a_text_is_as_wide_as_it_is_drawn() {
         valign: "baseline".to_string(),
         rotate,
         fix_rotate: false,
+        baseline_mirrors: false,
+        column_position: None,
         style: Vec::new(),
     };
     let text_box =
@@ -2422,6 +2424,8 @@ fn fixed_rotation_text_boxes_move_the_anchor_without_turning_the_extent() {
             valign: "top".into(),
             rotate,
             fix_rotate: true,
+            baseline_mirrors: false,
+            column_position: None,
             style: Vec::new(),
         };
         for turn in Orient::ALL {
@@ -2432,4 +2436,28 @@ fn fixed_rotation_text_boxes_move_the_anchor_without_turning_the_extent() {
             assert_eq!(got, want, "{turn:?} rotate={rotate}");
         }
     }
+}
+
+#[test]
+fn mirrored_baselines_use_the_same_box_side_in_the_solver() {
+    use rnl_runtime::problem::{Filler, TextInfo};
+    let mut text = TextInfo {
+        attach: Filler::Other(String::new()),
+        key: None,
+        lines: rnl_runtime::markup::parse("ABC"),
+        halign: "start".into(),
+        valign: "baseline".into(),
+        rotate: 0.0,
+        fix_rotate: false,
+        baseline_mirrors: true,
+        column_position: None,
+        style: Vec::new(),
+    };
+    let upright = crate::structure::text_box(&text, &(int(0), int(0)), Orient::R0).unwrap();
+    let reflected = crate::structure::text_box(&text, &(int(0), int(0)), Orient::MX).unwrap();
+    assert!(&upright[1] + &upright[3] > int(0));
+    assert!(&reflected[1] + &reflected[3] < int(0));
+    assert_eq!(&upright[2] - &upright[0], &reflected[2] - &reflected[0]);
+    text.baseline_mirrors = false;
+    assert_eq!(crate::structure::text_box(&text, &(int(0), int(0)), Orient::MX).unwrap(), upright);
 }

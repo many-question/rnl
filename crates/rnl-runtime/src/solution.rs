@@ -918,9 +918,10 @@ fn coordinate(p: &LevelProblem, s: &Solution, r: &PointRef, axis: Axis, depth: u
             match &o.position {
                 Position::Own { x, y } => fixed(if axis == Axis::X { x } else { y }),
                 Position::InSymbol { replaced: Some((a, slot)), .. } if *a == axis => fixed(slot),
-                Position::InSymbol { owner, local, .. } => {
+                Position::InSymbol { owner, .. } => {
                     let base = coordinate(p, s, &PointRef::Origin(*owner), axis, depth + 1)?;
-                    Some(base + along(orientation(p, s, *owner).apply(*local), axis))
+                    let turn = orientation(p, s, *owner);
+                    Some(base + along(turn.apply(o.symbol_local(turn)?), axis))
                 }
                 Position::At(_) => None,
             }
@@ -954,9 +955,10 @@ fn follows(p: &LevelProblem, s: &Solution, o: &ProblemObject, k: usize, axis: Ax
     });
     let target = match (&o.position, offset) {
         (_, Some((from, value))) => coordinate(p, s, from, axis, 0).map(|c| c + value),
-        (position @ Position::InSymbol { owner, local, .. }, None) if position.from_symbol(axis) => {
+        (position @ Position::InSymbol { owner, .. }, None) if position.from_symbol(axis) => {
             let base = coordinate(p, s, &PointRef::Origin(*owner), axis, 0);
-            base.map(|c| c + along(orientation(p, s, *owner).apply(*local), axis))
+            let turn = orientation(p, s, *owner);
+            base.zip(o.symbol_local(turn)).map(|(c, local)| c + along(turn.apply(local), axis))
         }
         _ => return false,
     };

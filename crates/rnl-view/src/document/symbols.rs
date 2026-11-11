@@ -292,6 +292,7 @@ fn collect(
                 valign: label.valign.clone().unwrap_or_else(|| "baseline".into()),
                 rotate: label.rotate,
                 fix_rotate: label.fix_rotate,
+                baseline_mirrors: label.text_name_formats,
                 orient: if label.fix_rotate.unwrap_or(false) { Orient::R0 } else { orient },
                 style: label.style.clone(),
                 own_style: Style::new(),

@@ -23,7 +23,7 @@ use rnl_runtime::markup::{self, Line};
 use rnl_runtime::model::{Layer, LevelView, Style, SymbolView, TextView};
 
 pub use svg::svg_document;
-pub use text::{lay_out, Face};
+pub use text::{lay_out, lay_out_reflected_baseline, Face};
 
 /// Options of the drawing.
 #[derive(Clone, Debug)]
@@ -472,6 +472,7 @@ impl Out {
             t.layer,
             t.order.clone(),
             t.orient,
+            t.baseline_mirrors,
         );
     }
 
@@ -491,6 +492,7 @@ impl Out {
         layer: Layer,
         order: Vec<f64>,
         code: Orient,
+        baseline_mirrors: bool,
     ) {
         if lines.iter().all(|l| l.is_empty()) {
             return;
@@ -535,7 +537,11 @@ impl Out {
             runs: Vec::new(),
             bars: Vec::new(),
         };
-        let [x0, y0, x1, y1] = lay_out(&mut t, self.scale);
+        let [x0, y0, x1, y1] = if baseline_mirrors && flip_v && t.valign == "baseline" {
+            lay_out_reflected_baseline(&mut t, self.scale)
+        } else {
+            lay_out(&mut t, self.scale)
+        };
         self.push(owner, layer, sub(&order, 0.9), Kind::Text(t), &[(x0, y0), (x1, y1)]);
     }
 
@@ -570,6 +576,7 @@ impl Out {
                     layer,
                     key,
                     if p.fix_rotate { Orient::R0 } else { code },
+                    p.text_name_formats,
                 );
                 continue;
             }
@@ -641,6 +648,7 @@ impl Out {
                 layer,
                 sub(order, (labels_after + k) as f64),
                 code,
+                pin.label_name_formats,
             );
         }
         for (k, n) in sym.nested.iter().enumerate() {

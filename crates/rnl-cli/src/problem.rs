@@ -139,6 +139,12 @@ pub fn level(p: &LevelProblem, solver_options: &str) -> Value {
                 if t.fix_rotate {
                     m.get_mut("text").unwrap().as_object_mut().unwrap().insert("fix_rotate".into(), json!(true));
                 }
+                if let Some(at) = t.column_position {
+                    m.get_mut("text").unwrap().as_object_mut().unwrap().insert("column_position".into(), json!([at.0, at.1]));
+                }
+                if t.baseline_mirrors {
+                    m.get_mut("text").unwrap().as_object_mut().unwrap().insert("baseline_mirrors".into(), json!(true));
+                }
             }
             v
         }).collect::<Vec<_>>(),
