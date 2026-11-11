@@ -1,7 +1,7 @@
 //! Geometry hints: read-only diagnostics about how a level is drawn, for an author who checks a
 //! drawing without looking at it, such as a language model. They are measured on the level as its
 //! records draw it, written or solved, and never change it nor block it: each is a hint, or a
-//! warning where two nets look joined. Each names what it is about, the instance and its pin, the
+//! warning where distinct connections look joined. Each names what it is about, the instance and its pin, the
 //! net, and the line of the record that places it. `rnl check` prints them, and a Document has
 //! them when asked for (`BuildOptions::hints`, [`crate::Level::hints`]).
 //!
@@ -1258,6 +1258,10 @@ impl<'a> Drawing<'a> {
     /// A wire end on a wire or a pin of its net that the language does not join it to: neither it
     /// nor a wire it shares a named point or terminal with names that pin or a vertex of that wire.
     fn silent_opens(&self, out: &mut Vec<Hint>) {
+        // In 0.4 both kinds of visually joined but electrically separate connections warn.
+        // The level's own file controls this even without a solver problem or in an include.
+        let severity =
+            if rnl_runtime::interp::unit::keeps_0_4(&self.lv.language) { Severity::Warning } else { Severity::Hint };
         let nw = self.wires.len();
         let mut up = self.named_joins();
         let mut said: BTreeSet<(usize, usize, (i64, i64))> = BTreeSet::new();
@@ -1270,7 +1274,7 @@ impl<'a> Drawing<'a> {
                         self.hint(
                             out,
                             Kind::SilentOpen,
-                            Severity::Hint,
+                            severity,
                             wire.loc.as_ref(),
                             format!(
                                 "{} ends on {} at {} without naming it, so they are not joined; write {} in the wire",
@@ -1293,7 +1297,7 @@ impl<'a> Drawing<'a> {
                     self.hint(
                         out,
                         Kind::SilentOpen,
-                        Severity::Hint,
+                        severity,
                         wire.loc.as_ref(),
                         format!(
                             "{} ends on {} at {} but names no point of it, so they are not joined; name one point, such as %j = {}, in both",

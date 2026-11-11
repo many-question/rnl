@@ -326,6 +326,8 @@ pub struct ConstraintView {
 
 #[derive(Clone, Debug, Default)]
 pub struct LevelView {
+    /// The language version of the file that owns this drawing level.
+    pub language: String,
     /// Effective terminal currents for inspection only; no solver or drawing semantics.
     pub currents: Vec<CurrentView>,
     /// The host level drawn: its index in the host document's levels.

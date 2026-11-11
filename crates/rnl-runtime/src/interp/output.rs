@@ -1255,6 +1255,7 @@ impl Interp<'_> {
             });
         }
         LevelView {
+            language: self.version_of(Some(self.level_unit[lv])).to_string(),
             currents,
             level: lv,
             title: level.title(),
