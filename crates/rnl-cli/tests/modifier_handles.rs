@@ -32,7 +32,7 @@ fn first_segment_parameter_failures_keep_the_existing_object() {
         "@SET-SYMBOL(terminals=0) $S",
         "@SET-STYLE(bad=1) $STYLE",
     ] {
-        let r = read("0.4", &format!("$S = @DEFINE-SYMBOL {{ (0,0) @CIRCLE(radius=1) }}; $STYLE = @DEFINE-STYLE(linecolor=\"#ff0000\"); %saved = #R1 {modifier}; %saved @TEXT(\"kept\",key=\"ok\")"));
+        let r = read("0.4", &format!("$S = @DEFINE-SYMBOL {{ (0,0) @CIRCLE(radius=1) }}; $STYLE = @DEFINE-STYLE(linecolor=\"#ff0000\") {{}}; %saved = #R1 {modifier}; %saved @TEXT(\"kept\",key=\"ok\")"));
         assert_eq!(errors(&r), 1, "{modifier}: {:?}", r.diagnostics());
         assert!(r.model.levels[0].texts.iter().any(|t| t.markup == "kept"), "{modifier}");
     }
@@ -184,7 +184,7 @@ fn missing_appearance_definitions_do_not_invalidate_the_target() {
 fn a_failed_appearance_definition_does_not_invalidate_the_target() {
     let r = read(
         "0.4",
-        "$BAD = @DEFINE-STYLE(linecolor=\"bad\"); %saved = #R1 @SET-STYLE $BAD; %saved @TEXT(\"kept\",key=\"ok\")",
+        "$BAD = @DEFINE-STYLE(linecolor=\"bad\") {}; %saved = #R1 @SET-STYLE $BAD; %saved @TEXT(\"kept\",key=\"ok\")",
     );
     assert_eq!(errors(&r), 2, "{:?}", r.diagnostics());
     assert!(r.model.levels[0].texts.iter().any(|t| t.markup == "kept"));

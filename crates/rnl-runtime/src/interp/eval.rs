@@ -487,6 +487,24 @@ impl<'p> Interp<'p> {
         }
         if let (Some(fr), '%') = (&ctx.frame, prefix) {
             let fr = fr.borrow();
+            let modern = fr.kind == FrameKind::Definition
+                && fr.definition.is_some_and(|id| {
+                    let d = self.def(id);
+                    self.follows_0_4(d.rec.map_or(d.def_unit, |rec| self.rec_unit[rec]))
+                });
+            if modern && fr.local_members.iter().any(|(n, _, _)| n == name) {
+                let resolved = fr.local_bindings.get(name).is_some_and(|(first, _, valid)| {
+                    *valid
+                        && fr.local(name).is_some()
+                        && !fr
+                            .local_members
+                            .iter()
+                            .any(|(n, _, index)| n == name && index < first && !fr.evaluated_members.contains(index))
+                });
+                if !resolved {
+                    return Some(Found::LocalMember(name.to_string()));
+                }
+            }
             if let Some(v) = fr.local(name) {
                 return Some(Found::Local(v, fr.local_dependencies.get(name).cloned().unwrap_or_default()));
             }
@@ -1979,14 +1997,25 @@ impl<'p> Interp<'p> {
 
     fn local_member(&mut self, name: &str, ctx: &Ctx) -> R<ObjId> {
         let fr = ctx.frame.clone().unwrap();
-        let (m, k) = {
-            let f = fr.borrow();
-            let (_, m, k) = f.local_members.iter().find(|(n, _, _)| n == name).unwrap();
-            (m.clone(), *k)
-        };
-        let val = self.definition_member(&m.m, k, ctx)?;
+        let definition = fr.borrow().definition.unwrap();
+        let d = self.def(definition);
+        let modern = self.follows_0_4(d.rec.map_or(d.def_unit, |rec| self.rec_unit[rec]));
+        let members: Vec<_> =
+            fr.borrow().local_members.iter().filter(|(n, _, _)| n == name).map(|(_, m, k)| (m.clone(), *k)).collect();
+        let mut last = NOTHING;
+        let mut seen = HashSet::new();
+        for (member, k) in members {
+            if !seen.insert(k) {
+                continue;
+            }
+            last = self.definition_member(&member.m, k, ctx)?;
+            let frame = fr.borrow();
+            if !modern || frame.local_bindings.get(name).is_some_and(|(first, _, valid)| *valid && *first <= k) {
+                return Ok(frame.local(name).unwrap_or(last));
+            }
+        }
         let local = fr.borrow().local(name);
-        Ok(local.unwrap_or(val))
+        Ok(local.unwrap_or(last))
     }
 
     // ------------------------------------------------------------------ objects to positions (5.2.1)

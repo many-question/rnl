@@ -1,7 +1,7 @@
 //! The context a statement is evaluated in, and the frame of a definition body being expanded.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use super::obj::{Lit, MemberKey, MemberRef, ObjId, Pos, RecId, SceneId, Segments, UnitId};
@@ -25,6 +25,10 @@ pub struct Frame {
     pub params: Vec<(String, Option<Lit>)>,
     pub locals: Vec<(String, ObjId)>,
     pub local_dependencies: HashMap<String, Vec<ObjId>>,
+    /// Written member/binding order and validity when created, before late checks (6.6).
+    pub local_bindings: HashMap<String, (usize, usize, bool)>,
+    pub local_binding_errors: HashSet<(usize, usize)>,
+    pub evaluated_members: HashSet<usize>,
     /// Local names and the members that bind them, evaluated on first use (forward references).
     pub local_members: Vec<(String, MemberRef, usize)>,
     pub symbol: Option<ObjId>,
@@ -42,6 +46,9 @@ impl Frame {
             params: Vec::new(),
             locals: Vec::new(),
             local_dependencies: HashMap::new(),
+            local_bindings: HashMap::new(),
+            local_binding_errors: HashSet::new(),
+            evaluated_members: HashSet::new(),
             local_members: Vec::new(),
             symbol: None,
             definition: None,

@@ -75,6 +75,53 @@ const VALUE: &str = "a SOLVER-CONFIG value is a number, string, boolean, or a fl
 const CONTEXT: &str="SOLVER-CONFIG has no effect in this context; write it in an unqualified file or package header, or a level record (14.10)";
 
 impl Interp<'_> {
+    fn solver_config_key(&self, item: &Named, unit: UnitId) -> String {
+        let translated = self.word(&item.name, unit);
+        if !item.quoted && matches!(translated.as_str(), "spacing_x" | "spacing_y" | "junction") {
+            translated
+        } else {
+            item.name.clone()
+        }
+    }
+
+    /// Check the open signature without substituting application parameters (6.9).
+    pub(super) fn check_solver_config_at_definition(&mut self, seg: &Segment, ctx: &Ctx) -> R<()> {
+        fn has_parameter(value: &Value) -> bool {
+            match value {
+                Value::Hole(_) => true,
+                Value::Arr(items) => items.iter().any(has_parameter),
+                _ => false,
+            }
+        }
+        let items = match entries(seg.call.as_ref().and_then(|call| call.params.as_ref())) {
+            Ok(items) => items,
+            Err((code, message, off)) => return self.fail(ctx, code, message, off),
+        };
+        let mut seen = HashSet::new();
+        for item in items {
+            let key = self.solver_config_key(item, ctx.unit);
+            if !seen.insert(key.clone()) {
+                return self.fail(
+                    ctx,
+                    codes::PARAM_WRITTEN_TWICE,
+                    format!("parameter {key} of @SOLVER-CONFIG is written twice (4.2 rule 9)"),
+                    item.off,
+                );
+            }
+            if matches!(&item.value, Value::Arr(values) if values.iter().any(|value| matches!(value, Value::Arr(_)))) {
+                return self.fail(ctx, codes::SOLVER_CONFIG_VALUE_NOT_LITERAL, VALUE, item.off);
+            }
+            if !has_parameter(&item.value) {
+                if let Some(value) = self.value(&item.value, ctx, item.off)? {
+                    if !flat(&value) {
+                        return self.fail(ctx, codes::SOLVER_CONFIG_VALUE_NOT_LITERAL, VALUE, item.off);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn header_solver_config(&mut self, unit: UnitId, rec: RecId, seg: &Segment) {
         let package = self.units[unit].pkg().to_string();
         if self.rec_header[&rec].languages != Languages::ALL || self.units[unit].embedded {
@@ -146,12 +193,7 @@ impl Interp<'_> {
         let mut values = Vec::new();
         let mut seen = HashSet::new();
         for item in items {
-            let translated = self.word(&item.name, ctx.unit);
-            let key = if !item.quoted && matches!(translated.as_str(), "spacing_x" | "spacing_y" | "junction") {
-                translated
-            } else {
-                item.name.clone()
-            };
+            let key = self.solver_config_key(item, ctx.unit);
             if !seen.insert(key.clone()) {
                 return self.fail(
                     ctx,

@@ -107,10 +107,7 @@ struct AttrValue {
 }
 
 impl Interp<'_> {
-    /// `{members} @ASSERT-INSTANCE(…)`, `@ASSERT-TERMINAL(…)`, `@ASSERT-NET(…)` (15.3): the
-    /// statement's parameters checked now, its members after the geometry phase.
-    pub(crate) fn kw_assert(&mut self, kw: &str, args: &[ArgV], seg: &Segment, ctx: &Ctx) -> R<(ObjId, bool)> {
-        let at = seg.call.as_ref().map_or(seg.start, |c| c.start);
+    fn check_assertion_list_spelling(&mut self, kw: &str, seg: &Segment, ctx: &Ctx) -> R<()> {
         // `same="model"`: a list is asked for, which the check of the parameter's type only calls the
         // wrong type
         if let Some(ps) = seg.call.as_ref().and_then(|c| c.params.as_ref()) {
@@ -126,11 +123,13 @@ impl Interp<'_> {
                 }
             }
         }
-        let spec = words().keyword(kw).map(|s| s.param_list().to_vec()).unwrap_or_default();
-        let p = self.params(kw, seg, ctx, &spec, None, false, None)?;
+        Ok(())
+    }
+
+    fn assertion_lists(&mut self, kw: &str, p: &[(String, Lit)], ctx: &Ctx, at: usize) -> R<[Vec<String>; 3]> {
         let mut lists: [Vec<String>; 3] = [Vec::new(), Vec::new(), Vec::new()];
         for (i, key) in ["same", "different", "has"].into_iter().enumerate() {
-            let Some(v) = get(&p, key) else { continue };
+            let Some(v) = get(p, key) else { continue };
             let items = match v {
                 Lit::Arr(items) => items.clone(),
                 other => vec![other.clone()],
@@ -176,7 +175,7 @@ impl Interp<'_> {
                 }
             }
         }
-        if let Some(n) = get(&p, "terminals").and_then(Lit::num) {
+        if let Some(n) = get(p, "terminals").and_then(Lit::num) {
             if n < 0.0 || n.fract() != 0.0 {
                 return self.fail(
                     ctx,
@@ -189,6 +188,54 @@ impl Interp<'_> {
                 );
             }
         }
+        Ok([same, different, has])
+    }
+
+    /// Check literal parts without using defaults for the application's unknown parameters.
+    pub(super) fn check_assertion_at_definition(&mut self, kw: &str, seg: &Segment, ctx: &Ctx) -> R<()> {
+        self.check_assertion_list_spelling(kw, seg, ctx)?;
+        let spec = words().keyword(kw).map(|s| s.param_list().to_vec()).unwrap_or_default();
+        let mut p = self.params_at_definition(kw, seg, ctx, &spec, false)?;
+        if let Some(params) = seg.call.as_ref().and_then(|call| call.params.as_ref()) {
+            for named in &params.named {
+                let key = if named.quoted { named.name.clone() } else { self.word(&named.name, ctx.unit) };
+                if !matches!(key.as_str(), "same" | "different" | "has") {
+                    continue;
+                }
+                if let Value::Arr(items) = &named.value {
+                    let mut known = Vec::new();
+                    for item in items {
+                        if matches!(item, Value::Arr(_)) {
+                            return self.fail(
+                                ctx,
+                                codes::ASSERT_LIST_ITEM_NOT_NAME,
+                                format!("{key}= of @{kw} lists attribute names; a nested array is not a name (15.3)"),
+                                named.off,
+                            );
+                        }
+                        if !matches!(item, Value::Hole(_)) {
+                            if let Some(value) = self.value(item, ctx, named.off)? {
+                                known.push(value);
+                            }
+                        }
+                    }
+                    p.retain(|(name, _)| name != &key);
+                    p.push((key, Lit::Arr(known)));
+                }
+            }
+        }
+        self.assertion_lists(kw, &p, ctx, seg.call.as_ref().map_or(seg.start, |call| call.start))?;
+        Ok(())
+    }
+
+    /// `{members} @ASSERT-INSTANCE(…)`, `@ASSERT-TERMINAL(…)`, `@ASSERT-NET(…)` (15.3): the
+    /// statement's parameters checked now, its members after the geometry phase.
+    pub(crate) fn kw_assert(&mut self, kw: &str, args: &[ArgV], seg: &Segment, ctx: &Ctx) -> R<(ObjId, bool)> {
+        let at = seg.call.as_ref().map_or(seg.start, |c| c.start);
+        self.check_assertion_list_spelling(kw, seg, ctx)?;
+        let spec = words().keyword(kw).map(|s| s.param_list().to_vec()).unwrap_or_default();
+        let p = self.params(kw, seg, ctx, &spec, None, false, None)?;
+        let [same, different, has] = self.assertion_lists(kw, &p, ctx, at)?;
         let message = get(&p, "message").and_then(Lit::str).map(String::from);
         let conds: Vec<(String, Lit)> =
             conditions(kw).iter().filter_map(|c| get(&p, c).map(|v| (c.to_string(), v.clone()))).collect();
