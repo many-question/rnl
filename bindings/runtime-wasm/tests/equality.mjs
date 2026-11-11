@@ -166,10 +166,13 @@ function native(entry) {
   }
 }
 
-/** The catalog `rnl catalog --all-versions` prints, with the arguments of --view; or its error. */
+/** The catalog with the shared package options; drawing options belong only to view/snapshot. */
 function nativeCatalog() {
+  const flags = new Set(["--no-std", "--include-std"]);
+  const values = new Set(["--package-dir", "--path", "--std-version"]);
+  const options = view.filter((arg, index) => flags.has(arg) || values.has(arg) || values.has(view[index - 1]));
   try {
-    const out = execFileSync(rnl, ["catalog", "--all-versions", ...view], { encoding: "utf8", maxBuffer: 1 << 30, stdio: "pipe" });
+    const out = execFileSync(rnl, ["catalog", "--all-versions", ...options], { encoding: "utf8", maxBuffer: 1 << 30, stdio: "pipe" });
     return { value: JSON.parse(out) };
   } catch (e) {
     if (typeof e.status !== "number") throw e;
