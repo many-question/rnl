@@ -6,6 +6,7 @@
 use crate::{
     Constraint, ConstraintDirectedPin, ConstraintGroup, ConstraintKind, ConstraintObject, ConstraintPoint,
     ConstraintReference, ConstraintRoute, ConstraintSource, ConstraintTableCell, ConstraintUsage, LevelConstraints,
+    SolverLiteral, SolverSettingView,
 };
 use crate::{CurrentArrow, UsageFrame};
 use crate::{FormatInfo, InspectedLabel, InspectedPin, InspectedSymbol, SourceInclude, Usage, UsageRole};
@@ -141,6 +142,8 @@ fn all() -> Vec<(String, String)> {
         one::<SubcktParam>(&cfg),
         one::<ParamValue>(&cfg),
         one::<LevelConstraints>(&cfg),
+        one::<SolverLiteral>(&cfg),
+        one::<SolverSettingView>(&cfg),
         one::<ConstraintObject>(&cfg),
         one::<ConstraintReference>(&cfg),
         one::<ConstraintPoint>(&cfg),

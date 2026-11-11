@@ -42,6 +42,53 @@ pub struct LevelConstraints {
     pub routes: Vec<ConstraintRoute>,
     /// The sets given GROUP that are in effect (11.5).
     pub groups: Vec<ConstraintGroup>,
+    /// Effective literal settings, by key (14.10); absent when none were written.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<Vec<SolverSettingView>>", optional))]
+    pub solver_config: Vec<SolverSettingView>,
+}
+
+/// An RNL literal supplied to the solver. The core does not impose solver key/type policy.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(untagged)]
+pub enum SolverLiteral {
+    Number(f64),
+    String(String),
+    Boolean(bool),
+    Array(Vec<SolverLiteral>),
+}
+
+/// One effective setting, retaining the source for diagnostics (14.10).
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct SolverSettingView {
+    pub key: String,
+    pub value: SolverLiteral,
+    pub source: Option<ConstraintSource>,
+    pub package: String,
+}
+
+/// Public literal settings for a problem, shared by the CLI and viewer data.
+pub fn solver_settings(p: &LevelProblem) -> Vec<SolverSettingView> {
+    fn value(v: &rnl_runtime::interp::obj::Lit) -> SolverLiteral {
+        use rnl_runtime::interp::obj::Lit;
+        match v {
+            Lit::Num(n) => SolverLiteral::Number(*n),
+            Lit::Str(s) => SolverLiteral::String(s.as_str().to_string()),
+            Lit::Bool(b) => SolverLiteral::Boolean(*b),
+            Lit::Arr(a) => SolverLiteral::Array(a.iter().map(value).collect()),
+        }
+    }
+    p.solver_config
+        .iter()
+        .map(|s| SolverSettingView {
+            key: s.key.clone(),
+            value: value(&s.value),
+            package: s.package.clone(),
+            source: s.source.as_ref().map(|l| ConstraintSource { file: l.file.clone(), line: l.line, col: l.col }),
+        })
+        .collect()
 }
 
 /// An object as the constraints refer to it, and where the Document has it.
@@ -384,6 +431,7 @@ pub(crate) fn level_constraints(
         infos.get(id).map_or_else(Vec::new, |host| host.iter().filter_map(|h| instances.get(h).copied()).collect())
     };
     LevelConstraints {
+        solver_config: solver_settings(p),
         input: input_digest(p),
         objects: p
             .objects

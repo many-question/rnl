@@ -1068,11 +1068,12 @@ impl<'p> Interp<'p> {
                     );
                 }
             }
-            // a keyword that a later version adds
+            // A keyword that a later version adds. Preserve the released unknown-keyword
+            // diagnostic for solver settings while this new keyword is draft-only.
             if let Some(since) = words()
                 .keyword(kw)
+                .filter(|_| !matches!(kw, "TABLE" | "SOLVER-CONFIG") || super::unit::keeps_0_4(&version))
                 .and_then(|k| k.since.clone())
-                .filter(|_| kw != "TABLE" || super::unit::keeps_0_4(&version))
             {
                 if crate::interp::unit::version_key(&since) > crate::interp::unit::version_key(&version) {
                     let msg = format!("unknown keyword @{written}: the language {since} adds it, and this file is of {version} (16.1)");

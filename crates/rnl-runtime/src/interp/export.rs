@@ -506,7 +506,9 @@ impl Interp<'_> {
         };
         let object_ids: Vec<ObjId> = objs.iter().map(|(o, _)| *o).collect();
         let ids = self.problem_ids(s, &object_ids, &usages);
+        let solver_config = self.solver_config_for(s);
         let problem = LevelProblem {
+            solver_config,
             level: lv,
             title: level.title(),
             kind: if level.kind == LevelKind::Subckt { "subckt" } else { "file" },

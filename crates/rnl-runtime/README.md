@@ -264,3 +264,24 @@ settings contribute to the input digest and create no geometric facts. The core
 passes them to the solver; its group-tree and layout policy decide how to apply
 them, subordinate to every kept fact. An omitted axis is distinct from an
 explicit zero. Released-language records retain their earlier parameter rules.
+
+
+Draft 0.4 `SOLVER-CONFIG` supplies literal settings to each `LevelProblem` (14.10).
+Package headers in effective position order are followed by the file's header,
+then the level's records; later values replace earlier values by key. A package
+reached only through language-qualified header uses supplies no settings. Records
+with `language`, generated records, package contents and inline packages warn and
+have no effect. An included file keeps its own header defaults.
+
+`LevelProblem::solver_config` preserves literal types and source locations; strings
+also keep their definition environment. The input digest covers effective keys
+and values, not source locations or overridden values. `rnl problem` and viewer
+constraints expose `solver_config` only when it is nonempty. No geometric fact is
+created, and the core does not impose a solver's key or value policy.
+
+`solver_settings::parse_overrides` reads tool settings using the same parameter
+text as the parentheses of `SOLVER-CONFIG`. `with_overrides` merges explicitly
+written values over file values. These are integration APIs: existing CLI solver
+option parsing and solver layout policy are not changed by this core input change.
+Consumers remain responsible for validating supported keys and resolving the
+`junction` definition as a name in the target level (13.2).

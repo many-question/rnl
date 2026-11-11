@@ -40,8 +40,9 @@ pub use catalog::{
     Terminal,
 };
 pub use constraints::{
-    constraint, Constraint, ConstraintDirectedPin, ConstraintGroup, ConstraintKind, ConstraintObject, ConstraintPoint,
-    ConstraintReference, ConstraintRoute, ConstraintSource, ConstraintTableCell, ConstraintUsage, LevelConstraints,
+    constraint, solver_settings, Constraint, ConstraintDirectedPin, ConstraintGroup, ConstraintKind, ConstraintObject,
+    ConstraintPoint, ConstraintReference, ConstraintRoute, ConstraintSource, ConstraintTableCell, ConstraintUsage,
+    LevelConstraints, SolverLiteral, SolverSettingView,
 };
 pub use document::{
     AutoIncludeCandidate, Child, Diagnostic, Document, Drawings, Hit, InspectedLabel, InspectedPin, InspectedSymbol,

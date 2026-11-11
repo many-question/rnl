@@ -504,7 +504,21 @@ export type LevelConstraints = {
    * The sets given GROUP that are in effect (11.5).
    */
   groups: Array<ConstraintGroup>,
+  /**
+   * Effective literal settings, by key (14.10); absent when none were written.
+   */
+  solver_config?: Array<SolverSettingView>,
 };
+
+/**
+ * An RNL literal supplied to the solver. The core does not impose solver key/type policy.
+ */
+export type SolverLiteral = number | string | boolean | Array<SolverLiteral>;
+
+/**
+ * One effective setting, retaining the source for diagnostics (14.10).
+ */
+export type SolverSettingView = { key: string, value: SolverLiteral, source: ConstraintSource | null, package: string };
 
 /**
  * An object as the constraints refer to it, and where the Document has it.

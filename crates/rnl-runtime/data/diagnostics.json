@@ -5079,6 +5079,25 @@
    "sections": [
     "11.5"
    ]
+  },
+  {
+   "number": "RNL2015",
+   "name": "solver-config-context",
+   "severity": "warning",
+   "message": "SOLVER-CONFIG has no effect in this context; write it in an unqualified file or package header, or a level record (14.10)",
+   "sections": [
+    "14.10"
+   ]
+  },
+  {
+   "number": "RNL3126",
+   "name": "solver-config-value-not-literal",
+   "severity": "error",
+   "message": "a SOLVER-CONFIG value is a number, string, boolean, or a flat array of these (14.10)",
+   "sections": [
+    "3.7",
+    "14.10"
+   ]
   }
  ]
 }

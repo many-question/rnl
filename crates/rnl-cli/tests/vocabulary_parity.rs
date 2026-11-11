@@ -35,8 +35,6 @@ const PENDING_0_4: &[&str] = &[
     "UNROUTE-NET",
     "UNROUTE-OBJECT",
     "removed",
-    // the settings of the solver (5.9)
-    "SOLVER-CONFIG",
     // gathered from the keywords compared, so whole only when none of them is pending
     "pseudo_kinds",
     "takes",

@@ -1630,6 +1630,26 @@ pub fn parse_record_features(text: &str, numbers: bool, member_places: bool) -> 
     parser.record()
 }
 
+/// Read the text inside parameter parentheses, with no trailing statement allowed.
+pub(crate) fn parameter_text(text: &str) -> Result<Params, ParseError> {
+    let wrapped = format!("({text})");
+    let mut parser = Parser::new(&wrapped, true);
+    parser.member_places = true;
+    let mut params = parser.params(false).map_err(|e| ParseError { code: e.code, message: e.msg })?;
+    if parser.i != parser.n() {
+        return Err(ParseError {
+            code: codes::SYNTAX_UNEXPECTED_CHAR,
+            message: "only the text inside the parameter parentheses is allowed".into(),
+        });
+    }
+    params.start = 0;
+    params.end = text.chars().count();
+    for named in &mut params.named {
+        named.off = named.off.saturating_sub(1);
+    }
+    Ok(params)
+}
+
 /// Does a member use a number, such as `%#3`, anywhere in it, definition bodies included (the
 /// draft 0.3, 5.9)?
 pub fn uses_number(m: &Member) -> bool {

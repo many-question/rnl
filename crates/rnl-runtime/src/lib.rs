@@ -15,6 +15,7 @@ pub mod previous;
 pub mod problem;
 pub mod records;
 pub mod solution;
+pub mod solver_settings;
 pub mod source;
 pub mod syntax;
 pub mod words;
