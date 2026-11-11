@@ -17,12 +17,94 @@ use super::Interp;
 
 const MAX_SYMBOL_LEVELS: usize = 64;
 
-struct DefinitionFields {
-    roles: Vec<Role>,
-    params: Vec<(String, Option<Lit>)>,
+pub(super) struct DefinitionFields {
+    pub(super) roles: Vec<Role>,
+    pub(super) params: Vec<(String, Option<Lit>)>,
 }
 
 type DefinitionReference<'a> = (crate::syntax::RefOrHole<'a>, Vec<(char, String)>);
+
+pub(super) fn parse_definition_fields(
+    p: &[(String, Lit)],
+    version: &str,
+) -> Result<DefinitionFields, (crate::diag::Code, String)> {
+    let mut roles = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+    if let Some(Lit::Arr(rs)) = get(p, "roles") {
+        for r in rs.clone() {
+            let (name, kinds) = match &r {
+                Lit::Str(s) => (s.as_str().to_string(), None),
+                Lit::Arr(v) if v.len() == 2 && matches!(v[0], Lit::Str(_)) => {
+                    let kinds: Vec<String> = match &v[1] {
+                        Lit::Arr(ks) => {
+                            if super::unit::keeps_0_4(version) {
+                                if let Some(index) = ks.iter().position(|k| k.str().is_none()) {
+                                    return Err((
+                                        codes::DEFINE_ROLE_MALFORMED,
+                                        format!(
+                                            "role {} kind list item {} is not a string (9.4)",
+                                            v[0].str().unwrap(),
+                                            index + 1
+                                        ),
+                                    ));
+                                }
+                            }
+                            ks.iter().filter_map(|k| k.str().map(String::from)).collect()
+                        }
+                        Lit::Str(k) => vec![k.as_str().to_string()],
+                        _ => {
+                            return Err((
+                                codes::DEFINE_ROLE_MALFORMED,
+                                ("a role is a name or [name, kind] (9.4)").into(),
+                            ))
+                        }
+                    };
+                    let role_kinds = words().kinds_in(version);
+                    for k in &kinds {
+                        if !role_kinds.contains(k) {
+                            return Err((codes::DEFINE_ROLE_UNKNOWN_KIND, format!("unknown kind name {k} (9.4)")));
+                        }
+                    }
+                    (v[0].str().unwrap().to_string(), Some(kinds))
+                }
+                _ => return Err((codes::DEFINE_ROLE_MALFORMED, ("a role is a name or [name, kind] (9.4)").into())),
+            };
+            let is_set = name.starts_with('{') && name.ends_with('}') && name.len() >= 2;
+            let name = if is_set { name[1..name.len() - 1].to_string() } else { name };
+            if seen.contains(&name) || name == "position" || name == "net" {
+                return Err((
+                    codes::DEFINE_ROLE_NAME_INVALID,
+                    format!("the role name {name} is used twice or is a standard sub-object name (9.4)"),
+                ));
+            }
+            seen.push(name.clone());
+            roles.push(Role { name, kinds, is_set, written: r });
+        }
+    }
+    let mut params: Vec<(String, Option<Lit>)> = Vec::new();
+    if let Some(Lit::Arr(qs)) = get(p, "parameters") {
+        for q in qs.clone() {
+            match &q {
+                Lit::Arr(v) if v.len() == 2 && matches!(v[0], Lit::Str(_)) => {
+                    params.push((v[0].str().unwrap().to_string(), Some(v[1].clone())))
+                }
+                Lit::Str(s) => params.push((s.as_str().to_string(), None)),
+                _ => {
+                    return Err((
+                        codes::DEFINE_PARAM_MALFORMED,
+                        ("a parameter is a name or [name, default] (9.4)").into(),
+                    ))
+                }
+            }
+            let n = params.last().unwrap().0.clone();
+            if seen.contains(&n) || n == "priority" || n == "position" || n == "net" {
+                return Err((codes::DEFINE_PARAM_NAME_INVALID, format!("the parameter name {n} cannot be used (9.4)")));
+            }
+            seen.push(n);
+        }
+    }
+    Ok(DefinitionFields { roles, params })
+}
 
 fn graphic_point_count_is_valid(shape: Shape, count: usize) -> bool {
     match shape {
@@ -660,107 +742,10 @@ impl Interp<'_> {
 
     /// Parse declaration fields identically during static checking and actual creation.
     fn definition_fields(&mut self, p: &[(String, Lit)], ctx: &Ctx, at: usize) -> R<DefinitionFields> {
-        let mut roles = Vec::new();
-        let mut seen: Vec<String> = Vec::new();
-        if let Some(Lit::Arr(rs)) = get(p, "roles") {
-            for r in rs.clone() {
-                let (name, kinds) = match &r {
-                    Lit::Str(s) => (s.as_str().to_string(), None),
-                    Lit::Arr(v) if v.len() == 2 && matches!(v[0], Lit::Str(_)) => {
-                        let kinds: Vec<String> = match &v[1] {
-                            Lit::Arr(ks) => {
-                                if self.follows_0_4(self.source_unit(ctx)) {
-                                    if let Some(index) = ks.iter().position(|k| k.str().is_none()) {
-                                        return self.fail(
-                                            ctx,
-                                            codes::DEFINE_ROLE_MALFORMED,
-                                            format!(
-                                                "role {} kind list item {} is not a string (9.4)",
-                                                v[0].str().unwrap(),
-                                                index + 1
-                                            ),
-                                            at,
-                                        );
-                                    }
-                                }
-                                ks.iter().filter_map(|k| k.str().map(String::from)).collect()
-                            }
-                            Lit::Str(k) => vec![k.as_str().to_string()],
-                            _ => {
-                                return self.fail(
-                                    ctx,
-                                    codes::DEFINE_ROLE_MALFORMED,
-                                    "a role is a name or [name, kind] (9.4)",
-                                    at,
-                                )
-                            }
-                        };
-                        let role_kinds = words().kinds_in(&self.version_of(Some(self.source_unit(ctx))));
-                        for k in &kinds {
-                            if !role_kinds.contains(k) {
-                                return self.fail(
-                                    ctx,
-                                    codes::DEFINE_ROLE_UNKNOWN_KIND,
-                                    format!("unknown kind name {k} (9.4)"),
-                                    at,
-                                );
-                            }
-                        }
-                        (v[0].str().unwrap().to_string(), Some(kinds))
-                    }
-                    _ => {
-                        return self.fail(
-                            ctx,
-                            codes::DEFINE_ROLE_MALFORMED,
-                            "a role is a name or [name, kind] (9.4)",
-                            at,
-                        )
-                    }
-                };
-                let is_set = name.starts_with('{') && name.ends_with('}') && name.len() >= 2;
-                let name = if is_set { name[1..name.len() - 1].to_string() } else { name };
-                if seen.contains(&name) || name == "position" || name == "net" {
-                    return self.fail(
-                        ctx,
-                        codes::DEFINE_ROLE_NAME_INVALID,
-                        format!("the role name {name} is used twice or is a standard sub-object name (9.4)"),
-                        at,
-                    );
-                }
-                seen.push(name.clone());
-                roles.push(Role { name, kinds, is_set, written: r });
-            }
+        match parse_definition_fields(p, &self.version_of(Some(self.source_unit(ctx)))) {
+            Ok(fields) => Ok(fields),
+            Err((code, message)) => self.fail(ctx, code, message, at),
         }
-        let mut params: Vec<(String, Option<Lit>)> = Vec::new();
-        if let Some(Lit::Arr(qs)) = get(p, "parameters") {
-            for q in qs.clone() {
-                match &q {
-                    Lit::Arr(v) if v.len() == 2 && matches!(v[0], Lit::Str(_)) => {
-                        params.push((v[0].str().unwrap().to_string(), Some(v[1].clone())))
-                    }
-                    Lit::Str(s) => params.push((s.as_str().to_string(), None)),
-                    _ => {
-                        return self.fail(
-                            ctx,
-                            codes::DEFINE_PARAM_MALFORMED,
-                            "a parameter is a name or [name, default] (9.4)",
-                            at,
-                        )
-                    }
-                }
-                let n = params.last().unwrap().0.clone();
-                if seen.contains(&n) || n == "priority" || n == "position" || n == "net" {
-                    return self.fail(
-                        ctx,
-                        codes::DEFINE_PARAM_NAME_INVALID,
-                        format!("the parameter name {n} cannot be used (9.4)"),
-                        at,
-                    );
-                }
-                seen.push(n);
-            }
-        }
-        Ok(DefinitionFields { roles, params })
     }
 
     fn kw_define(
@@ -1117,7 +1102,7 @@ impl Interp<'_> {
         }
         if self.follows_0_4(self.source_unit(ctx)) {
             for member in &d.body.as_ref().unwrap().members {
-                self.check_definition_parameters(member, &d, ctx);
+                self.check_definition_parameters(member, &d, ctx, &[]);
                 self.mark_failed_body_members(id, member, ctx);
             }
             self.check_constant_local_bindings(&d, ctx);
@@ -1302,7 +1287,7 @@ impl Interp<'_> {
     }
 
     /// Names, counts and literal parameter values do not depend on an application's objects.
-    fn check_definition_parameters(&mut self, member: &Member, definition: &DefData, ctx: &Ctx) {
+    fn check_definition_parameters(&mut self, member: &Member, definition: &DefData, ctx: &Ctx, scopes: &[&SetExpr]) {
         for segment in &member.segments {
             if let Some(call) = &segment.call {
                 let keyword = self.kw(&call.kw, ctx.unit);
@@ -1369,7 +1354,7 @@ impl Interp<'_> {
                                     self.check_definition_signature(&keyword, segment, definition, ctx, positions)
                                 }
                                 crate::words::Positions::Definition => {
-                                    self.check_definition_application(&keyword, segment, definition, ctx)
+                                    self.check_definition_application(&keyword, segment, definition, ctx, scopes)
                                 }
                             };
                             if let Err(Stop::Fail(Some(diagnostic))) = checked {
@@ -1384,8 +1369,10 @@ impl Interp<'_> {
             }
             for argument in &segment.args {
                 if let ObjExpr::Set(set) = &argument.obj {
+                    let mut nested = scopes.to_vec();
+                    nested.push(set);
                     for member in &set.members {
-                        self.check_definition_parameters(member, definition, ctx);
+                        self.check_definition_parameters(member, definition, ctx, &nested);
                     }
                 }
             }
@@ -1393,7 +1380,14 @@ impl Interp<'_> {
     }
 
     /// The definition slot of AS/ATTACH is structural, before the definition's roles are known.
-    fn check_definition_application(&mut self, kw: &str, segment: &Segment, definition: &DefData, ctx: &Ctx) -> R<()> {
+    fn check_definition_application(
+        &mut self,
+        kw: &str,
+        segment: &Segment,
+        definition: &DefData,
+        ctx: &Ctx,
+        scopes: &[&SetExpr],
+    ) -> R<()> {
         let first = kw == "ATTACH";
         let where_ = if first { "first" } else { "last" };
         let argument = if first { segment.args.first() } else { segment.args.last() };
@@ -1424,12 +1418,17 @@ impl Interp<'_> {
                 argument.start,
             );
         }
-        Ok(())
+        self.check_definition_callee(kw, segment, definition, ctx, scopes)
     }
 
     /// Infer only kinds fixed by the written object or a declared role and standard path.
     /// Custom sub-objects, collection indexing and aliases scoped to usages remain unknown.
-    fn definition_object_kinds(&self, object: &ObjExpr, definition: &DefData, ctx: &Ctx) -> Option<Vec<String>> {
+    pub(super) fn definition_object_kinds(
+        &self,
+        object: &ObjExpr,
+        definition: &DefData,
+        ctx: &Ctx,
+    ) -> Option<Vec<String>> {
         let reference = match object {
             ObjExpr::Point(_) => return Some(vec!["point".into()]),
             ObjExpr::Ref(reference)
@@ -1792,6 +1791,46 @@ impl Interp<'_> {
         result
     }
 
+    /// Both static checking and applications use the callee's parameter namespace.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn application_params(
+        &mut self,
+        kw: &str,
+        seg: &Segment,
+        ctx: &Ctx,
+        d: &DefData,
+        scoped: &[(String, String)],
+        dlabel: &str,
+        static_check: bool,
+    ) -> R<Vec<(String, Lit)>> {
+        let own: Vec<String> = d.params.iter().map(|(n, _)| n.clone()).collect();
+        let prio: Vec<String> = match self.file_unit(ctx.unit) {
+            Some(f) => self.units[f].aliases.iter().filter(|(_, o)| *o == "priority").map(|(a, _)| a.clone()).collect(),
+            None => Vec::new(),
+        };
+        let resolve = |s: &mut Self, name: &str, quoted: bool, off: usize| -> R<String> {
+            if quoted {
+                return Ok(name.to_string());
+            }
+            if let Some((_, o)) = scoped.iter().find(|(a, _)| a == name) {
+                return Ok(o.clone());
+            }
+            if prio.iter().any(|p| p == name) {
+                if own.iter().any(|p| p == name) {
+                    return s.fail(ctx, codes::USAGE_PARAM_ALIAS_AMBIGUOUS, format!("{name} is both a parameter of the definition {dlabel} and an alias of priority; its meaning is not unique (16.5)"), off);
+                }
+                return Ok("priority".to_string());
+            }
+            Ok(name.to_string())
+        };
+        // parameters: the definition's parameter list plus `priority` (9.4, 14.8)
+        let mut pspec: Vec<ParamSpec> =
+            d.params.iter().map(|(n, _)| ParamSpec::new(n.clone(), ParamType::Any)).collect();
+        pspec.extend(words().usage_params());
+        let order: Vec<String> = d.params.iter().map(|(n, _)| n.clone()).collect();
+        self.params_mode(kw, seg, ctx, &pspec, Some(&order), false, Some(&resolve), static_check)
+    }
+
     /// AS takes the definition as its last object, ATTACH as the first written one; objects that
     /// come down the pipe fill roles and never take the definition position (5.5, 5.6).
     fn kw_usage(&mut self, kw: &str, args: Vec<ArgV>, seg: &Segment, ctx: &Ctx, first: bool) -> R<(ObjId, bool)> {
@@ -1835,33 +1874,8 @@ impl Interp<'_> {
         let d = self.def(dfn).clone();
         // names in the definition's namespace may be definition-scoped aliases (16.5, D17)
         let scoped = self.scoped_for(ctx.unit, dfn);
-        let own: Vec<String> = d.params.iter().map(|(n, _)| n.clone()).collect();
-        let prio: Vec<String> = match self.file_unit(ctx.unit) {
-            Some(f) => self.units[f].aliases.iter().filter(|(_, o)| *o == "priority").map(|(a, _)| a.clone()).collect(),
-            None => Vec::new(),
-        };
         let dlabel = self.label(dfn);
-        let resolve = |s: &mut Self, name: &str, quoted: bool, off: usize| -> R<String> {
-            if quoted {
-                return Ok(name.to_string());
-            }
-            if let Some((_, o)) = scoped.iter().find(|(a, _)| a == name) {
-                return Ok(o.clone());
-            }
-            if prio.iter().any(|p| p == name) {
-                if own.iter().any(|p| p == name) {
-                    return s.fail(ctx, codes::USAGE_PARAM_ALIAS_AMBIGUOUS, format!("{name} is both a parameter of the definition {dlabel} and an alias of priority; its meaning is not unique (16.5)"), off);
-                }
-                return Ok("priority".to_string());
-            }
-            Ok(name.to_string())
-        };
-        // parameters: the definition's parameter list plus `priority` (9.4, 14.8)
-        let mut pspec: Vec<ParamSpec> =
-            d.params.iter().map(|(n, _)| ParamSpec::new(n.clone(), ParamType::Any)).collect();
-        pspec.extend(words().usage_params());
-        let order: Vec<String> = d.params.iter().map(|(n, _)| n.clone()).collect();
-        let p = self.params(kw, seg, ctx, &pspec, Some(&order), false, Some(&resolve))?;
+        let p = self.application_params(kw, seg, ctx, &d, &scoped, &dlabel, false)?;
         // its own priority=; in a file of 0.3 the default of the record head gives an AS or ATTACH
         // one only when it is "disabled", which turns off everything in the record, so that a usage
         // without one keeps the priorities of the facts of its body, as a usage that a rule makes

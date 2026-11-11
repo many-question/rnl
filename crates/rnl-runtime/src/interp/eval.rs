@@ -2303,7 +2303,7 @@ impl<'p> Interp<'p> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn params_mode(
+    pub(super) fn params_mode(
         &mut self,
         kw: &str,
         seg: &Segment,
