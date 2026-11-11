@@ -770,13 +770,16 @@ impl Interp<'_> {
         let mut names: Vec<String> = Vec::new();
         for m in d.body.as_ref().unwrap().members.iter() {
             if let Some(err) = &m.error {
-                self.err(ctx, err.code, err.message.clone(), m.error_pos);
+                let diagnostic = self.err(ctx, err.code, err.message.clone(), m.error_pos);
+                if self.follows_0_4(self.source_unit(ctx)) {
+                    self.body_member_errors.insert(super::eval::ptr(&**m), diagnostic);
+                }
                 self.note_failed(ctx.rec, m.start, m.end, false);
                 continue;
             }
             for b in m.binds.iter().filter(|b| b.prefix == '%') {
                 if roles.contains(&b.name) || b.name == "position" || b.name == "net" {
-                    self.err(
+                    let diagnostic = self.err(
                         ctx,
                         codes::DEFINE_LOCAL_NAME_CLASH,
                         format!(
@@ -785,14 +788,20 @@ impl Interp<'_> {
                         ),
                         b.off,
                     );
+                    if self.follows_0_4(self.source_unit(ctx)) {
+                        self.body_member_errors.entry(super::eval::ptr(&**m)).or_insert(diagnostic);
+                    }
                 }
                 if names.contains(&b.name) {
-                    self.err(
+                    let diagnostic = self.err(
                         ctx,
                         codes::DEFINE_LOCAL_NAME_TWICE,
                         format!("the local name {} is bound twice (6.6)", b.name),
                         b.off,
                     );
+                    if self.follows_0_4(self.source_unit(ctx)) {
+                        self.body_member_errors.entry(super::eval::ptr(&**m)).or_insert(diagnostic);
+                    }
                 }
                 names.push(b.name.clone());
             }
@@ -863,12 +872,17 @@ impl Interp<'_> {
                         }
                     }
                     crate::syntax::RefOrHole::Hole(n) => {
-                        if !params.iter().any(|p| p == n) && !roles.iter().any(|p| p == n) {
-                            let modern = self.follows_0_4(self.source_unit(ctx));
+                        let modern = self.follows_0_4(self.source_unit(ctx));
+                        let role = roles.iter().any(|p| p == n);
+                        if !params.iter().any(|p| p == n) && (modern || !role) {
                             let diagnostic = self.err(
                                 ctx,
                                 codes::REF_HOLE_NOT_A_PARAM,
-                                format!("?{n} is not in the parameter list (6.10)"),
+                                if modern && role {
+                                    format!("the role ?{n} is used where a literal parameter is required (6.10)")
+                                } else {
+                                    format!("?{n} is not in the parameter list (6.10)")
+                                },
                                 if modern { m.start } else { 0 },
                             );
                             if modern {
@@ -878,9 +892,22 @@ impl Interp<'_> {
                     }
                 }
             }
-            for sg in &m.segments {
-                if let Some(call) = &sg.call {
-                    let k = self.kw(&call.kw, ctx.unit);
+            let modern = self.follows_0_4(self.source_unit(ctx));
+            let mut calls = Vec::new();
+            if modern {
+                self.definition_calls(m, ctx, &mut calls);
+            } else {
+                calls.extend(m.segments.iter().filter_map(|segment| segment.call.as_ref()));
+            }
+            for call in calls {
+                let k = self.kw(&call.kw, ctx.unit);
+                if modern {
+                    if let Err(Stop::Fail(Some(diagnostic))) = self.check_segment_keyword(&k, call, ctx) {
+                        self.body_errors.insert(super::eval::ptr(call), diagnostic);
+                        continue;
+                    }
+                }
+                {
                     if !words().is_keyword(&k) {
                         self.definition_error(
                             call,
@@ -897,6 +924,32 @@ impl Interp<'_> {
                             "PIN is written only in a DEFINE-SYMBOL body (9.2.4)",
                             call.start,
                         );
+                    }
+                }
+            }
+        }
+        if self.follows_0_4(self.source_unit(ctx)) {
+            for member in &d.body.as_ref().unwrap().members {
+                self.mark_failed_body_members(id, member, ctx);
+            }
+        }
+    }
+
+    /// Calls in ordinary member sets share the enclosing definition's static checks.
+    /// A new definition or package body owns its own names and is checked separately.
+    fn definition_calls<'a>(&self, member: &'a Member, ctx: &Ctx, out: &mut Vec<&'a crate::syntax::Call>) {
+        for segment in &member.segments {
+            if let Some(call) = &segment.call {
+                out.push(call);
+                let keyword = self.kw(&call.kw, ctx.unit);
+                if matches!(keyword.as_str(), "DEFINE" | "DEFINE-SYMBOL" | "DEFINE-STYLE" | "USE-PACKAGE") {
+                    continue;
+                }
+            }
+            for argument in &segment.args {
+                if let ObjExpr::Set(set) = &argument.obj {
+                    for member in &set.members {
+                        self.definition_calls(member, ctx, out);
                     }
                 }
             }
@@ -1502,6 +1555,9 @@ impl Interp<'_> {
         for b in m.binds.iter().filter(|b| b.prefix == '%') {
             let binding = bound.iter().find(|(kk, _, _)| kk.0 == '%' && kk.1 == b.name);
             let v = binding.map(|(_, v, _)| *v).unwrap_or(val);
+            if modern && self.is_failed(v) && fr.borrow().local(&b.name).is_some_and(|old| !self.is_failed(old)) {
+                continue;
+            }
             fr.borrow_mut().set_local(&b.name, v);
             if let Some((_, _, dependencies)) = binding {
                 fr.borrow_mut().local_dependencies.insert(b.name.clone(), dependencies.clone());

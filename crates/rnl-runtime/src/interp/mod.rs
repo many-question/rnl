@@ -297,6 +297,7 @@ pub struct Interp<'p> {
     pub(crate) refs_checked: HashSet<UnitId>,
     pub(crate) scoped_memo: HashMap<(UnitId, ObjId), Vec<(String, String)>>,
     pub(crate) body_errors: HashMap<usize, DiagId>,
+    pub(crate) body_member_errors: HashMap<usize, DiagId>,
     pub(crate) body_parameter_errors: HashMap<(ObjId, String), DiagId>,
     pub(crate) made_routes: Vec<ObjId>,
     /// The package file checked on its own (2.7).
@@ -417,6 +418,7 @@ impl<'p> Interp<'p> {
             refs_checked: HashSet::new(),
             scoped_memo: HashMap::new(),
             body_errors: HashMap::new(),
+            body_member_errors: HashMap::new(),
             body_parameter_errors: HashMap::new(),
             made_routes: Vec::new(),
             refs: Vec::new(),

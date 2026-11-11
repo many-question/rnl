@@ -797,6 +797,12 @@ impl<'p> Interp<'p> {
 
     /// Segments in order; each `=> name` binds the handle its segment produced (5.5, PR8).
     pub(crate) fn eval_member(&mut self, m: &Rc<Member>, ctx: &Ctx) -> (R<ObjId>, Bound) {
+        if ctx.frame_kind() == Some(FrameKind::Definition) && self.follows_0_4(self.source_unit(ctx)) {
+            if let Some(&diagnostic) = self.body_member_errors.get(&ptr(&**m)) {
+                self.note_failed(ctx.rec, m.start, m.end, false);
+                return (Err(Stop::Fail(Some(diagnostic))), Vec::new());
+            }
+        }
         // the objects made while this member is evaluated, and not by a member it reads, are its
         // own: a name it binds to one of them is that object's own name (5.9)
         self.next_eval += 1;
@@ -1058,7 +1064,7 @@ impl<'p> Interp<'p> {
     }
 
     // Keep diagnostic formatting out of the recursive evaluation frame.
-    fn check_segment_keyword(&mut self, kw: &str, call: &crate::syntax::Call, ctx: &Ctx) -> R<()> {
+    pub(super) fn check_segment_keyword(&mut self, kw: &str, call: &crate::syntax::Call, ctx: &Ctx) -> R<()> {
         // a keyword is one of the version of the file it is written in (16.1)
         let version = self.version_of(Some(self.source_unit(ctx)));
         if !words().is_keyword_in(kw, &version) {
@@ -1123,6 +1129,9 @@ impl<'p> Interp<'p> {
         if matches!(kw, "VERSION" | "PACKAGE" | "ALIAS" | "DEVICE" | "USE-ALIASES" | "USE-PACKAGE") {
             if kw == "USE-PACKAGE" {
                 return Ok(()); // handled when reading (16.2)
+            }
+            if let Some(diagnostic) = self.reported_body_error(call, ctx) {
+                return Err(Stop::Fail(Some(diagnostic)));
             }
             return self.fail(
                 ctx,
@@ -1223,6 +1232,15 @@ impl<'p> Interp<'p> {
         }
         self.register_place_nested(e, ctx, &nested);
         for (k, m) in e.members.iter().enumerate() {
+            if ctx.frame_kind() == Some(FrameKind::Definition) && self.follows_0_4(self.source_unit(ctx)) {
+                if let Some(&diagnostic) = self.body_member_errors.get(&ptr(&**m)) {
+                    self.note_failed(ctx.rec, m.start, m.end, false);
+                    let failed = self.new_obj(ObjData::Failed(Some(diagnostic)));
+                    items.push((failed, false));
+                    item_dependencies.push(Vec::new());
+                    continue;
+                }
+            }
             if let Some(err) = &m.error {
                 self.err(ctx, err.code, err.message.clone(), m.error_pos);
                 self.note_failed(ctx.rec, m.start, m.end, false);
@@ -2466,6 +2484,13 @@ impl<'p> Interp<'p> {
                 };
                 if let Some(v) = param {
                     return Ok(v);
+                }
+                if self.follows_0_4(self.source_unit(ctx)) {
+                    if let Some(definition) = fr.borrow().definition {
+                        if let Some(diagnostic) = self.body_parameter_errors.get(&(definition, name.to_string())) {
+                            return Err(Stop::Fail(Some(*diagnostic)));
+                        }
+                    }
                 }
                 if is_role {
                     return self.fail(
