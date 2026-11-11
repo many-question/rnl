@@ -4234,6 +4234,16 @@
    "sections": []
   },
   {
+   "number": "RNL8213",
+   "name": "unsolved-junction-centre",
+   "severity": "warning",
+   "message": "{decision}{label}: the centre of a set has no writable point reference (6.5, 13.2)",
+   "sections": [
+    "6.5",
+    "13.2"
+   ]
+  },
+  {
    "number": "RNL8400",
    "name": "writeback-region-encrypted",
    "severity": "hint",
