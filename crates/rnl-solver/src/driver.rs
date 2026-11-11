@@ -326,6 +326,7 @@ pub(crate) fn solve_exact_with(
     let solution = Solution {
         placements,
         branches: routing.branches.clone(),
+        junctions: Vec::new(),
         wires: routing.wires.clone(),
         wire_routes: Vec::new(),
     };

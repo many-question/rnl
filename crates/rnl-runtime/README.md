@@ -298,3 +298,7 @@ and terminals without pins are omitted. Symbol-dependent declarations, disabled
 sources and later overrides follow the same rules as the model. The list enters
 the input digest, and `rnl problem` exports it when nonempty. Released language
 versions keep an empty list and their existing output and digest.
+
+In 0.4, `Solution::junctions` requests dots on existing `PointRef` values. The writer uses the level's resolved `SOLVER-CONFIG junction` definition and materializes generated owners before referring to their points. It creates no replacement point or connection, and reports unreachable requests as `Decision::Junction`. Missing, disabled or invalid junction configuration emits no dots; invalid configuration retains its consumer warning. Existing 0.2/0.3 records ignore this new field. Solver policy deciding which shared points need dots is separate from this writeback interface.
+
+A 0.4 `WireRoute` may insert `WirePoint::Branch` between authored anchors on a net covered by a routing tree. The authored anchors retain their identity and order. A strict wire must keep the entire polyline defined by its mode at the solved coordinates, including computed corners; redundant collinear vertices are allowed, but shortcuts and reversals are not. The writer continues to note invalid proposed rewrites and write them as supplied, matching its existing contract. Released-language writeback is unchanged.

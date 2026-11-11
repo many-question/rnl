@@ -120,7 +120,9 @@ pub struct RoutedWire {
 }
 
 /// The route the solver chose for an `"auto"` wire written in RNL (the draft 0.3, 13.1): written
-/// back as WIRE given the wire, which rewrites it.
+/// back as WIRE given the wire, which rewrites it. In 0.4, an authored wire on a net covered
+/// by a routing tree may also be split by inserting named branch points. A strict mode must
+/// retain its complete geometric path, including its computed bends (13.1).
 #[derive(Clone, Debug, PartialEq)]
 pub struct WireRoute {
     /// The wire, by its index in [`LevelProblem::wires`].
@@ -139,6 +141,9 @@ pub struct WireRoute {
 pub struct Solution {
     pub placements: Vec<Placement>,
     pub branches: Vec<Branch>,
+    /// Additional dots on existing point references in 0.4 (13.2). These do not create
+    /// branch points or connect wires. The configured junction definition supplies the dot.
+    pub junctions: Vec<PointRef>,
     /// The wires routed for ROUTE (13.7).
     pub wires: Vec<RoutedWire>,
     /// The routes of the `"auto"` wires written in RNL (the draft 0.3, 13.1).
@@ -159,6 +164,8 @@ pub enum Decision {
     RoutedWire { index: usize },
     /// A branch point, by its index in [`Solution::branches`].
     Branch { index: usize },
+    /// A dot on an existing point, by its index in [`Solution::junctions`].
+    Junction { index: usize },
 }
 
 /// A decision that the record of the level cannot hold. It is not a result (the draft 0.3, 14.8):
@@ -191,6 +198,7 @@ impl fmt::Display for Unsolved {
             Decision::Position { axis: Some(Axis::Y), .. } => "the y of ",
             Decision::Orientation { .. } => "the orientation of ",
             Decision::WireRoute { .. } => "the route of ",
+            Decision::Junction { .. } => "the junction at ",
             Decision::RoutedWire { .. } | Decision::Branch { .. } => "",
         };
         write!(f, "{what}{}: {}", self.label, self.reason)
@@ -353,6 +361,41 @@ impl Refs<'_> {
         }
     }
 
+    /// Reach a dot's existing point without manufacturing a coincident point or a wire.
+    fn junction(&self, point: &PointRef) -> Result<(Reference, Option<usize>), Why> {
+        let reference = match point {
+            PointRef::Origin(object) => {
+                let object = self.p.objects.get(*object).ok_or(NOT_IN_PROBLEM)?;
+                match object.kind {
+                    ObjectKind::Point => object.reference.clone(),
+                    _ => object.reference.then("::position"),
+                }
+            }
+            PointRef::Pin { object, pin, .. }
+            | PointRef::SymbolPin { object, pin, reference: _ }
+            | PointRef::PinPosition { object, pin, reference: _ } => {
+                let object = self.p.objects.get(*object).ok_or(NOT_IN_PROBLEM)?;
+                let symbol = object.symbol.and_then(|s| self.p.symbols.get(s)).ok_or(NOT_IN_PROBLEM)?;
+                symbol.pins.get(*pin).ok_or(NOT_IN_PROBLEM)?;
+                match point {
+                    PointRef::Pin { terminal, .. } => object.reference.then(&format!(":{}", written_name(terminal))),
+                    PointRef::SymbolPin { reference, .. } | PointRef::PinPosition { reference, .. } => {
+                        reference.clone()
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            PointRef::Centre(_) => {
+                return Err((
+                    codes::UNSOLVED_JUNCTION_CENTRE,
+                    "the centre of a set has no writable point reference (6.5, 13.2)",
+                ))
+            }
+        };
+        let root = self.reach(&reference)?;
+        Ok((reference, root))
+    }
+
     /// The points of a wire of the solution as the record writes them, with the usages made by
     /// rules they go through; or why the wire cannot be written.
     fn wire(
@@ -425,8 +468,8 @@ impl Refs<'_> {
 }
 
 /// Does a route keep the points of its wire in order, with bends only between them (13.1)?
-fn keeps_points(wire: &ProblemWire, points: &[WirePoint]) -> bool {
-    let bend = |q: Option<&WirePoint>| matches!(q, Some(WirePoint::Bend(_)) | None);
+fn keeps_points(wire: &ProblemWire, points: &[WirePoint], splitting: bool) -> bool {
+    let bend = |q: Option<&WirePoint>| !matches!(q, Some(WirePoint::Anchor(_)));
     if bend(points.first()) || bend(points.last()) {
         return false;
     }
@@ -435,10 +478,76 @@ fn keeps_points(wire: &ProblemWire, points: &[WirePoint]) -> bool {
         .filter_map(|q| match q {
             WirePoint::Bend(_) => None,
             WirePoint::Anchor(r) => Some(Some(r)),
+            WirePoint::Branch(_) if splitting => None,
             WirePoint::Branch(_) => Some(None),
         })
         .collect();
     kept.len() == wire.anchors.len() && kept.iter().zip(&wire.anchors).all(|(a, b)| *a == Some(b))
+}
+
+/// Remove redundant collinear vertices without removing a reversal of direction.
+fn shape(points: &[Pt]) -> Option<Vec<Pt>> {
+    let mut path: Vec<Pt> = Vec::new();
+    for &(x, y) in points {
+        if !x.is_finite() || !y.is_finite() {
+            return None;
+        }
+        if path.last().is_some_and(|&(a, b)| (x - a).hypot(y - b) <= TOL) {
+            continue;
+        }
+        while path.len() >= 2 {
+            let a = path[path.len() - 2];
+            let b = path[path.len() - 1];
+            let d = (x - a.0, y - a.1);
+            let length = d.0.hypot(d.1);
+            if !length.is_finite() {
+                return None;
+            }
+            if length <= TOL {
+                break;
+            }
+            let v = (b.0 - a.0, b.1 - a.1);
+            let unit = (d.0 / length, d.1 / length);
+            let along = v.0 * unit.0 + v.1 * unit.1;
+            let across = (v.0 * unit.1 - v.1 * unit.0).abs();
+            if !along.is_finite() || !across.is_finite() {
+                return None;
+            }
+            if across > TOL || along < -TOL || along > length + TOL {
+                break;
+            }
+            path.pop();
+        }
+        path.push((x, y));
+    }
+    Some(path)
+}
+
+/// A strict wire may gain branch points, but its mode's complete geometric path stays (13.1).
+fn keeps_shape(p: &LevelProblem, s: &Solution, wire: &ProblemWire, points: &[WirePoint]) -> bool {
+    let at = |point: &PointRef| coordinate(p, s, point, Axis::X, 0).zip(coordinate(p, s, point, Axis::Y, 0));
+    let Some(anchors) = wire.anchors.iter().map(at).collect::<Option<Vec<_>>>() else {
+        return false;
+    };
+    let Some(actual) = points
+        .iter()
+        .map(|point| match point {
+            WirePoint::Anchor(point) => at(point),
+            WirePoint::Branch(index) => s.branches.get(*index).map(|b| b.at),
+            WirePoint::Bend(point) => Some(*point),
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    let expected = crate::geom::route(&anchors, &wire.mode);
+    match (shape(&expected), shape(&actual)) {
+        (Some(expected), Some(actual)) => {
+            expected.len() == actual.len()
+                && expected.iter().zip(actual).all(|(a, b)| (a.0 - b.0).hypot(a.1 - b.1) <= TOL)
+        }
+        _ => false,
+    }
 }
 
 /// The statement that writes out a usage made by a rule (10.5): its definition, its roles in
@@ -499,6 +608,7 @@ fn usage_statement(u: &UsageEntry, name: &str, follows_0_3: bool) -> String {
 /// In a level of the draft 0.3 the record is not finished: when it uses a number,
 /// [`finish_record`] gives it the check of its numbers.
 pub fn write_record(p: &LevelProblem, solution: &Solution, author: &str, hash: &str) -> Written {
+    let modern = crate::interp::unit::keeps_0_4(&p.version);
     let mut refs = Refs { p, names: generated_names(p), numbers: p.follows_0_3(), offsets: vec![None; p.usages.len()] };
     let mut unsolved = Vec::new();
     let mut notes = Vec::new();
@@ -650,20 +760,41 @@ pub fn write_record(p: &LevelProblem, solution: &Solution, author: &str, hash: &
         for u in root.into_iter().chain(roots) {
             needed[u] = true;
         }
-        if wire.mode != "auto" {
+        let splitting = modern
+            && !wire.generated
+            && wr.points.iter().any(|p| matches!(p, WirePoint::Branch(_)))
+            && p.routes.iter().any(|route| wire.nets.contains(&route.net));
+        let ordered = keeps_points(wire, &wr.points, splitting);
+        let strict_split = splitting && ordered && keeps_shape(p, solution, wire, &wr.points);
+        if wire.mode != "auto" && !strict_split {
             notes.push(format!(
                 "the route of {}: the wire is not \"auto\" but {}, so its route was not the solver's to choose (13.1); written as given",
                 wire.label,
                 written_string(&wire.mode)
             ));
         }
-        if !keeps_points(wire, &wr.points) {
+        if !ordered {
             notes.push(format!(
                 "the route of {} does not keep the points of the wire in order with bends only between them, as a solver should (13.1); written as given",
                 wire.label
             ));
         }
         rewrites.push((wire.reference.clone(), pieces));
+    }
+
+    let mut extra_junctions = Vec::new();
+    if modern && p.junction.definition.is_some() {
+        for (index, point) in solution.junctions.iter().enumerate() {
+            match refs.junction(point) {
+                Ok((reference, root)) => {
+                    if let Some(root) = root {
+                        needed[root] = true;
+                    }
+                    extra_junctions.push(reference);
+                }
+                Err(why) => lost(Decision::Junction { index }, &crate::problem::point_name(p, point), why),
+            }
+        }
     }
 
     // the usages written out first, in order: the objects that each makes are numbered after those
@@ -709,12 +840,17 @@ pub fn write_record(p: &LevelProblem, solution: &Solution, author: &str, hash: &
     for (r, pieces) in &rewrites {
         statements.push(format!("{} @WIRE(mode=\"straight\") {{{}}}", refs.text(r), list(pieces)));
     }
-    let modern = crate::interp::unit::keeps_0_4(&p.version);
     let junction = if modern { p.junction.definition.as_deref() } else { Some("$JUNCTION") };
     let warnings = if modern { p.junction.warning().into_iter().collect() } else { Vec::new() };
     for (b, name) in solution.branches.iter().zip(&branch_names) {
         if let (true, Some(name), Some(definition)) = (b.junction, name, junction) {
             statements.push(format!("{definition} @ATTACH %{name}"));
+        }
+    }
+
+    if let Some(definition) = junction {
+        for point in extra_junctions {
+            statements.push(format!("{definition} @ATTACH {}", refs.text(&point)));
         }
     }
 
