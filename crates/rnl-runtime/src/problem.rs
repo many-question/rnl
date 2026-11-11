@@ -591,6 +591,14 @@ pub struct UsageEntry {
     pub source: Option<Loc>,
 }
 
+/// The final current direction on a host terminal that has a drawing pin (15.2).
+/// Terminals without a pin and the direction "unspecified" are omitted.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TerminalCurrent {
+    pub pin: PointRef,
+    pub direction: String,
+}
+
 /// What a solver needs of one drawing level.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LevelProblem {
@@ -631,6 +639,9 @@ pub struct LevelProblem {
     pub facts: Vec<ProblemFact>,
     pub wires: Vec<ProblemWire>,
     pub routes: Vec<RouteIntent>,
+    /// Final effective CURRENT declarations in a 0.4 level, mapped to their terminals' pins.
+    /// Empty in released language versions, preserving their JSON and input digests.
+    pub currents: Vec<TerminalCurrent>,
     pub groups: Vec<ProblemGroup>,
     /// Every usage made in the level, in the order they were made, so a usage comes after the one
     /// whose expansion made it.
@@ -888,6 +899,13 @@ pub fn canonical(p: &LevelProblem) -> String {
     c.word("object-nets");
     for o in &p.objects {
         c.indexes(&o.nets);
+    }
+    if !p.currents.is_empty() {
+        c.word("currents");
+        for current in &p.currents {
+            c.point(&current.pin);
+            c.str(&current.direction);
+        }
     }
     c.0
 }
@@ -1412,6 +1430,7 @@ mod tests {
             usages: Vec::new(),
             nets: Vec::new(),
             orient_lists: Vec::new(),
+            currents: Vec::new(),
             ids: ProblemIds::default(),
         };
         let h = sig2(&p, "tolerance=0.000001");
@@ -1464,6 +1483,7 @@ mod tests {
             usages: Vec::new(),
             nets: vec![net("a", None)],
             orient_lists: Vec::new(),
+            currents: Vec::new(),
             ids: ProblemIds::default(),
         };
         let old = format!("{SIG1}:{}.{}", input_digest_sig1(&p), options_digest("o"));

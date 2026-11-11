@@ -197,6 +197,15 @@ pub fn level(p: &LevelProblem, solver_options: &str) -> Value {
             entry
         }).collect::<Vec<_>>(),
     });
+    if !p.currents.is_empty() {
+        v["currents"] = json!(p
+            .currents
+            .iter()
+            .map(|c| json!({
+                "pin": point(&c.pin), "direction": c.direction,
+            }))
+            .collect::<Vec<_>>());
+    }
     if !p.solver_config.is_empty() {
         v["solver_config"] = serde_json::to_value(rnl_view::solver_settings(p)).unwrap();
     }

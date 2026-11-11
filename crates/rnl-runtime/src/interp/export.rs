@@ -365,6 +365,31 @@ impl Interp<'_> {
             }
         }
 
+        // CURRENT is resolved after symbol-dependent conversions (8.2, 15.2). Read only
+        // effective declarations and use the final direction of each host terminal.
+        let mut currents = Vec::new();
+        if self.follows_0_4(self.level_unit[lv]) {
+            let marked: Vec<ObjId> = self.scenes[s]
+                .currents
+                .iter()
+                .filter(|fact| self.current_fact_active(s, fact, usize::MAX))
+                .filter_map(|fact| fact.terminal)
+                .collect();
+            let mut seen = HashSet::new();
+            for terminal in marked {
+                if !seen.insert(terminal) || !self.has_pin(s, terminal) {
+                    continue;
+                }
+                let direction = self.current_of(s, terminal);
+                if direction == "unspecified" {
+                    continue;
+                }
+                if let Some(pin) = self.point_ref(s, &ix, terminal) {
+                    currents.push(TerminalCurrent { pin, direction });
+                }
+            }
+        }
+
         // the nets (6.3), in the order the netlist first names them: each with the wires that draw
         // it, the ROUTEs that ask for it and its place among the ports of the subcircuit
         let port_keys: Vec<String> =
@@ -527,6 +552,7 @@ impl Interp<'_> {
             facts,
             wires: problem_wires,
             routes,
+            currents,
             groups,
             usages: entries,
             nets,
