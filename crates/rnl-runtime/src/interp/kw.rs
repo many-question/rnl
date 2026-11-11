@@ -22,6 +22,8 @@ struct DefinitionFields {
     params: Vec<(String, Option<Lit>)>,
 }
 
+type DefinitionReference<'a> = (crate::syntax::RefOrHole<'a>, Vec<(char, String)>);
+
 fn graphic_point_count_is_valid(shape: Shape, count: usize) -> bool {
     match shape {
         Shape::Line => count >= 2,
@@ -862,6 +864,65 @@ impl Interp<'_> {
         }
     }
 
+    /// Nested ordinary sets have local names; new definitions own their body placeholders.
+    fn definition_refs<'a>(
+        &self,
+        member: &'a Member,
+        ctx: &Ctx,
+        scope: &[(char, String)],
+        out: &mut Vec<DefinitionReference<'a>>,
+    ) {
+        fn value<'a>(literal: &'a Value, out: &mut Vec<DefinitionReference<'a>>) {
+            match literal {
+                Value::Hole(name) => out.push((crate::syntax::RefOrHole::Hole(name), Vec::new())),
+                Value::Arr(items) => {
+                    for item in items {
+                        value(item, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+        for segment in &member.segments {
+            let owns_body = segment.call.as_ref().is_some_and(|call| {
+                matches!(
+                    self.kw(&call.kw, ctx.unit).as_str(),
+                    "DEFINE" | "DEFINE-SYMBOL" | "DEFINE-STYLE" | "USE-PACKAGE"
+                )
+            });
+            for argument in &segment.args {
+                match &argument.obj {
+                    ObjExpr::Ref(reference) => out.push((crate::syntax::RefOrHole::Ref(reference), scope.to_vec())),
+                    ObjExpr::Point(point) => {
+                        for coordinate in [&point.x, &point.y] {
+                            if let crate::syntax::Coord::Hole(name) = coordinate {
+                                out.push((crate::syntax::RefOrHole::Hole(name), Vec::new()));
+                            }
+                        }
+                    }
+                    ObjExpr::Set(set) if !owns_body => {
+                        let mut nested = scope.to_vec();
+                        for member in &set.members {
+                            nested.extend(member.binds.iter().map(|b| (b.prefix, b.name.clone())));
+                        }
+                        for member in &set.members {
+                            self.definition_refs(member, ctx, &nested, out);
+                        }
+                    }
+                    ObjExpr::Set(_) => {}
+                }
+            }
+            if let Some(params) = segment.call.as_ref().and_then(|call| call.params.as_ref()) {
+                for item in &params.positional {
+                    value(item, out);
+                }
+                for named in &params.named {
+                    value(&named.value, out);
+                }
+            }
+        }
+    }
+
     /// Checks that do not depend on the arguments, once per definition (6.9, M5).
     fn check_definition(&mut self, id: ObjId, ctx: &Ctx) {
         let d = self.def(id).clone();
@@ -910,8 +971,14 @@ impl Interp<'_> {
                 self.check_body_level_symbols(m, ctx);
             }
             let mut refs = Vec::new();
-            crate::syntax::walk_refs(m, &mut refs);
-            for r in refs {
+            if self.follows_0_4(self.source_unit(ctx)) {
+                self.definition_refs(m, ctx, &[], &mut refs);
+            } else {
+                let mut legacy = Vec::new();
+                crate::syntax::walk_refs(m, &mut legacy);
+                refs.extend(legacy.into_iter().map(|reference| (reference, Vec::new())));
+            }
+            for (r, nested_names) in refs {
                 match r {
                     crate::syntax::RefOrHole::Ref(r) => {
                         if r.number.is_some() {
@@ -934,8 +1001,21 @@ impl Interp<'_> {
                         }
                         if r.prefix == '$' || r.prefix == '%' {
                             let n = r.name.clone().unwrap_or_default();
+                            let locally_bound = (r.prefix == '%' && locals.contains(&n))
+                                || nested_names.iter().any(|(prefix, name)| *prefix == r.prefix && name == &n);
+                            if self.follows_0_4(self.source_unit(ctx))
+                                && !locally_bound
+                                && !d.defining.contains_key(&(r.prefix, n.clone()))
+                                && self.lookup_unit(r.prefix, &n, d.def_unit, false, ctx.scene).is_none()
+                            {
+                                if let Err(Stop::Fail(Some(diagnostic))) = self.missing_reference::<()>(r, ctx) {
+                                    self.body_errors.insert(super::eval::ptr(r), diagnostic);
+                                    self.note_failed_at(ctx.rec, r.start, false);
+                                }
+                            }
+
                             if let Some((member, unit)) = d.defining.get(&(r.prefix, n.clone())).cloned() {
-                                if !(r.prefix == '%' && locals.contains(&n)) {
+                                if !locally_bound {
                                     if let super::eval::Found::NoOuter =
                                         self.outer_lookup(r.prefix, &n, &member, unit, ctx.scene)
                                     {
