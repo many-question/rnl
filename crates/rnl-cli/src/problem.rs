@@ -169,7 +169,12 @@ pub fn level(p: &LevelProblem, solver_options: &str) -> Value {
             "style": r.style.iter().map(|(k, v)| (k.clone(), lit(v))).collect::<serde_json::Map<_, _>>(),
             "pins": points(&r.pins), "wires": r.wires,
         })).collect::<Vec<_>>(),
-        "groups": p.groups.iter().map(|g| json!({"label": g.label, "members": g.members})).collect::<Vec<_>>(),
+        "groups": p.groups.iter().map(|g| {
+            let mut group = json!({"label": g.label, "members": g.members});
+            if let Some(value) = g.spacing_x { group["spacing_x"] = json!(value); }
+            if let Some(value) = g.spacing_y { group["spacing_y"] = json!(value); }
+            group
+        }).collect::<Vec<_>>(),
         "usages": p.usages.iter().map(|u| {
             let mut entry = json!({
                 "definition": u.definition,

@@ -255,6 +255,14 @@ export type RuleAt = { package: string, file: string, line: number };
  */
 export type GroupView = {
   /**
+   * Whole grid-unit addition to the solver's default spacing (11.5).
+   */
+  spacing_x?: number,
+  /**
+   * Whole grid-unit addition to the solver's default spacing (11.5).
+   */
+  spacing_y?: number,
+  /**
    * `%core` when a record of the level names it; otherwise where GROUP is written,
    * `@file:line:col`, with `#n` after it when several groups have that place.
    */

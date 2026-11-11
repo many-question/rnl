@@ -612,6 +612,8 @@ impl Interp<'_> {
                 None => UsageOrigin::Written,
             };
             out.push(GroupInfo {
+                spacing_x: g.spacing_x,
+                spacing_y: g.spacing_y,
                 id,
                 members,
                 source,

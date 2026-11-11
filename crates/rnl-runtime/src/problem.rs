@@ -528,6 +528,9 @@ pub struct RouteIntent {
 /// A set given GROUP: treat it as one block (11.5). Groups that PRIORITY turns off are left out.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProblemGroup {
+    /// Optional whole grid-unit additions to the solver's default spacing (11.5).
+    pub spacing_x: Option<f64>,
+    pub spacing_y: Option<f64>,
     pub label: String,
     /// The objects of the problem among its members, nested sets followed down.
     pub members: Vec<usize>,
@@ -1112,6 +1115,13 @@ pub fn canonical_sig1(p: &LevelProblem) -> String {
     for g in &p.groups {
         c.str(&g.label);
         c.indexes(&g.members);
+        // Preserve the canonical text for groups written before spacing was available.
+        for (key, value) in [("spacing_x", g.spacing_x), ("spacing_y", g.spacing_y)] {
+            if let Some(value) = value {
+                c.word(key);
+                c.num(value);
+            }
+        }
     }
     c.word("usages");
     for u in &p.usages {

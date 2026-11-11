@@ -255,3 +255,12 @@ Its point orders belong to one solver unit, with one priority and conflict resul
 The whole table contributes one group when it has at least two cells; rows and
 columns do not contribute groups. Viewer constraints expose the same nested
 `point`/`list` structure, with their TypeScript interface updated together.
+
+
+Draft 0.4 `GROUP` accepts `spacing_x` and `spacing_y` as signed whole grid-unit
+additions to a solver's default spacing (11.5). `ProblemGroup`, `GroupInfo`, the
+constraint document and the model snapshot preserve each optional axis. These
+settings contribute to the input digest and create no geometric facts. The core
+passes them to the solver; its group-tree and layout policy decide how to apply
+them, subordinate to every kept fact. An omitted axis is distinct from an
+explicit zero. Released-language records retain their earlier parameter rules.

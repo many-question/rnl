@@ -674,6 +674,14 @@ export type ConstraintRoute = {
  * A set given GROUP (11.5).
  */
 export type ConstraintGroup = {
+  /**
+   * Whole grid-unit addition to the solver's default spacing (11.5).
+   */
+  spacing_x?: number,
+  /**
+   * Whole grid-unit addition to the solver's default spacing (11.5).
+   */
+  spacing_y?: number,
   label: string,
   /**
    * Indexes in `LevelConstraints.objects`, nested sets followed down.

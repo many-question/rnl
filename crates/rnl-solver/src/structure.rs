@@ -2244,7 +2244,12 @@ pub(crate) mod tests {
     #[test]
     fn groups_nest_and_overlapping_groups_split_in_three() {
         let mut p = problem_of((0..6).map(|_| instance()).collect(), Vec::new());
-        let group = |label: &str, members: Vec<usize>| ProblemGroup { label: label.to_string(), members };
+        let group = |label: &str, members: Vec<usize>| ProblemGroup {
+            label: label.to_string(),
+            members,
+            spacing_x: None,
+            spacing_y: None,
+        };
         p.groups =
             vec![group("%a", vec![0, 1, 2]), group("%b", vec![2, 3]), group("%c", vec![0, 1]), group("%d", vec![4, 5])];
         let s = structure_of(&p);
@@ -2278,7 +2283,12 @@ pub(crate) mod tests {
     #[test]
     fn a_group_that_overlaps_two_others_is_not_nested_and_said_so() {
         let mut p = problem_of((0..5).map(|_| instance()).collect(), Vec::new());
-        let group = |label: &str, members: Vec<usize>| ProblemGroup { label: label.to_string(), members };
+        let group = |label: &str, members: Vec<usize>| ProblemGroup {
+            label: label.to_string(),
+            members,
+            spacing_x: None,
+            spacing_y: None,
+        };
         p.groups = vec![group("%a", vec![0, 1]), group("%b", vec![2, 3]), group("%c", vec![1, 2])];
         let s = structure_of(&p);
         assert_eq!(s.tree.nodes.len(), 3);
@@ -2291,7 +2301,12 @@ pub(crate) mod tests {
         p.groups = groups
             .iter()
             .enumerate()
-            .map(|(i, m)| ProblemGroup { label: format!("%g{i}"), members: m.clone() })
+            .map(|(i, m)| ProblemGroup {
+                label: format!("%g{i}"),
+                members: m.clone(),
+                spacing_x: None,
+                spacing_y: None,
+            })
             .collect();
         let s = structure_of(&p);
         (s.tree, s.notes)
