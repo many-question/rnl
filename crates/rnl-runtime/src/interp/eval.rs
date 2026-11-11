@@ -1048,11 +1048,23 @@ impl<'p> Interp<'p> {
         call_ctx
     }
 
+    /// Only static errors from this exact ordinary-definition node are shared across uses.
+    pub(crate) fn reported_body_error<T>(&self, node: &T, ctx: &Ctx) -> Option<DiagId> {
+        if ctx.frame_kind() == Some(FrameKind::Definition) && self.follows_0_4(self.source_unit(ctx)) {
+            self.body_errors.get(&ptr(node)).copied()
+        } else {
+            None
+        }
+    }
+
     // Keep diagnostic formatting out of the recursive evaluation frame.
     fn check_segment_keyword(&mut self, kw: &str, call: &crate::syntax::Call, ctx: &Ctx) -> R<()> {
         // a keyword is one of the version of the file it is written in (16.1)
         let version = self.version_of(Some(self.source_unit(ctx)));
         if !words().is_keyword_in(kw, &version) {
+            if let Some(diagnostic) = self.reported_body_error(call, ctx) {
+                return Err(Stop::Fail(Some(diagnostic)));
+            }
             let written = call.kw.clone();
             let fu = self.file_unit(ctx.unit);
             let mut known: Vec<String> = words().keywords_in(&version).map(|k| k.name.clone()).collect();
@@ -1182,6 +1194,13 @@ impl<'p> Interp<'p> {
             }
         };
         let v = fr.borrow().param(name).cloned();
+        if v.is_none() && self.follows_0_4(self.source_unit(ctx)) {
+            if let Some(definition) = fr.borrow().definition {
+                if let Some(diagnostic) = self.body_parameter_errors.get(&(definition, name.to_string())) {
+                    return Err(Stop::Fail(Some(*diagnostic)));
+                }
+            }
+        }
         match v {
             Some(v) => Ok(v),
             None => self.fail(ctx, codes::REF_HOLE_COORD_NOT_PARAM, format!("?{name} is not a parameter (6.10)"), off),
@@ -1281,6 +1300,9 @@ impl<'p> Interp<'p> {
     }
 
     pub(crate) fn resolve_ref(&mut self, e: &Ref, ctx: &Ctx) -> R<(ObjId, bool)> {
+        if let Some(diagnostic) = self.reported_body_error(e, ctx) {
+            return Err(Stop::Fail(Some(diagnostic)));
+        }
         let mut sel = false;
         let mut obj;
         if e.prefix == '?' {

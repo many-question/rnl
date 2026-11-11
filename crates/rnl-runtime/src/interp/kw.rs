@@ -746,6 +746,21 @@ impl Interp<'_> {
         Ok((id, false))
     }
 
+    /// A static error remains the cause when the same body node fails during an expansion.
+    fn definition_error<T>(
+        &mut self,
+        node: &T,
+        ctx: &Ctx,
+        code: crate::diag::Code,
+        message: impl Into<String>,
+        off: usize,
+    ) {
+        let diagnostic = self.err(ctx, code, message, off);
+        if self.follows_0_4(self.source_unit(ctx)) {
+            self.body_errors.insert(super::eval::ptr(node), diagnostic);
+        }
+    }
+
     /// Checks that do not depend on the arguments, once per definition (6.9, M5).
     fn check_definition(&mut self, id: ObjId, ctx: &Ctx) {
         let d = self.def(id).clone();
@@ -803,7 +818,7 @@ impl Interp<'_> {
                         if (r.prefix == '#' || r.prefix == '&')
                             && !(self.follows_0_4(self.source_unit(ctx)) && r.is_bare_level())
                         {
-                            self.err(ctx, codes::DEFINE_BODY_HOST_REF, "the body of an ordinary definition cannot reference host objects; they come in through roles (6.9)", r.start);
+                            self.definition_error(r, ctx, codes::DEFINE_BODY_HOST_REF, "the body of an ordinary definition cannot reference host objects; they come in through roles (6.9)", r.start);
                             self.note_failed_at(ctx.rec, r.start, false);
                         }
                         if r.prefix == '$' || r.prefix == '%' {
@@ -825,7 +840,8 @@ impl Interp<'_> {
                             if let Some(n) = &r.name {
                                 if !roles.contains(n) {
                                     if params.contains(n) {
-                                        self.err(
+                                        self.definition_error(
+                                            r,
                                             ctx,
                                             codes::REF_HOLE_PARAM_AS_OBJECT,
                                             format!(
@@ -834,7 +850,8 @@ impl Interp<'_> {
                                             r.start,
                                         );
                                     } else {
-                                        self.err(
+                                        self.definition_error(
+                                            r,
                                             ctx,
                                             codes::REF_HOLE_UNKNOWN,
                                             format!("?{n} is not in the role list or the parameter list (6.10)"),
@@ -847,12 +864,16 @@ impl Interp<'_> {
                     }
                     crate::syntax::RefOrHole::Hole(n) => {
                         if !params.iter().any(|p| p == n) && !roles.iter().any(|p| p == n) {
-                            self.err(
+                            let modern = self.follows_0_4(self.source_unit(ctx));
+                            let diagnostic = self.err(
                                 ctx,
                                 codes::REF_HOLE_NOT_A_PARAM,
                                 format!("?{n} is not in the parameter list (6.10)"),
-                                0,
+                                if modern { m.start } else { 0 },
                             );
+                            if modern {
+                                self.body_parameter_errors.entry((id, n.to_string())).or_insert(diagnostic);
+                            }
                         }
                     }
                 }
@@ -861,14 +882,16 @@ impl Interp<'_> {
                 if let Some(call) = &sg.call {
                     let k = self.kw(&call.kw, ctx.unit);
                     if !words().is_keyword(&k) {
-                        self.err(
+                        self.definition_error(
+                            call,
                             ctx,
                             codes::KEYWORD_UNKNOWN,
                             format!("unknown keyword @{} (16.4)", call.kw),
                             call.start,
                         );
                     } else if k == "PIN" {
-                        self.err(
+                        self.definition_error(
+                            call,
                             ctx,
                             codes::DEFINE_BODY_PIN,
                             "PIN is written only in a DEFINE-SYMBOL body (9.2.4)",
@@ -1641,7 +1664,11 @@ impl Interp<'_> {
 
     fn kw_pin(&mut self, kw: &str, args: &[ArgV], seg: &Segment, ctx: &Ctx) -> R<(ObjId, bool)> {
         if !ctx.in_symbol() {
-            let at = seg.call.as_ref().unwrap().start;
+            let call = seg.call.as_ref().unwrap();
+            if let Some(diagnostic) = self.reported_body_error(call, ctx) {
+                return Err(Stop::Fail(Some(diagnostic)));
+            }
+            let at = call.start;
             return self.fail(
                 ctx,
                 codes::KEYWORD_PIN_OUTSIDE_SYMBOL,
