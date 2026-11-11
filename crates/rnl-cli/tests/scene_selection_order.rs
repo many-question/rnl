@@ -58,7 +58,7 @@ fn forward_references_do_not_reorder_usages() {
 
 #[test]
 fn forward_references_do_not_reorder_wires() {
-    let body = "$S = @DEFINE-STYLE(linecolor=\"#ff0000\"); %later @SET-STYLE $S; %first=&a @WIRE {(0,0) (1,0)}; %later=&b @WIRE {(0,1) (1,1)}; # @SELECT-WIRE => @AS $P";
+    let body = "$S = @DEFINE-STYLE(linecolor=\"#ff0000\") {}; %later @SET-STYLE $S; %first=&a @WIRE {(0,0) (1,0)}; %later=&b @WIRE {(0,1) (1,1)}; # @SELECT-WIRE => @AS $P";
     assert_eq!(labels(&read("0.4", body)), ["%first", "%later"]);
 }
 

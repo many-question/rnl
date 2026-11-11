@@ -17,6 +17,49 @@ use super::Interp;
 
 const MAX_SYMBOL_LEVELS: usize = 64;
 
+struct DefinitionFields {
+    roles: Vec<Role>,
+    params: Vec<(String, Option<Lit>)>,
+}
+
+fn graphic_point_count_is_valid(shape: Shape, count: usize) -> bool {
+    match shape {
+        Shape::Line => count >= 2,
+        Shape::Rectangle | Shape::Circle | Shape::Ellipse => count == 2,
+        Shape::Arc => count == 3,
+        Shape::Bezier => count >= 4 && (count - 1) % 3 == 0,
+        Shape::Text => false,
+    }
+}
+
+/// Only literal, unbound points whose membership cannot be changed by another statement.
+fn definition_point_count(segment: &Segment) -> Option<usize> {
+    fn point(arg: &crate::syntax::Arg) -> bool {
+        arg.role.is_none()
+            && matches!(&arg.obj, ObjExpr::Point(p)
+            if !matches!(p.x, crate::syntax::Coord::Hole(_)) && !matches!(p.y, crate::syntax::Coord::Hole(_)))
+    }
+    if segment.piped {
+        return None;
+    }
+    if segment.args.len() == 1 && segment.args[0].role.is_none() {
+        if let ObjExpr::Set(set) = &segment.args[0].obj {
+            return set
+                .members
+                .iter()
+                .all(|m| {
+                    m.error.is_none()
+                        && m.binds.is_empty()
+                        && m.segments.len() == 1
+                        && m.segments[0].call.is_none()
+                        && m.segments[0].args.iter().all(point)
+                })
+                .then(|| set.members.iter().map(|m| m.segments[0].args.len()).sum());
+        }
+    }
+    segment.args.iter().all(point).then_some(segment.args.len())
+}
+
 /// ORDER, DISTANCE: the one `direction` parameter as (axis, sense) (14.3, 14.5).
 pub fn direction(d: &str) -> Option<(char, &'static str)> {
     Some(match d {
@@ -394,7 +437,7 @@ impl Interp<'_> {
 
     fn body_arg(&mut self, kw: &str, args: &[ArgV], seg: &Segment, ctx: &Ctx) -> R<Option<Rc<SetExpr>>> {
         if seg.args.is_empty() {
-            if !args.is_empty() {
+            if !args.is_empty() || self.follows_0_4(self.source_unit(ctx)) {
                 return self.fail(
                     ctx,
                     codes::DEFINE_BODY_NOT_ONE_SET,
@@ -613,24 +656,11 @@ impl Interp<'_> {
         Ok((sty, false))
     }
 
-    fn kw_define(
-        &mut self,
-        kw: &str,
-        args: &[ArgV],
-        seg: &Segment,
-        ctx: &Ctx,
-        member: &Rc<Member>,
-    ) -> R<(ObjId, bool)> {
-        let key = ("dfn", ptr_seg(seg), self.frame_key(ctx), 0usize);
-        if let Some(&d) = self.node_memo.get(&key) {
-            return Ok((d, false));
-        }
-        let p = self.params(kw, seg, ctx, &self.sig_params(kw, ctx), None, false, None)?;
-        let body = self.body_arg(kw, args, seg, ctx)?;
-        let at = seg.call.as_ref().unwrap().start;
+    /// Parse declaration fields identically during static checking and actual creation.
+    fn definition_fields(&mut self, p: &[(String, Lit)], ctx: &Ctx, at: usize) -> R<DefinitionFields> {
         let mut roles = Vec::new();
         let mut seen: Vec<String> = Vec::new();
-        if let Some(Lit::Arr(rs)) = get(&p, "roles") {
+        if let Some(Lit::Arr(rs)) = get(p, "roles") {
             for r in rs.clone() {
                 let (name, kinds) = match &r {
                     Lit::Str(s) => (s.as_str().to_string(), None),
@@ -700,7 +730,7 @@ impl Interp<'_> {
             }
         }
         let mut params: Vec<(String, Option<Lit>)> = Vec::new();
-        if let Some(Lit::Arr(qs)) = get(&p, "parameters") {
+        if let Some(Lit::Arr(qs)) = get(p, "parameters") {
             for q in qs.clone() {
                 match &q {
                     Lit::Arr(v) if v.len() == 2 && matches!(v[0], Lit::Str(_)) => {
@@ -728,6 +758,25 @@ impl Interp<'_> {
                 seen.push(n);
             }
         }
+        Ok(DefinitionFields { roles, params })
+    }
+
+    fn kw_define(
+        &mut self,
+        kw: &str,
+        args: &[ArgV],
+        seg: &Segment,
+        ctx: &Ctx,
+        member: &Rc<Member>,
+    ) -> R<(ObjId, bool)> {
+        let key = ("dfn", ptr_seg(seg), self.frame_key(ctx), 0usize);
+        if let Some(&d) = self.node_memo.get(&key) {
+            return Ok((d, false));
+        }
+        let p = self.params(kw, seg, ctx, &self.sig_params(kw, ctx), None, false, None)?;
+        let body = self.body_arg(kw, args, seg, ctx)?;
+        let at = seg.call.as_ref().unwrap().start;
+        let DefinitionFields { roles, params } = self.definition_fields(&p, ctx, at)?;
         let defining = self.defining_for(ctx, seg, member);
         let d = DefData {
             roles,
@@ -844,7 +893,7 @@ impl Interp<'_> {
                         self.body_member_errors.entry(super::eval::ptr(&**m)).or_insert(diagnostic);
                     }
                 }
-                if names.contains(&b.name) {
+                if names.contains(&b.name) && !self.follows_0_4(self.source_unit(ctx)) {
                     let diagnostic = self.err(
                         ctx,
                         codes::DEFINE_LOCAL_NAME_TWICE,
@@ -988,14 +1037,192 @@ impl Interp<'_> {
         }
         if self.follows_0_4(self.source_unit(ctx)) {
             for member in &d.body.as_ref().unwrap().members {
-                self.check_definition_parameters(member, ctx);
+                self.check_definition_parameters(member, &d, ctx);
                 self.mark_failed_body_members(id, member, ctx);
+            }
+            self.check_constant_local_bindings(&d, ctx);
+        }
+    }
+
+    /// Constant creations have independent handles even at equal coordinates or members.
+    /// Unknown application-dependent results must be compared when the body is expanded.
+    fn check_constant_local_bindings(&mut self, d: &DefData, ctx: &Ctx) {
+        fn has_parameter(value: &Value) -> bool {
+            match value {
+                Value::Hole(_) => true,
+                Value::Arr(values) => values.iter().any(has_parameter),
+                _ => false,
+            }
+        }
+        // A unique, unconditional alias can be resolved before its written position.
+        // Multiple candidates still need the first-valid-binding walk below.
+        fn unique_alias(
+            it: &Interp<'_>,
+            d: &DefData,
+            name: &str,
+            seen: &mut HashSet<String>,
+        ) -> Option<(usize, bool, bool)> {
+            if !seen.insert(name.to_owned()) {
+                return None;
+            }
+            let mut candidates = d.body.as_ref()?.members.iter().filter(|member| {
+                !it.body_member_errors.contains_key(&super::eval::ptr(&***member))
+                    && member.binds.iter().any(|b| b.prefix == '%' && b.name == name)
+            });
+            let member = candidates.next()?;
+            if candidates.next().is_some() || member.binds.len() != 1 || member.segments.len() != 1 {
+                return None;
+            }
+            let segment = &member.segments[0];
+            if segment.call.is_some() || segment.args.len() != 1 || segment.args[0].role.is_some() {
+                return None;
+            }
+            match &segment.args[0].obj {
+                ObjExpr::Point(p)
+                    if !matches!(p.x, crate::syntax::Coord::Hole(_))
+                        && !matches!(p.y, crate::syntax::Coord::Hole(_)) =>
+                {
+                    Some((super::eval::ptr(p), true, false))
+                }
+                ObjExpr::Set(set) => Some((super::eval::ptr(&**set), false, true)),
+                ObjExpr::Ref(r) if r.prefix == '%' && r.path.is_empty() && r.sub.is_none() && r.places.is_none() => {
+                    unique_alias(it, d, r.name.as_deref()?, seen)
+                }
+                _ => None,
+            }
+        }
+        let mut names: HashMap<String, Option<(usize, bool, bool)>> = HashMap::new();
+        for member in &d.body.as_ref().unwrap().members {
+            let id = super::eval::ptr(&**member);
+            if self.body_member_errors.contains_key(&id) {
+                continue;
+            }
+            let before = names.clone();
+            let mut bindings = Vec::new();
+            let mut fresh = None;
+            let mut point = false;
+            let mut set = false;
+            for (index, segment) in member.segments.iter().enumerate() {
+                if index == 0 && segment.args.len() == 1 && segment.args[0].role.is_none() {
+                    if let ObjExpr::Point(p) = &segment.args[0].obj {
+                        if !matches!(p.x, crate::syntax::Coord::Hole(_))
+                            && !matches!(p.y, crate::syntax::Coord::Hole(_))
+                        {
+                            fresh = Some(super::eval::ptr(p));
+                            point = true;
+                        }
+                    } else if let ObjExpr::Set(s) = &segment.args[0].obj {
+                        fresh = Some(super::eval::ptr(&**s));
+                        set = true;
+                    } else if let ObjExpr::Ref(r) = &segment.args[0].obj {
+                        if r.prefix == '%' && r.path.is_empty() && r.sub.is_none() && r.places.is_none() {
+                            let known = r.name.as_ref().and_then(|name| {
+                                names
+                                    .get(name)
+                                    .copied()
+                                    .unwrap_or_else(|| unique_alias(self, d, name, &mut HashSet::new()))
+                            });
+                            if let Some((handle, is_point, is_set)) = known {
+                                fresh = Some(handle);
+                                point = is_point;
+                                set = is_set;
+                            }
+                        }
+                    }
+                } else if !segment.args.is_empty() {
+                    fresh = None;
+                    point = false;
+                    set = false;
+                }
+                if let Some(call) = &segment.call {
+                    let keyword = self.kw(&call.kw, ctx.unit);
+                    if keyword == "WIRE" || !self.modifier_keeps_input(&keyword, ctx) {
+                        let dynamic = call.params.as_ref().is_some_and(|p| {
+                            p.positional.iter().any(has_parameter) || p.named.iter().any(|n| has_parameter(&n.value))
+                        });
+                        let constant_size = call.params.as_ref().is_some_and(|p| {
+                            let number = |name: &str| {
+                                p.named.iter().any(|n| n.name == name && matches!(n.value, Value::Num { .. }))
+                            };
+                            match keyword.as_str() {
+                                "CIRCLE" => number("radius"),
+                                "RECTANGLE" | "ELLIPSE" => number("width") && number("height"),
+                                _ => false,
+                            }
+                        });
+                        let union = keyword == "UNION" && set;
+                        let text = keyword == "TEXT"
+                            && point
+                            && call.params.as_ref().is_none_or(|p| p.named.iter().all(|n| n.name != "key"));
+                        fresh = fresh
+                            .filter(|_| !dynamic && ((point && constant_size) || union || text))
+                            .map(|_| super::eval::ptr(call));
+                        if call.params.as_ref().is_none_or(|p| p.named.is_empty() && p.positional.is_empty()) {
+                            if let Some(shape) = Shape::parse(&keyword) {
+                                if definition_point_count(segment)
+                                    .is_some_and(|count| graphic_point_count_is_valid(shape, count))
+                                {
+                                    fresh = Some(super::eval::ptr(call));
+                                }
+                            }
+                        }
+                        if !dynamic && !segment.piped && segment.args.len() == 1 && segment.args[0].role.is_none() {
+                            if let ObjExpr::Set(body) = &segment.args[0].obj {
+                                let ordinary = keyword == "DEFINE";
+                                let empty_symbol = keyword == "DEFINE-SYMBOL"
+                                    && body.members.is_empty()
+                                    && call
+                                        .params
+                                        .as_ref()
+                                        .is_none_or(|p| p.named.is_empty() && p.positional.is_empty());
+                                if ordinary || empty_symbol {
+                                    fresh = Some(super::eval::ptr(call));
+                                }
+                            }
+                        }
+                        point = false;
+                        set = union;
+                    }
+                }
+                for (binding_index, b) in
+                    member.binds.iter().enumerate().filter(|(_, b)| b.prefix == '%' && b.after == index)
+                {
+                    let known = fresh.map(|handle| (handle, point, set));
+                    bindings.push((binding_index, b, known));
+                    names.entry(b.name.clone()).or_insert(known);
+                }
+            }
+            // A prefix is written first, although it receives the last segment's value.
+            names = before.clone();
+            bindings.sort_by_key(|(index, _, _)| *index);
+            for (_, b, known) in bindings {
+                match names.get(&b.name) {
+                    Some(Some((old, _, _))) if known.is_some_and(|(new, _, _)| new != *old) => {
+                        let diagnostic = self.err(
+                            ctx,
+                            codes::DEFINE_LOCAL_NAME_TWICE,
+                            format!(
+                                "the local name {} is bound to another object; the first valid binding is kept (6.6)",
+                                b.name
+                            ),
+                            b.off,
+                        );
+                        self.body_member_errors.entry(id).or_insert(diagnostic);
+                    }
+                    None => {
+                        names.insert(b.name.clone(), known);
+                    }
+                    _ => {}
+                }
+            }
+            if self.body_member_errors.contains_key(&id) {
+                names = before;
             }
         }
     }
 
     /// Names, counts and literal parameter values do not depend on an application's objects.
-    fn check_definition_parameters(&mut self, member: &Member, ctx: &Ctx) {
+    fn check_definition_parameters(&mut self, member: &Member, definition: &DefData, ctx: &Ctx) {
         for segment in &member.segments {
             if let Some(call) = &segment.call {
                 let keyword = self.kw(&call.kw, ctx.unit);
@@ -1003,15 +1230,69 @@ impl Interp<'_> {
                     if let Some(signature) = words().keyword(&keyword) {
                         // Application parameters come from the named definition; open signatures
                         // have their own checks. Neither is described by this parameter list.
-                        if !signature.open_params && !matches!(signature.params, ParamsSpec::Definition) {
+                        if matches!(
+                            keyword.as_str(),
+                            "ASSERT-INSTANCE" | "ASSERT-TERMINAL" | "ASSERT-NET" | "ASSERT-USAGE" | "ASSERT-IN"
+                        ) {
+                            if let Err(Stop::Fail(Some(diagnostic))) =
+                                self.check_assertion_at_definition(&keyword, segment, ctx)
+                            {
+                                self.body_errors.insert(super::eval::ptr(call), diagnostic);
+                            }
+                        } else if keyword.starts_with("SELECT-") {
+                            if let Err(Stop::Fail(Some(diagnostic))) =
+                                self.selection_params(&keyword, segment, ctx, true)
+                            {
+                                self.body_errors.insert(super::eval::ptr(call), diagnostic);
+                            }
+                        } else if signature.open_params && keyword == "SOLVER-CONFIG" {
+                            if let Err(Stop::Fail(Some(diagnostic))) =
+                                self.check_solver_config_at_definition(segment, ctx)
+                            {
+                                self.body_errors.insert(super::eval::ptr(call), diagnostic);
+                            }
+                        } else if !signature.open_params && !matches!(signature.params, ParamsSpec::Definition) {
                             let mut spec = self.sig_params(&keyword, ctx);
                             if let Some(style) = &signature.style {
                                 spec.extend(style_specs(style));
                             }
                             let open_style = matches!(signature.params, ParamsSpec::Style);
-                            if let Err(Stop::Fail(Some(diagnostic))) =
-                                self.params_at_definition(&keyword, segment, ctx, &spec, open_style)
-                            {
+                            let checked = self
+                                .params_at_definition(&keyword, segment, ctx, &spec, open_style)
+                                .and_then(|params| {
+                                    if keyword == "DEFINE" {
+                                        self.definition_fields(&params, ctx, call.start)?;
+                                    }
+                                    Ok(())
+                                });
+                            if let Err(Stop::Fail(Some(diagnostic))) = checked {
+                                self.body_errors.insert(super::eval::ptr(call), diagnostic);
+                            }
+                        }
+                        if !self.body_errors.contains_key(&super::eval::ptr(call))
+                            && matches!(keyword.as_str(), "DEFINE" | "DEFINE-SYMBOL" | "DEFINE-STYLE")
+                            && (segment.piped
+                                || segment.args.len() != 1
+                                || !matches!(segment.args[0].obj, ObjExpr::Set(_)))
+                        {
+                            let diagnostic = self.err(
+                                ctx,
+                                codes::DEFINE_BODY_NOT_ONE_SET,
+                                format!("@{keyword} takes one set as its body (9.1)"),
+                                segment.start,
+                            );
+                            self.body_errors.insert(super::eval::ptr(call), diagnostic);
+                        }
+                        if !self.body_errors.contains_key(&super::eval::ptr(call)) {
+                            let checked = match &signature.positions {
+                                crate::words::Positions::List(positions) => {
+                                    self.check_definition_signature(&keyword, segment, definition, ctx, positions)
+                                }
+                                crate::words::Positions::Definition => {
+                                    self.check_definition_application(&keyword, segment, definition, ctx)
+                                }
+                            };
+                            if let Err(Stop::Fail(Some(diagnostic))) = checked {
                                 self.body_errors.insert(super::eval::ptr(call), diagnostic);
                             }
                         }
@@ -1024,11 +1305,347 @@ impl Interp<'_> {
             for argument in &segment.args {
                 if let ObjExpr::Set(set) = &argument.obj {
                     for member in &set.members {
-                        self.check_definition_parameters(member, ctx);
+                        self.check_definition_parameters(member, definition, ctx);
                     }
                 }
             }
         }
+    }
+
+    /// The definition slot of AS/ATTACH is structural, before the definition's roles are known.
+    fn check_definition_application(&mut self, kw: &str, segment: &Segment, definition: &DefData, ctx: &Ctx) -> R<()> {
+        let first = kw == "ATTACH";
+        let where_ = if first { "first" } else { "last" };
+        let argument = if first { segment.args.first() } else { segment.args.last() };
+        let Some(argument) = argument else {
+            return self.fail(
+                ctx,
+                codes::USAGE_DEFINITION_PIPED,
+                format!("the definition of @{kw} is written {where_} and cannot come down a pipe (5.6)"),
+                segment.start,
+            );
+        };
+        if argument.role.is_some() {
+            return self.fail(
+                ctx,
+                codes::USAGE_DEFINITION_HAS_ROLE,
+                format!("the definition of @{kw} is written {where_} and carries no role (4.2 rule 7)"),
+                argument.start,
+            );
+        }
+        let wrong_kind = self
+            .definition_object_kinds(&argument.obj, definition, ctx)
+            .is_some_and(|kinds| !kinds.is_empty() && !kinds.iter().any(|kind| kind == "definition"));
+        if wrong_kind {
+            return self.fail(
+                ctx,
+                codes::USAGE_NOT_A_DEFINITION,
+                format!("the object written {where_} for @{kw} must be an ordinary definition (5.6, 6.9)"),
+                argument.start,
+            );
+        }
+        Ok(())
+    }
+
+    /// Infer only kinds fixed by the written object or a declared role and standard path.
+    /// Custom sub-objects, collection indexing and aliases scoped to usages remain unknown.
+    fn definition_object_kinds(&self, object: &ObjExpr, definition: &DefData, ctx: &Ctx) -> Option<Vec<String>> {
+        let reference = match object {
+            ObjExpr::Point(_) => return Some(vec!["point".into()]),
+            ObjExpr::Ref(reference)
+                if reference.prefix == '?' && reference.sub.is_none() && reference.places.is_none() =>
+            {
+                reference
+            }
+            _ => return None,
+        };
+        let mut kinds = if let Some(name) = &reference.name {
+            let role = definition.roles.iter().find(|role| &role.name == name)?;
+            if role.is_set {
+                return None;
+            }
+            role.kinds.clone()?
+        } else {
+            vec!["usage".into()]
+        };
+        if kinds.is_empty() {
+            return None;
+        }
+        for part in &reference.path {
+            if part.sub.is_some() {
+                return None;
+            }
+            let (allowed, next): (&[&str], &str) = if part.sep == crate::syntax::Sep::Term {
+                (&["instance", "bundle"], "terminal")
+            } else {
+                let name = if words().is_subobject(&part.name) || part.quoted {
+                    part.name.clone()
+                } else if kinds.iter().any(|kind| kind == "usage") {
+                    return None;
+                } else {
+                    self.word(&part.name, ctx.unit)
+                };
+                match name.as_str() {
+                    "net" => (&["terminal", "pin"], "net"),
+                    "position" => (
+                        &["instance", "bundle", "usage", "terminal", "pin", "point", "text", "label", "annotation"],
+                        "point",
+                    ),
+                    _ => return None,
+                }
+            };
+            if !kinds.iter().any(|kind| allowed.contains(&kind.as_str())) {
+                return None;
+            }
+            kinds = vec![next.into()];
+        }
+        Some(kinds)
+    }
+
+    /// Reject a slot only when every declared alternative has an incompatible kind (6.9).
+    /// Unknown local values and application-dependent collection sizes stay deferred.
+    fn check_definition_slot_kind(
+        &mut self,
+        kw: &str,
+        argument: &crate::syntax::Arg,
+        slot: &PositionSpec,
+        definition: &DefData,
+        ctx: &Ctx,
+    ) -> R<()> {
+        let (code, allowed): (_, &[&str]) = match (kw, slot.name.as_str()) {
+            ("PLACE", _) => (
+                codes::PLACE_NOT_TAKEN,
+                &["instance", "bundle", "usage", "point", "position", "text", "label", "annotation"],
+            ),
+            ("ORIENT", _) => (codes::PLACE_ORIENT_NOT_TAKEN, &["instance", "bundle", "usage", "pin"]),
+            ("ADD-TO" | "REMOVE-FROM", "target") => (codes::SET_EDIT_TARGET_NOT_SET, &["set"]),
+            ("ASSERT-IN", "set") => (codes::SET_EDIT_TARGET_NOT_SET, &["set"]),
+            ("ASSERT-INSTANCE", "members") => (codes::ASSERT_MEMBER_WRONG_KIND, &["instance", "bundle"]),
+            ("ASSERT-TERMINAL", "members") => (codes::ASSERT_MEMBER_WRONG_KIND, &["terminal", "pin"]),
+            ("ASSERT-NET", "members") => (codes::ASSERT_MEMBER_WRONG_KIND, &["net", "terminal", "pin"]),
+            ("ASSERT-USAGE", "members") => (codes::ASSERT_MEMBER_WRONG_KIND, &["usage"]),
+            ("ASSERT-USAGE", "definition") => (codes::USAGE_NOT_A_DEFINITION, &["definition"]),
+            ("SELECT-USAGE" | "SELECT-ANCESTOR-USAGE", "definition") => {
+                (codes::SELECT_DEFINITION_NOT_DEFINITION, &["definition"])
+            }
+            ("WIRE", "net") => (codes::WIRE_NET_WRONG_KIND, &["net", "pin", "terminal", "wire"]),
+            ("WIRE", "points") => (codes::WIRE_POINT_WRONG_KIND, &["point", "position", "pin", "terminal"]),
+            ("SET-SYMBOL", "symbol") => (codes::KEYWORD_SET_SYMBOL_NOT_A_SYMBOL, &["symbol"]),
+            ("SET-STYLE", "style") => (codes::STYLE_SET_STYLE_NOT_A_STYLE, &["style"]),
+            ("ALIGN" | "ORDER" | "DISTRIBUTE" | "DISTANCE", _) => (
+                codes::CONSTRAINT_MEMBER_NOT_LOCATABLE,
+                &[
+                    "instance",
+                    "bundle",
+                    "usage",
+                    "point",
+                    "position",
+                    "pin",
+                    "terminal",
+                    "text",
+                    "label",
+                    "annotation",
+                    "graphic",
+                ],
+            ),
+            _ if Shape::parse(kw).is_some_and(|shape| shape != Shape::Text) => {
+                (codes::KEYWORD_GRAPHIC_NOT_POINTS, &["point", "position", "pin", "terminal"])
+            }
+            _ => return Ok(()),
+        };
+        let kinds = match &argument.obj {
+            ObjExpr::Set(set) => {
+                if allowed.contains(&"set") {
+                    return Ok(());
+                }
+                // A plain written set feeds each member to the consuming slot. Calls may
+                // change a member's kind, so those members require separate inference.
+                for member in &set.members {
+                    if member.error.is_none() && member.segments.len() == 1 && member.segments[0].call.is_none() {
+                        for argument in &member.segments[0].args {
+                            self.check_definition_slot_kind(kw, argument, slot, definition, ctx)?;
+                        }
+                    }
+                }
+                return Ok(());
+            }
+            _ => {
+                let Some(kinds) = self.definition_object_kinds(&argument.obj, definition, ctx) else { return Ok(()) };
+                kinds
+            }
+        };
+        if !kinds.is_empty() && !kinds.iter().any(|kind| allowed.contains(&kind.as_str())) {
+            return self.fail(
+                ctx,
+                code,
+                format!("the {} of @{kw} cannot take {} (5.2.4, 6.9)", slot.name, kinds.join("/")),
+                argument.start,
+            );
+        }
+        Ok(())
+    }
+
+    /// Check the written signature where no argument value can change the result (6.9).
+    fn check_definition_signature(
+        &mut self,
+        kw: &str,
+        segment: &Segment,
+        definition: &DefData,
+        ctx: &Ctx,
+        positions: &[PositionSpec],
+    ) -> R<()> {
+        // Optional definitions and application roles need definition lookup first.
+        if let Some(position) = positions.iter().find(|p| matches!(p.takes, Takes::Def(_))) {
+            // An optional definition depends on the last object's kind. Required definitions
+            // always occupy the last written argument, even when their kind is not yet known.
+            if position.optional {
+                // A literal point or a declared scene object cannot be the optional
+                // definition. It remains in the scope/member list, as at application time.
+                let no_definition = segment.args.last().is_none_or(|argument| {
+                    self.definition_object_kinds(&argument.obj, definition, ctx).is_some_and(|kinds| {
+                        !kinds.is_empty()
+                            && kinds.iter().all(|kind| !matches!(kind.as_str(), "definition" | "symbol" | "style"))
+                    })
+                });
+                if no_definition && (!segment.piped || !segment.args.is_empty()) {
+                    let positions: Vec<_> =
+                        positions.iter().filter(|p| !matches!(p.takes, Takes::Def(_))).cloned().collect();
+                    return self.check_definition_signature(kw, segment, definition, ctx, &positions);
+                }
+                return Ok(());
+            }
+            let Some(last) = segment.args.last() else {
+                let (code, message) = if segment.piped {
+                    (codes::KEYWORD_DEFINITION_PIPED,
+                     "a definition cannot come down a pipe: the piped object fills the first position, and the definition is written after it (5.6)".to_string())
+                } else {
+                    (codes::KEYWORD_DEFINITION_MISSING, format!("the definition of @{kw} is written last (5.6)"))
+                };
+                return self.fail(ctx, code, message, segment.start);
+            };
+            if last.role.is_some() {
+                return self.fail(
+                    ctx,
+                    codes::KEYWORD_DEFINITION_HAS_ROLE,
+                    "a definition is written last and carries no role (4.2 rule 7)",
+                    last.start,
+                );
+            }
+            let mut remaining = segment.clone();
+            remaining.args.pop();
+            let positions: Vec<_> = positions.iter().filter(|p| !matches!(p.takes, Takes::Def(_))).cloned().collect();
+            self.check_definition_signature(kw, &remaining, definition, ctx, &positions)?;
+            let count = remaining.args.len() + usize::from(remaining.piped);
+            if positions.len() == 1 && count > 1 {
+                return self.fail(ctx, codes::KEYWORD_SLOT_COUNT_WITH_DEFINITION,
+                    format!("@{kw} has 2 slots, and {} objects are written (5.2.1); the objects of one slot are written in {{…}}", count + 1),
+                    segment.start);
+            }
+            self.check_definition_slot_kind(kw, last, position, definition, ctx)?;
+            return Ok(());
+        }
+        let count = segment.args.len() + usize::from(segment.piped);
+        let labelled = segment.args.iter().filter(|a| a.role.is_some()).count();
+        if labelled > 0 {
+            if labelled != count {
+                return self.fail(
+                    ctx,
+                    codes::ROLE_LABELS_MIXED,
+                    "label the roles of all objects or of none (4.2 rule 6)",
+                    segment.start,
+                );
+            }
+            let mut filled = HashSet::new();
+            for arg in &segment.args {
+                let written = arg.role.as_ref().unwrap();
+                let role = if arg.role_quoted { written.clone() } else { self.word(written, ctx.unit) };
+                if !positions.iter().any(|p| p.name == role) {
+                    let more =
+                        if !arg.role_quoted && !written.is_ascii() { "; is an alias package not loaded?" } else { "" };
+                    return self.fail(
+                        ctx,
+                        codes::KEYWORD_UNKNOWN_POSITION,
+                        format!("@{kw} has no position {written}{more} (5.3)"),
+                        arg.start,
+                    );
+                }
+                if !filled.insert(role) {
+                    return self.fail(
+                        ctx,
+                        codes::KEYWORD_POSITION_LABELLED_TWICE,
+                        "a role is labelled only once (4.2 rule 6)",
+                        arg.start,
+                    );
+                }
+            }
+            for position in positions {
+                if !position.optional && !filled.contains(&position.name) {
+                    return self.fail(
+                        ctx,
+                        codes::KEYWORD_POSITION_NOT_FILLED,
+                        format!("the {} of @{kw} is not filled (5.3)", position.name),
+                        segment.start,
+                    );
+                }
+            }
+        } else if positions.len() == 1 {
+            if count == 0 && !positions[0].optional {
+                return self.fail(
+                    ctx,
+                    codes::KEYWORD_NO_OBJECT,
+                    format!("@{kw} has no object: the signature does not match (5.2.1)"),
+                    segment.start,
+                );
+            }
+        } else {
+            // A sole reference or piped value may be a set which is unpacked. Its count
+            // is not known here; a literal point cannot become a set under substitution.
+            let known_single = segment
+                .args
+                .first()
+                .is_some_and(|arg| self.definition_object_kinds(&arg.obj, definition, ctx).is_some());
+            let fixed_count = count != 1 || (!segment.piped && known_single);
+            if fixed_count && count != positions.len() {
+                let slots = positions.len();
+                let objects = if count == 1 { "1 object is".to_owned() } else { format!("{count} objects are") };
+                let hint = if count > slots { "; the objects of one slot are written in {…}" } else { "" };
+                return self.fail(
+                    ctx,
+                    codes::KEYWORD_SLOT_COUNT,
+                    format!("@{kw} has {slots} slots, and {objects} written (5.2.1){hint}"),
+                    segment.start,
+                );
+            }
+        }
+        for (index, argument) in segment.args.iter().enumerate() {
+            let slot = if let Some(written) = &argument.role {
+                let name = if argument.role_quoted { written.clone() } else { self.word(written, ctx.unit) };
+                positions.iter().find(|slot| slot.name == name)
+            } else if positions.len() == 1 {
+                positions.first()
+            } else if count == positions.len() {
+                positions.get(index + usize::from(segment.piped))
+            } else {
+                None
+            };
+            if let Some(slot) = slot {
+                self.check_definition_slot_kind(kw, argument, slot, definition, ctx)?;
+            }
+        }
+        if segment.call.as_ref().unwrap().params.as_ref().is_none_or(|p| p.named.is_empty() && p.positional.is_empty())
+        {
+            if let Some(shape) = Shape::parse(kw).filter(|shape| *shape != Shape::Text) {
+                if definition_point_count(segment).is_some_and(|count| !graphic_point_count_is_valid(shape, count)) {
+                    return self.fail(
+                        ctx,
+                        codes::KEYWORD_GRAPHIC_POINT_COUNT,
+                        format!("@{kw} has the wrong number of points (9.2.5)"),
+                        segment.start,
+                    );
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Calls in ordinary member sets share the enclosing definition's static checks.
@@ -1672,12 +2289,45 @@ impl Interp<'_> {
             Err(Stop::Language) => return Err(Stop::Language),
         };
         self.tm_memo.insert(key, val);
+        if modern {
+            fr.borrow_mut().evaluated_members.insert(k);
+        }
         let uname = self.objs[usage.0 as usize].name.clone();
-        for b in m.binds.iter().filter(|b| b.prefix == '%') {
-            let binding = bound.iter().find(|(kk, _, _)| kk.0 == '%' && kk.1 == b.name);
+        let mut bindings: Vec<_> = m.binds.iter().enumerate().filter(|(_, b)| b.prefix == '%').collect();
+        if modern {
+            bindings.sort_by_key(|(index, b)| (b.after, *index));
+        }
+        let mut occurrences: HashMap<String, usize> = HashMap::new();
+        for (binding_index, b) in bindings {
+            let occurrence = occurrences.entry(b.name.clone()).or_default();
+            let binding = bound.iter().filter(|(kk, _, _)| kk.0 == '%' && kk.1 == b.name).nth(if modern {
+                *occurrence
+            } else {
+                0
+            });
+            *occurrence += 1;
             let v = binding.map(|(_, v, _)| *v).unwrap_or(val);
-            if modern && self.is_failed(v) && fr.borrow().local(&b.name).is_some_and(|old| !self.is_failed(old)) {
-                continue;
+            if modern {
+                let valid = !self.is_failed(v);
+                let old = {
+                    let frame = fr.borrow();
+                    frame.local(&b.name).zip(frame.local_bindings.get(&b.name).copied())
+                };
+                if let Some((old_value, (old_member, old_binding, old_valid))) = old {
+                    let old_first = (old_member, old_binding) <= (k, binding_index);
+                    if old_valid && valid && old_value != v {
+                        let duplicate = if old_first { (k, binding_index) } else { (old_member, old_binding) };
+                        if fr.borrow_mut().local_binding_errors.insert(duplicate) {
+                            let off = d.body.as_ref().unwrap().members[duplicate.0].binds[duplicate.1].off;
+                            self.err(&sub, codes::DEFINE_LOCAL_NAME_TWICE,
+                                format!("the local name {} is already bound to another object; the first valid binding is kept (6.6)", b.name),off);
+                        }
+                    }
+                    if (old_valid && (!valid || old_first)) || (!old_valid && !valid && old_first) {
+                        continue;
+                    }
+                }
+                fr.borrow_mut().local_bindings.insert(b.name.clone(), (k, binding_index, valid));
             }
             fr.borrow_mut().set_local(&b.name, v);
             if let Some((_, _, dependencies)) = binding {
@@ -2092,13 +2742,7 @@ impl Interp<'_> {
             return Ok((self.make_prim(shape, points, params, style, ctx, seg, None)?, false));
         }
         let n = pts.len();
-        let ok = match shape {
-            Shape::Line => n >= 2,
-            Shape::Rectangle | Shape::Circle | Shape::Ellipse => n == 2,
-            Shape::Arc => n == 3,
-            Shape::Bezier => n >= 4 && (n - 1) % 3 == 0,
-            Shape::Text => false,
-        };
+        let ok = graphic_point_count_is_valid(shape, n);
         if !ok {
             return self.fail(
                 ctx,
@@ -2771,8 +3415,7 @@ impl Interp<'_> {
 
     // ------------------------------------------------------------------ selections (10.1)
 
-    fn kw_select(&mut self, kw: &str, args: &[ArgV], seg: &Segment, ctx: &Ctx) -> R<(ObjId, bool)> {
-        let mapped = self.map_args(kw, args, seg, ctx, sig_positions(kw))?;
+    fn selection_params(&mut self, kw: &str, seg: &Segment, ctx: &Ctx, at_definition: bool) -> R<Vec<(String, Lit)>> {
         let call = seg.call.as_ref().unwrap();
         if call.params.as_ref().is_some_and(|p| !p.positional.is_empty()) {
             return self.fail(
@@ -2782,7 +3425,12 @@ impl Interp<'_> {
                 call.start,
             );
         }
-        let p = self.params(kw, seg, ctx, &self.sig_params(kw, ctx), None, false, None)?;
+        let spec = self.sig_params(kw, ctx);
+        let p = if at_definition {
+            self.params_at_definition(kw, seg, ctx, &spec, false)?
+        } else {
+            self.params(kw, seg, ctx, &spec, None, false, None)?
+        };
         if let Some(n) = get(&p, "terminals").and_then(Lit::num) {
             if n < 0.0 || n.fract() != 0.0 {
                 return self.fail(
@@ -2793,6 +3441,13 @@ impl Interp<'_> {
                 );
             }
         }
+        Ok(p)
+    }
+
+    fn kw_select(&mut self, kw: &str, args: &[ArgV], seg: &Segment, ctx: &Ctx) -> R<(ObjId, bool)> {
+        let mapped = self.map_args(kw, args, seg, ctx, sig_positions(kw))?;
+        let call = seg.call.as_ref().unwrap();
+        let p = self.selection_params(kw, seg, ctx, false)?;
         let scope = mapped["scope"].obj;
         let mut dfn = mapped.get("definition").map(|a| a.obj);
         if (kw == "SELECT-USAGE" && dfn.is_some()) || kw == "SELECT-ANCESTOR-USAGE" {

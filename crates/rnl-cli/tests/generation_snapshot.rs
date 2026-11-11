@@ -44,7 +44,7 @@ fn explicit_body_graphics_stay_in_the_snapshot() {
 
 #[test]
 fn later_styles_see_the_generated_graphics() {
-    let body = format!("{DEFINITION}; $Red = @DEFINE-STYLE(linecolor=\"#ff0000\"); # @SELECT-INSTANCE => @AS $D; # @SELECT-USAGE $D => @PLACE(0,0); # @SELECT-ANNOTATION => @SET-STYLE $Red");
+    let body = format!("{DEFINITION}; $Red = @DEFINE-STYLE(linecolor=\"#ff0000\") {{}}; # @SELECT-INSTANCE => @AS $D; # @SELECT-USAGE $D => @PLACE(0,0); # @SELECT-ANNOTATION => @SET-STYLE $Red");
     let result = read("0.4", &body);
     assert_eq!(result.model.levels[0].shapes.len(), 1);
     assert_eq!(result.model.levels[0].shapes[0].style["linecolor"].str(), Some("#ff0000"));

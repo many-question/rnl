@@ -190,6 +190,11 @@ impl Interp<'_> {
                         .collect();
                     frame.locals.retain(|(name, _)| !names.contains(name));
                     frame.local_dependencies.retain(|name, _| !names.contains(name));
+                    frame.local_bindings.retain(|name, _| !names.contains(name));
+                    frame.local_binding_errors.clear();
+                    for binding in self.body_rules.rules.iter().filter(|r| r.usage == rule.usage) {
+                        frame.evaluated_members.remove(&binding.index);
+                    }
                     let frame = Rc::new(RefCell::new(frame));
                     self.body_rules.frames.insert(key, frame.clone());
                     frame

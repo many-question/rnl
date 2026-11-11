@@ -31,7 +31,7 @@ fn sized_shapes_are_made_once_per_pin_and_the_result_accepts_style() {
         ("RECTANGLE(width=2,height=3)", Shape::Rectangle),
         ("ELLIPSE(width=2,height=3)", Shape::Ellipse),
     ] {
-        let r=read("0.4",&format!("$Red = @DEFINE-STYLE(linecolor=\"#ff0000\"); %drawn = #R1 @SELECT-PIN => @{call}; %drawn @SET-STYLE $Red"));
+        let r=read("0.4",&format!("$Red = @DEFINE-STYLE(linecolor=\"#ff0000\") {{}}; %drawn = #R1 @SELECT-PIN => @{call}; %drawn @SET-STYLE $Red"));
         ok(&r);
         let shapes = &r.model.levels[0].shapes;
         assert_eq!(shapes.len(), 2);
@@ -77,7 +77,7 @@ fn two_point_closed_shapes_still_reject_selections() {
 fn generation_does_not_see_generated_graphics_but_late_styles_do() {
     let r = read(
         "0.4",
-        r##"$D = @DEFINE(roles=["x"]) {}; $Red = @DEFINE-STYLE(linecolor="#ff0000"); #R1 @SELECT-PIN => @CIRCLE(radius=1); #R1 @SELECT-PIN => @CIRCLE(radius=1); # @SELECT-ANNOTATION => @AS $D; # @SELECT-ANNOTATION => @SET-STYLE $Red"##,
+        r##"$D = @DEFINE(roles=["x"]) {}; $Red = @DEFINE-STYLE(linecolor="#ff0000") {}; #R1 @SELECT-PIN => @CIRCLE(radius=1); #R1 @SELECT-PIN => @CIRCLE(radius=1); # @SELECT-ANNOTATION => @AS $D; # @SELECT-ANNOTATION => @SET-STYLE $Red"##,
     );
     ok(&r);
     assert_eq!(r.model.levels[0].shapes.len(), 4);
@@ -140,7 +140,7 @@ R2 p q 1k
 .ends child
 R1 a b 1k
 X1 a b child
-* @RNL {{ $S = @DEFINE-SYMBOL {{ (0,0) @PIN(terminal=1) }}; $Red = @DEFINE-STYLE(linecolor="#ff0000"); # @SELECT-INSTANCE(name="R*",recursive=true) => @SET-SYMBOL $S => @PLACE(0,0); %circles = # @SELECT-INSTANCE(name="R*",recursive={recursive}) => @SELECT-PIN => @CIRCLE(radius=1); %circles @SET-STYLE $Red }}
+* @RNL {{ $S = @DEFINE-SYMBOL {{ (0,0) @PIN(terminal=1) }}; $Red = @DEFINE-STYLE(linecolor="#ff0000") {{}}; # @SELECT-INSTANCE(name="R*",recursive=true) => @SET-SYMBOL $S => @PLACE(0,0); %circles = # @SELECT-INSTANCE(name="R*",recursive={recursive}) => @SELECT-PIN => @CIRCLE(radius=1); %circles @SET-STYLE $Red }}
 .end
 "##
         );
