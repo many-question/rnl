@@ -1563,7 +1563,7 @@ impl Interp<'_> {
             None => (None, HashSet::new()),
         };
         let mut selected = match keyword.as_str() {
-            "SELECT-PIN" => self.select_pins(s, pool, &via, &params, snapshot),
+            "SELECT-PIN" => self.select_pins(s, pool, &via, &params, snapshot, writer),
             "SELECT-INSTANCE" => {
                 let cands = match &pool {
                     None => self.inst_like(s),
@@ -1606,7 +1606,9 @@ impl Interp<'_> {
                 };
                 let out: Vec<ObjId> = cands
                     .into_iter()
-                    .filter(|o| self.inst_match(*o, &params, false) && self.selection_symbol_matches(s, *o, &params))
+                    .filter(|o| {
+                        self.inst_match(*o, &params, false, writer) && self.selection_symbol_matches(s, *o, &params)
+                    })
                     .collect();
                 dedup(out)
             }
@@ -1654,7 +1656,7 @@ impl Interp<'_> {
                 let mut out = Vec::new();
                 for t in terms {
                     let ObjData::Term { owner, index, name } = self.o(t).clone() else { continue };
-                    if !self.inst_match(owner, &params, true) {
+                    if !self.inst_match(owner, &params, true, writer) {
                         continue;
                     }
                     if let Some(pv) = params.get("terminal") {
@@ -2136,7 +2138,7 @@ impl Interp<'_> {
         self.bundle_field(o).unwrap_or(o)
     }
 
-    pub(super) fn inst_match(&self, o: ObjId, p: &BTreeMap<String, Lit>, owner_only: bool) -> bool {
+    pub(super) fn inst_match(&self, o: ObjId, p: &BTreeMap<String, Lit>, owner_only: bool, writer: UnitId) -> bool {
         let o = match self.o(o) {
             ObjData::Bundle { members, .. } => members[0],
             _ => o,
@@ -2163,7 +2165,7 @@ impl Interp<'_> {
             }
         }
         if let Some(t) = p.get("type").and_then(Lit::str) {
-            if self.instance_type(o).unwrap_or("") != t.to_lowercase() {
+            if !self.instance_type_matches(o, t, writer) {
                 return false;
             }
         }

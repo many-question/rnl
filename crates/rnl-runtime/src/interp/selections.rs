@@ -315,6 +315,7 @@ impl Interp<'_> {
         via: &HashSet<ObjId>,
         params: &BTreeMap<String, Lit>,
         snapshot: bool,
+        writer: UnitId,
     ) -> Vec<ObjId> {
         let mut all = Vec::new();
         for owner in self.selection_drawables(scene, snapshot, true) {
@@ -358,7 +359,7 @@ impl Interp<'_> {
                     return false;
                 }
                 let ObjData::ScenePin { owner, index } = *self.o(*pin) else { return false };
-                if !self.object_drawn(scene, owner) || !self.inst_match(owner, params, true) {
+                if !self.object_drawn(scene, owner) || !self.inst_match(owner, params, true, writer) {
                     return false;
                 }
                 if let Some(want) = params.get("terminal") {

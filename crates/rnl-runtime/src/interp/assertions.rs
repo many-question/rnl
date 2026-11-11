@@ -318,7 +318,8 @@ impl Interp<'_> {
     }
 
     /// How a member fails a condition, if it does: what it has instead.
-    fn condition_fails(&mut self, s: SceneId, kw: &str, m: ObjId, cond: &str, v: &Lit) -> Option<String> {
+    fn condition_fails(&mut self, s: SceneId, a: &Assertion, m: ObjId, cond: &str, v: &Lit) -> Option<String> {
+        let kw = a.kw.as_str();
         let lv = self.scenes[s].level;
         match kw {
             "ASSERT-INSTANCE" | "ASSERT-TERMINAL" if matches!(cond, "name" | "model" | "type") => {
@@ -338,7 +339,7 @@ impl Interp<'_> {
                     "model" => (inst.model.clone(), inst.model.as_deref().is_some_and(|x| glob(want, x, cs))),
                     _ => (
                         self.instance_type(i).map(str::to_string),
-                        self.instance_type(i).unwrap_or("") == want.to_lowercase(),
+                        self.instance_type_matches(i, want, self.source_unit(&a.site)),
                     ),
                 };
                 let of = if kw == "ASSERT-TERMINAL" { "is a terminal of a device with" } else { "has" };
@@ -698,7 +699,7 @@ impl Interp<'_> {
         for (cond, v) in &a.conds {
             let mut bad = Vec::new();
             for &m in &members {
-                if let Some(has) = self.condition_fails(s, kw, m, cond, v) {
+                if let Some(has) = self.condition_fails(s, a, m, cond, v) {
                     bad.push(format!("{} {has}", self.label(m)));
                 }
             }
