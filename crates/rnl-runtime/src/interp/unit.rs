@@ -539,12 +539,32 @@ pub(crate) fn params_by_name(
     params_by_name_in(kw, p, std_form, word, DEFAULT_VERSION)
 }
 
-fn params_by_name_in(
+pub(super) fn params_by_name_in(
     kw: &str,
     p: Option<&Params>,
     std_form: bool,
     word: impl Fn(&str) -> String,
     version: &str,
+) -> Result<HashMap<String, Value>, (Code, String)> {
+    params_by_name_mode(kw, p, std_form, word, version, false)
+}
+
+/// Declaration headers in a body can receive arrays from enclosing parameters.
+pub(super) fn definition_header_params(
+    p: Option<&Params>,
+    word: impl Fn(&str) -> String,
+    version: &str,
+) -> Result<HashMap<String, Value>, (Code, String)> {
+    params_by_name_mode("DEFINE", p, false, word, version, true)
+}
+
+fn params_by_name_mode(
+    kw: &str,
+    p: Option<&Params>,
+    std_form: bool,
+    word: impl Fn(&str) -> String,
+    version: &str,
+    deferred: bool,
 ) -> Result<HashMap<String, Value>, (Code, String)> {
     let spec = words().keyword(kw).unwrap();
     let params = spec.params_in(version);
@@ -605,6 +625,9 @@ fn params_by_name_in(
             return Err((codes::PARAM_MISSING_REQUIRED, format!("@{kw} lacks the parameter {} (5.3)", q.name)));
         }
         if let Some(value) = out.get(&q.name) {
+            if deferred && matches!(value, Value::Hole(_)) {
+                continue;
+            }
             let valid = match q.ty {
                 ParamType::String => matches!(value, Value::Str(_)),
                 ParamType::Array => matches!(value, Value::Arr(_)),
