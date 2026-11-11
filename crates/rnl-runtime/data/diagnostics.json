@@ -1525,6 +1525,15 @@
    ]
   },
   {
+   "number": "RNL2802",
+   "name": "name-empty-node",
+   "severity": "error",
+   "message": "the empty node has no object handle and cannot be bound to a name (6.3)",
+   "sections": [
+    "6.3"
+   ]
+  },
+  {
    "number": "RNL3000",
    "name": "keyword-alias-original-not-standard",
    "severity": "error",
@@ -2870,6 +2879,16 @@
    "message": "@ASSERT-TOPOLOGY takes instances, bundles, usages and sets, and {members} {is|are} not: the assertion is not checked (15.4)",
    "sections": [
     "15.4"
+   ]
+  },
+  {
+   "number": "RNL3312",
+   "name": "empty-node-ignored",
+   "severity": "warning",
+   "message": "the empty node written directly counts as an empty set here (6.3)",
+   "sections": [
+    "6.3",
+    "5.2.1"
    ]
   },
   {

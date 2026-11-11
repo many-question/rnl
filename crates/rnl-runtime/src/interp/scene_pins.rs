@@ -62,6 +62,53 @@ impl Interp<'_> {
             .collect()
     }
 
+    /// A role filled with no net is distinct from a pin with no binding at all (6.3, 12.1).
+    pub(crate) fn scene_pin_has_empty_node(&self, scene: SceneId, owner: ObjId, index: usize) -> bool {
+        self.pin_empty_node_inner(scene, owner, index, &mut std::collections::HashSet::new())
+    }
+
+    fn pin_empty_node_inner(
+        &self,
+        scene: SceneId,
+        owner: ObjId,
+        index: usize,
+        visiting: &mut std::collections::HashSet<(ObjId, usize)>,
+    ) -> bool {
+        if !visiting.insert((owner, index)) {
+            return false;
+        }
+        let result = (|| {
+            let ObjData::Usage(usage) = self.o(owner) else { return false };
+            let Some(symbol) = self.scenes[scene].symbol.get(&owner) else { return false };
+            let Some(pin) = self.symbol(*symbol).pins.get(index) else { return false };
+            pin.terms.iter().any(|binding| match binding {
+                TermKey::Name(name) => {
+                    usage.role(name).is_some_and(|role| self.member_empty_node(scene, role, visiting))
+                }
+                _ => false,
+            })
+        })();
+        visiting.remove(&(owner, index));
+        result
+    }
+
+    fn member_empty_node(
+        &self,
+        scene: SceneId,
+        object: ObjId,
+        visiting: &mut std::collections::HashSet<(ObjId, usize)>,
+    ) -> bool {
+        let object = self.scene_value(object);
+        match self.o(object) {
+            ObjData::EmptyNode { .. } => true,
+            ObjData::NamedSubobject { parent, name, .. } if name == "net" => {
+                self.member_empty_node(scene, *parent, visiting)
+            }
+            ObjData::ScenePin { owner, index } => self.pin_empty_node_inner(scene, *owner, *index, visiting),
+            _ => false,
+        }
+    }
+
     pub(crate) fn scene_pin_nets(&mut self, scene: SceneId, owner: ObjId, index: usize) -> Vec<ObjId> {
         self.scene_pin_nets_inner(scene, owner, index, &mut std::collections::HashSet::new())
     }
@@ -254,6 +301,9 @@ impl Interp<'_> {
         phase: usize,
         site: Option<&Ctx>,
     ) -> Vec<InputMember> {
+        if self.is_empty_node(object) {
+            return Vec::new();
+        }
         if !self.is_set(object) && !self.is_set(self.scene_value(object)) {
             return vec![InputMember::plain(object)];
         }
@@ -352,7 +402,9 @@ impl Interp<'_> {
         }
         let mut resolved = Vec::new();
         let mut is_bus = bus;
+        let mut empty_node = false;
         for net in nets {
+            empty_node |= self.is_empty_node(net);
             is_bus |= self.is_set(self.scene_value(net));
             for member in self.scene_input_members(scene, net, Some(&site)) {
                 let source = self.scene_value(member.object);
@@ -365,6 +417,7 @@ impl Interp<'_> {
                     }
                 };
                 let failure = self.failed_obj(member.object);
+                empty_node |= self.is_empty_node(value);
                 is_bus |= self.is_set(value);
                 let values = self.scene_input_members(scene, value, Some(&site));
                 if failure.is_some() || values.iter().any(|v| !matches!(self.o(v.object), ObjData::Net { .. })) {
@@ -382,7 +435,7 @@ impl Interp<'_> {
                 resolved.extend(values.into_iter().map(|v| self.scene_value(v.object)));
             }
         }
-        if resolved.is_empty() {
+        if resolved.is_empty() && (!empty_node || is_bus) {
             let diagnostic =
                 self.err(&site, codes::WIRE_NET_EMPTY_SET, "the net of a wire is an empty set (13.1)", off);
             self.late_failures.insert(wire, diagnostic);
@@ -719,7 +772,8 @@ impl Interp<'_> {
             let ObjData::ScenePin { owner, index } = *self.o(self.scene_value(parent)) else { continue };
             let nets = self.scene_pin_nets(scene, owner, index);
             let value = if nets.is_empty() {
-                None
+                self.scene_pin_has_empty_node(scene, owner, index)
+                    .then(|| self.new_obj(ObjData::EmptyNode { direct: false }))
             } else if nets.iter().all(|net| *net == nets[0]) && !self.scene_pin_is_bus(scene, owner, index) {
                 Some(nets[0])
             } else {

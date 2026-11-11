@@ -952,7 +952,7 @@ impl Parser {
             }
             Some(c) if is_ascii_word(c) => name = self.ascii_name(),
             Some('#') if prefix == '%' && self.numbers => number = Some(self.object_number()?),
-            _ if prefix == '#' || prefix == '?' => {}
+            _ if prefix == '#' || prefix == '?' || (prefix == '&' && self.member_places) => {}
             _ => return self.err(codes::SYNTAX_NAME_MISSING_AFTER_PREFIX, format!("write a name after `{prefix}`")),
         }
         if name.is_some() && self.peek_in("<[") {

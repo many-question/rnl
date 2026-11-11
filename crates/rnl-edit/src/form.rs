@@ -293,6 +293,16 @@ pub fn statements(op: &Op, style: Option<&str>) -> Vec<String> {
 /// Statements with the junction definition resolved by the caller in the target level (13.2).
 /// None writes points without dots. Use this entry for draft 0.4.
 pub fn statements_with_junction(op: &Op, style: Option<&str>, definition: Option<&str>) -> Vec<String> {
+    statements_for_language(op, style, definition, false)
+}
+
+/// The modern writer can express a wire on no net with the empty node (6.3, 13.1).
+pub(crate) fn statements_for_language(
+    op: &Op,
+    style: Option<&str>,
+    definition: Option<&str>,
+    modern: bool,
+) -> Vec<String> {
     match op {
         Op::Set { object, symbol, at, orient, .. } => {
             let mut facts: Vec<String> = symbol.iter().map(|s| format!("@SET-SYMBOL {s}")).collect();
@@ -340,6 +350,7 @@ pub fn statements_with_junction(op: &Op, style: Option<&str>, definition: Option
                 .collect();
             // several nets are one set, which the net slot takes whole: a bus (5.2.1, 13.1)
             let nets = match nets.as_slice() {
+                [] if modern => "&".into(),
                 [one] => one.clone(),
                 _ => format!("{{{}}}", nets.join(" ")),
             };

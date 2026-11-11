@@ -207,6 +207,11 @@ impl Interp<'_> {
                     ObjData::Bundle { members, .. } => {
                         Ok(members.iter().map(|m| self.inst_of(*m).name.clone()).collect::<Vec<_>>().join(","))
                     }
+                    ObjData::EmptyNode { .. } => Ok(String::new()),
+                    ObjData::ScenePin { owner, index } => {
+                        let nets = self.scene_pin_nets(s, owner, index);
+                        Ok(nets.iter().map(|n| self.net_display(*n)).collect::<Vec<_>>().join(","))
+                    }
                     ObjData::Net { display, .. } => Ok(display),
                     ObjData::Term { .. } => {
                         let nets = self.term_nets(s, o);

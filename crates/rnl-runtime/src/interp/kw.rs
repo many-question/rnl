@@ -877,7 +877,8 @@ impl Interp<'_> {
                             self.note_failed_at(ctx.rec, r.start, false);
                         }
                         if (r.prefix == '#' || r.prefix == '&')
-                            && !(self.follows_0_4(self.source_unit(ctx)) && r.is_bare_level())
+                            && !(self.follows_0_4(self.source_unit(ctx))
+                                && (r.is_bare_level() || (r.prefix == '&' && r.name.is_none())))
                         {
                             self.definition_error(r, ctx, codes::DEFINE_BODY_HOST_REF, "the body of an ordinary definition cannot reference host objects; they come in through roles (6.9)", r.start);
                             self.note_failed_at(ctx.rec, r.start, false);
@@ -1431,6 +1432,17 @@ impl Interp<'_> {
             };
             if r.is_set {
                 rsets.push(r.name.clone());
+                if self.is_empty_node(obj) {
+                    if matches!(self.o(obj), ObjData::EmptyNode { direct: true }) {
+                        self.warn(
+                            ctx,
+                            codes::EMPTY_NODE_IGNORED,
+                            "the empty node written directly fills a set role with no members (6.3, 9.4)",
+                            app.seg_start,
+                        );
+                    }
+                    obj = self.new_obj(ObjData::Set(Box::new(SetData::plain(Vec::new(), true))));
+                }
                 if !self.is_set(obj) {
                     obj = self.new_obj(ObjData::Set(Box::new(SetData::plain(vec![(obj, true)], true))));
                 }
@@ -1505,6 +1517,20 @@ impl Interp<'_> {
         ctx: &Ctx,
         off: usize,
     ) -> R<()> {
+        if self.is_empty_node(obj) {
+            if kinds.as_ref().is_some_and(|kinds| kinds.iter().any(|kind| kind == "net")) {
+                return Ok(());
+            }
+            return self.fail(
+                ctx,
+                codes::USAGE_ROLE_WRONG_KIND,
+                format!(
+                    "the role {role} of {} does not declare net; it cannot take the empty node (6.3, 9.4)",
+                    self.label(dfn)
+                ),
+                off,
+            );
+        }
         let Some(kinds) = kinds else { return Ok(()) };
         if self.role_inputs.get(&obj).is_some_and(|view| view.resolved.is_none()) {
             return Ok(());
@@ -2850,7 +2876,7 @@ impl Interp<'_> {
         // that one (its 13.1). In 0.2 a wire there is of the wrong kind, as a set that holds one is
         // in both
         let rewrite = matches!(self.o(nets_a.obj), ObjData::Wire { .. }) && self.statement_follows_0_3(ctx);
-        let (mut nets, mut bus) = if rewrite {
+        let (mut nets, mut bus) = if rewrite || self.is_empty_node(nets_a.obj) {
             (Vec::new(), false)
         } else if self.is_set(nets_a.obj) {
             let nets = self.flatten_inputs(s, nets_a.obj, 3, Some(ctx));

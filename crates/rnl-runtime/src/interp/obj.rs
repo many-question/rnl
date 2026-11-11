@@ -640,6 +640,10 @@ impl SetData {
 pub enum ObjData {
     Failed(Option<DiagId>),
     Marker,
+    /// An internal no-network value, never exported as an object or admitted to a set.
+    EmptyNode {
+        direct: bool,
+    },
     LevelObj {
         scene: SceneId,
     },

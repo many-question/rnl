@@ -315,6 +315,9 @@ impl Interp<'_> {
         scene: Option<SceneId>,
         busy: &mut HashSet<ObjId>,
     ) -> Vec<InputMember> {
+        if self.is_empty_node(obj) {
+            return Vec::new();
+        }
         if obj == LEVEL {
             return vec![InputMember::plain(scene.map_or(LEVEL, |s| self.scenes[s].levelobj))];
         }
@@ -341,7 +344,7 @@ impl Interp<'_> {
             _ => {
                 let mut out = Vec::new();
                 for (index, &(o, spread)) in set.items.iter().enumerate() {
-                    if self.is_failed(o) && !self.late_input(o) {
+                    if self.is_empty_node(o) || (self.is_failed(o) && !self.late_input(o)) {
                         continue;
                     }
                     let dependencies = set.item_dependencies.get(index).cloned().unwrap_or_default();
