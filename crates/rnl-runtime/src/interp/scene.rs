@@ -247,6 +247,9 @@ pub struct Scene {
 /// first (14.8), with the context of its statement and where GROUP is in it.
 #[derive(Clone, Debug)]
 pub struct GroupFact {
+    /// Optional whole grid-unit additions to the solver's default spacing (11.5).
+    pub spacing_x: Option<f64>,
+    pub spacing_y: Option<f64>,
     /// A TABLE contributes one group, governed by its constraint handle.
     pub table: Option<ObjId>,
     pub pos: Pos,

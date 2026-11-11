@@ -489,6 +489,9 @@ pub enum UsageOrigin {
 /// another when its members are among the other's.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GroupInfo {
+    /// Optional whole grid-unit additions to the solver's default spacing (11.5).
+    pub spacing_x: Option<f64>,
+    pub spacing_y: Option<f64>,
     /// `%core` when a record of the level names the set; otherwise where GROUP is written,
     /// `@file:line:col`, with `#n` after it when several groups have that place, as each expansion
     /// of a definition makes its own.

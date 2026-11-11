@@ -224,6 +224,16 @@ pub struct ConstraintRoute {
 #[derive(Serialize, Debug, Clone, PartialEq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ConstraintGroup {
+    /// Whole grid-unit addition to the solver's default spacing (11.5).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub spacing_x: Option<f64>,
+
+    /// Whole grid-unit addition to the solver's default spacing (11.5).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub spacing_y: Option<f64>,
+
     pub label: String,
     /// Indexes in `LevelConstraints.objects`, nested sets followed down.
     pub members: Vec<usize>,
@@ -407,7 +417,12 @@ pub(crate) fn level_constraints(
         groups: p
             .groups
             .iter()
-            .map(|g| ConstraintGroup { label: g.label.clone(), members: g.members.clone() })
+            .map(|g| ConstraintGroup {
+                label: g.label.clone(),
+                members: g.members.clone(),
+                spacing_x: g.spacing_x,
+                spacing_y: g.spacing_y,
+            })
             .collect(),
     }
 }

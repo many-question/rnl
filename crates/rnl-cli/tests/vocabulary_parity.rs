@@ -35,8 +35,6 @@ const PENDING_0_4: &[&str] = &[
     "UNROUTE-NET",
     "UNROUTE-OBJECT",
     "removed",
-    // groups and tables (11.5, 14.11)
-    "GROUP",
     // the settings of the solver (5.9)
     "SOLVER-CONFIG",
     // gathered from the keywords compared, so whole only when none of them is pending
@@ -102,9 +100,9 @@ fn number_normalized(value: &Value) -> Value {
 fn parameter(actual: &ParamSpec, expected: &Value) {
     keys(expected, &["name", "type", "values", "required", "default", "items", "since", "whole"]);
     if let Some(whole) = expected.get("whole") {
-        // The shared terminal-count condition is enforced by its handlers; pin_selections
-        // and assertions execute positive and fractional/negative probes.
-        assert_eq!(actual.name, "terminals");
+        // The handlers enforce whole terminal counts and group spacings; pin_selections,
+        // assertions and group_spacing04 execute their boundary cases.
+        assert!(matches!(actual.name.as_str(), "terminals" | "spacing_x" | "spacing_y"));
         assert_eq!(whole, &json!(true));
         assert!(matches!(actual.ty, ParamType::Number));
     }

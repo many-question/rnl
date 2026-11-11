@@ -211,10 +211,30 @@ impl Interp<'_> {
             }
             "TABLE" => self.kw_table(&args, seg, ctx),
             "GROUP" => {
+                let params = self.params(kw, seg, ctx, &self.sig_params(kw, ctx), None, false, None)?;
+                let spacing_x = get(&params, "spacing_x").and_then(Lit::num);
+                let spacing_y = get(&params, "spacing_y").and_then(Lit::num);
+                for (name, value) in [("spacing_x", spacing_x), ("spacing_y", spacing_y)] {
+                    if value.is_some_and(|n| !n.is_finite() || n.fract() != 0.0) {
+                        return self.fail(
+                            ctx,
+                            codes::PARAM_SPACING_NOT_WHOLE,
+                            format!("the {name} of @GROUP must be a finite whole number of grid units (11.5)"),
+                            seg.start,
+                        );
+                    }
+                }
                 let mapped = self.map_args(kw, &args, seg, ctx, sig_positions(kw))?;
-                let obj = mapped["members"].obj;
+                let mut obj = mapped["members"].obj;
                 if !self.is_set(obj) {
-                    return self.fail(ctx, codes::KEYWORD_GROUP_NOT_A_SET, "GROUP takes a set (11.5)", seg.start);
+                    if !self.follows_0_4(self.source_unit(ctx)) {
+                        return self.fail(ctx, codes::KEYWORD_GROUP_NOT_A_SET, "GROUP takes a set (11.5)", seg.start);
+                    }
+                    self.check_closing(ctx, seg.start)?;
+                    let mut data = SetData::plain(vec![(obj, true)], false);
+                    data.item_dependencies = vec![mapped["members"].dependencies.clone()];
+                    obj = self.new_obj(ObjData::Set(Box::new(data)));
+                    self.note_made(obj, ctx, seg.start);
                 }
                 let Some(s) = ctx.scene else {
                     if self.is_lazy(obj) {
@@ -232,6 +252,8 @@ impl Interp<'_> {
                     site,
                     off: seg.start,
                     table: None,
+                    spacing_x,
+                    spacing_y,
                 });
                 Ok((obj, self.is_lazy(obj)))
             }
@@ -2809,6 +2831,8 @@ impl Interp<'_> {
             site,
             off: seg.start,
             table: Some(id),
+            spacing_x: None,
+            spacing_y: None,
         });
         if selected {
             self.note_rule(ctx);

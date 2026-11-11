@@ -452,6 +452,8 @@ impl Interp<'_> {
             }
             let members = self.group_members(s, &g);
             groups.push(ProblemGroup {
+                spacing_x: g.spacing_x,
+                spacing_y: g.spacing_y,
                 label: self.label(set),
                 members: members.iter().filter_map(|m| ix.objects.get(m).copied()).collect(),
             });

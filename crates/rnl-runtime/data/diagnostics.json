@@ -5070,6 +5070,15 @@
    "sections": [
     "14.11"
    ]
+  },
+  {
+   "number": "RNL3125",
+   "name": "param-spacing-not-whole",
+   "severity": "error",
+   "message": "the {name} of @GROUP must be a finite whole number of grid units (11.5)",
+   "sections": [
+    "11.5"
+   ]
   }
  ]
 }

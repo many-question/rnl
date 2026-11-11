@@ -213,6 +213,16 @@ pub struct UsageOf {
 #[derive(Serialize, Debug, Clone)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct GroupView {
+    /// Whole grid-unit addition to the solver's default spacing (11.5).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub spacing_x: Option<f64>,
+
+    /// Whole grid-unit addition to the solver's default spacing (11.5).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub spacing_y: Option<f64>,
+
     /// `%core` when a record of the level names it; otherwise where GROUP is written,
     /// `@file:line:col`, with `#n` after it when several groups have that place.
     pub id: String,
@@ -891,6 +901,8 @@ fn groups_of(
                 model::UsageOrigin::Body => ("body", None),
             };
             GroupView {
+                spacing_x: g.spacing_x,
+                spacing_y: g.spacing_y,
                 id: g.id.clone(),
                 members: g.members.iter().map(attached).collect(),
                 file: row.and_then(|u| u.file.as_deref()).and_then(|f| files.get(f).copied()),

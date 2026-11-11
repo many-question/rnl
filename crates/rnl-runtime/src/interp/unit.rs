@@ -2628,7 +2628,7 @@ pub fn standard_original(orig: &str) -> bool {
 
 /// Keep the released alias vocabulary unchanged when introducing draft words.
 fn standard_original_in(orig: &str, version: &str) -> bool {
-    if !keeps_0_4(version) && matches!(orig, "@TABLE" | "transpose") {
+    if !keeps_0_4(version) && matches!(orig, "@TABLE" | "transpose" | "spacing_x" | "spacing_y") {
         return false;
     }
     standard_original(orig)
