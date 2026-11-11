@@ -245,6 +245,7 @@ fn parse_args() -> Result<Args, Said> {
         return Err(Said::new(codes::CLI_UNKNOWN_COMMAND, format!("unknown command {command}\n{USAGE}")));
     }
     let mut positional = Vec::new();
+    let mut written_options = Vec::new();
     let mut json = false;
     let mut constraints = false;
     let mut bind_subckt: Option<String> = None;
@@ -274,6 +275,9 @@ fn parse_args() -> Result<Args, Said> {
     let mut overlay_args = false;
     let mut encoding = None;
     while let Some(a) = it.next() {
+        if a.starts_with('-') {
+            written_options.push(a.clone());
+        }
         match a.as_str() {
             "--usages" => {
                 overlay_args = true;
@@ -381,6 +385,38 @@ fn parse_args() -> Result<Args, Said> {
             _ => positional.push(a),
         }
     }
+    for option in &written_options {
+        // Upgrade owns these existing whole-source validation errors.
+        if command == "upgrade" && matches!(option.as_str(), "--level" | "--solver-options" | "--previous") {
+            continue;
+        }
+        let commands: &[&str] = match option.as_str() {
+            "--level" => &["problem", "solve", "preview", "explain", "replace-records"],
+            "--parts" => &["snapshot"],
+            "--author" => &["write"],
+            "--report" => &["solve", "upgrade"],
+            "--in-place" => &["solve", "upgrade", "replace-records"],
+            "--solver-options" => &["problem", "solve", "preview"],
+            "--previous" => &["problem"],
+            "--png" | "--scale" => &["render"],
+            "--primitives" | "--no-svg" | "--status" => &["view", "snapshot"],
+            "--flylines" => &["view", "snapshot", "render"],
+            "--hints" => &["view"],
+            "--package" | "--all-versions" => &["catalog"],
+            "-o" | "--out" => &["render", "solve", "upgrade", "strip-generated", "write", "replace-records"],
+            _ => continue,
+        };
+        if !commands.contains(&command.as_str()) {
+            return Err(Said::new(
+                codes::CLI_OPTION_WRONG_COMMAND,
+                format!("{option} is not an option of {command}; accepted by {}", commands.join(", ")),
+            ));
+        }
+    }
+    if let Some(name) = &dialect {
+        rnl_view::validate_format(name, "--dialect")
+            .map_err(|message| Said::new(codes::VIEW_FORMAT_UNKNOWN, message))?;
+    }
     // explain takes FILE and REF; another command FILE, the last one given
     let reference = if command == "explain" {
         if positional.len() != 2 {
@@ -414,7 +450,7 @@ fn parse_args() -> Result<Args, Said> {
     if overlay_args && command != "render" {
         return Err(Said::new(codes::CLI_OPTION_WRONG_COMMAND, "overlay options are options of render"));
     }
-    overlays.validate()?;
+    overlays.validate_coded()?;
     if encoding.is_some() && !matches!(command.as_str(), "solve" | "strip-generated" | "replace-records") {
         let text = "--encoding is only for solve, strip-generated and replace-records";
         return Err(Said::new(codes::CLI_OPTION_WRONG_COMMAND, text));
@@ -534,10 +570,8 @@ fn check_formats(args: &Args, provider: &FsProvider) -> Result<(), Said> {
     if args.formats.is_empty() || matches!(args.command.as_str(), "catalog" | "formats" | "write") {
         return Ok(());
     }
-    let names: Vec<String> = rnl_view::formats().into_iter().map(|f| f.name).collect();
-    if let Some((path, name)) = args.formats.iter().find(|(_, name)| !names.contains(name)) {
-        let text = format!("unknown format \"{name}\" for {path}; the formats are {}", names.join(", "));
-        return Err(Said::new(codes::VIEW_FORMAT_UNKNOWN, text));
+    for (path, name) in &args.formats {
+        rnl_view::validate_format(name, path).map_err(|message| Said::new(codes::VIEW_FORMAT_UNKNOWN, message))?;
     }
     let format =
         rnl_view::entry_format(&args.file.to_string_lossy(), args.dialect.as_deref(), &args.formats, provider)?;

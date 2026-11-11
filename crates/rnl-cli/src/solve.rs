@@ -75,10 +75,10 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use rnl_runtime::diag::Severity;
+use rnl_runtime::diag::{codes, Diag, Loc, Severity};
 use rnl_runtime::host::{file_name, LevelKind};
 use rnl_runtime::interp::obj::Priority;
-use rnl_runtime::interp::unit::DEFAULT_VERSION;
+use rnl_runtime::interp::unit::{keeps_0_4, DEFAULT_VERSION};
 use rnl_runtime::problem::{sig2, FactKind, LevelProblem, PointRef, Reference};
 use rnl_runtime::solution::{write_record, Written};
 use rnl_runtime::source::{dirname, normalize, relative_to, Layered, MemoryProvider, Provider};
@@ -139,6 +139,8 @@ pub struct SolvedLevel {
     /// holds although a solver should not do it (`notes`); and, among the notes, why it is not
     /// written into the file when the level lies in a region written to be encrypted (2.2).
     pub written: Written,
+    /// Draft 0.4 errors that prevent this level's record from being written.
+    pub write_errors: Vec<Diag>,
     /// The record written into the file: [`Written::record`] finished by
     /// `rnl_view::finish_record`; for a level not written, the record it would have.
     pub record: String,
@@ -560,6 +562,7 @@ fn pass(
         let time = start.elapsed();
         let hash = sig2(p, &canonical);
         let mut written = write_record(p, &solved.solution, AUTHOR, &hash);
+        let mut write_errors = Vec::new();
         let host = &r.doc.levels[p.level];
         let path = normalize(&host.path);
         // a file of 0.2 that the record is written into is raised to 0.3 (16.1): the file level of
@@ -570,6 +573,30 @@ fn pass(
             let record = rnl_view::finish_record(&r.doc, &both, &runtime, p, &written.record);
             let text = text_of(&r, &both, &host.file, &path)?;
             let mut texts = Vec::new();
+            let mut refuse = |code, message: String| {
+                if keeps_0_4(&p.version) {
+                    // The host already reports a missing selected section. Keep that one cause.
+                    if code == codes::WRITEBACK_SECTION_NOT_FOUND
+                        && r.diagnostics().iter().any(|d| {
+                            d.code == codes::HOST_SECTION_NOT_FOUND
+                                && d.loc.as_ref().is_some_and(|loc| loc.file == host.file)
+                        })
+                    {
+                        return;
+                    }
+                    write_errors.push(Diag {
+                        severity: Severity::Error,
+                        code,
+                        message,
+                        loc: Some(Loc::line(&host.file, host.line)),
+                        cause: None,
+                        origin: String::new(),
+                        in_package: String::new(),
+                    });
+                } else {
+                    written.notes.push(message);
+                }
+            };
             match record_line(&r.doc, p.level, &text) {
                 // a level whose own text lies in a region written to be encrypted has no place for a
                 // record that is not gone once the region is encrypted (2.2): nothing is written for it
@@ -577,11 +604,14 @@ fn pass(
                     if r.doc.levels[r.doc.file_level(p.level)].section.is_some()
                         && r.doc.levels[r.doc.file_level(p.level)].section_lines.is_none() =>
                 {
-                    written.notes.push(format!(
-                        "the record is not written: the selected library section {} was not found in {} (2.2)",
-                        r.doc.levels[r.doc.file_level(p.level)].section.as_deref().unwrap(),
-                        file_name(&host.file)
-                    ));
+                    refuse(
+                        codes::WRITEBACK_SECTION_NOT_FOUND,
+                        format!(
+                            "the record is not written: the selected library section {} was not found in {} (2.2)",
+                            r.doc.levels[r.doc.file_level(p.level)].section.as_deref().unwrap(),
+                            file_name(&host.file)
+                        ),
+                    );
                 }
                 Err((a, b))
                     if r.doc.excluded.iter().any(|(f, x, y)| f == &host.file && (*x, *y) == (a, b))
@@ -590,18 +620,21 @@ fn pass(
                             .iter()
                             .any(|(l, x, y)| *l == r.doc.file_level(p.level) && (*x, *y) == (a, b)) =>
                 {
-                    written.notes.push(format!(
+                    refuse(codes::WRITEBACK_REGION_EXCLUDED, format!(
                         "the record is not written: {} lies in a host region excluded from writing, lines {a} to {b} of {} (2.2)",
                         p.title,
                         file_name(&host.file)
                     ));
                 }
-                Err((a, b)) => written.notes.push(format!(
+                Err((a, b)) => refuse(
+                    codes::WRITEBACK_REGION_ENCRYPTED,
+                    format!(
                     "the record is not written: {} lies in a region written to be encrypted, lines {a} to {b} of {}, \
                      where a record is gone once the region is encrypted (2.2)",
                     p.title,
                     file_name(&host.file)
-                )),
+                ),
+                ),
                 Ok(_) => {
                     // the record and the header in one pass, at the positions of this reading: a
                     // header below the end of a subcircuit written moves to line 2, to stay the first
@@ -632,7 +665,17 @@ fn pass(
             }
         }
         let hints_for_low = options.solver.hints_for_low;
-        levels.push(SolvedLevel { problem: p.clone(), solved, written, record, hash, path, time, hints_for_low });
+        levels.push(SolvedLevel {
+            problem: p.clone(),
+            solved,
+            written,
+            write_errors,
+            record,
+            hash,
+            path,
+            time,
+            hints_for_low,
+        });
     }
     let packages: Vec<String> = files.files.package_files().iter().map(|p| normalize(p)).collect();
     let read: Vec<String> = files.read.take().into_iter().filter(|p| !packages.contains(p)).collect();
@@ -919,7 +962,7 @@ pub(crate) fn conflicts(d: &Discarded) -> String {
 /// themselves and fail (the draft 0.3, 8.5; 7.6). `rnl solve` exits with 1 when there is one, or
 /// an error of the netlist ([`SolveRun::errors`]).
 pub fn errors(run: &SolveRun) -> usize {
-    run.levels.iter().map(|l| l.solved.report.errors.len()).sum()
+    run.levels.iter().map(|l| l.solved.report.errors.len() + l.write_errors.len()).sum()
 }
 
 /// What the command prints of the levels of a run, in the order of the document's levels: each
@@ -1088,6 +1131,7 @@ pub fn report(level: &SolvedLevel, all: bool) -> Vec<String> {
     };
     section(&mut out, head, statements);
     out.extend(r.errors.iter().map(|e| format!("  error: {e}")));
+    out.extend(level.write_errors.iter().map(|error| format!("  {}", rnl_runtime::diag::Sink::new().render(error))));
     out.extend(r.warnings.iter().map(|w| format!("  warning: {w}")));
     out.extend(level.written.warnings.iter().map(|w| format!("  {}", rnl_runtime::diag::Sink::new().render(w))));
     section(&mut out, "unsolved", level.written.unsolved.iter().map(|u| u.to_string()).collect());

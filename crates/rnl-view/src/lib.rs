@@ -49,7 +49,7 @@ pub use document::{
     Level, LevelHint, MemberOf, NetLabel, Object, PinObject, RoleOf, RuleAt, SourceFile, SourceInclude, Span, Unplaced,
     UnplacedDrawing, Usage, UsageRole,
 };
-pub use formats::{detect_format, formats, FormatInfo};
+pub use formats::{detect_format, formats, validate_format, FormatInfo};
 pub use library::{LibraryIndex, LibraryProvider};
 pub use params::{Bind, ParamValue, SubcktParam};
 pub use primitive::{
