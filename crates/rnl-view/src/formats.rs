@@ -57,6 +57,18 @@ fn index(name: &str) -> Option<usize> {
     FORMATS.iter().position(|f| f.name() == name)
 }
 
+/// Check a requested format, naming the rejected value, its source and the available formats.
+pub fn validate_format(name: &str, path: &str) -> Result<(), String> {
+    checked_index(name, path).map(|_| ())
+}
+
+fn checked_index(name: &str, path: &str) -> Result<usize, String> {
+    index(name).ok_or_else(|| {
+        let names: Vec<&str> = FORMATS.iter().map(|f| f.name()).collect();
+        format!("unknown format \"{name}\" for {path}; the formats are {}", names.join(", "))
+    })
+}
+
 /// The format a file is read with when none is set for it, by its path and its text: the first
 /// that claims it, else SPICE. A `.scs` file, or one with a `simulator lang=spectre` among its first
 /// 50 lines, as the PDKs write their model libraries, is Spectre; a `.rnl` file, or one whose first
@@ -77,12 +89,8 @@ pub(crate) fn set_formats(
     files: &dyn Provider,
 ) -> Result<Vec<(String, usize)>, String> {
     set.iter()
-        .map(|(path, name)| match index(name) {
-            Some(k) => Ok((files.path_key(&normalize(&path.replace('\\', "/"))), k)),
-            None => {
-                let names: Vec<&str> = FORMATS.iter().map(|f| f.name()).collect();
-                Err(format!("unknown format \"{name}\" for {path}; the formats are {}", names.join(", ")))
-            }
+        .map(|(path, name)| {
+            checked_index(name, path).map(|k| (files.path_key(&normalize(&path.replace('\\', "/"))), k))
         })
         .collect()
 }

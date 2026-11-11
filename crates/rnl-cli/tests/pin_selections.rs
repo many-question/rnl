@@ -494,11 +494,13 @@ fn a_late_pin_conversion_failure_keeps_the_usage_in_the_generation_snapshot() {
         $D = @DEFINE(roles=[["x","pin"]]) {};
         $U = @DEFINE-SYMBOL { (0,0) @PIN(terminal="x") };
         %u = #R1:1 @AS $D => @SET-SYMBOL $U;
-        $WITNESS = @DEFINE(roles=["x"]) { (0,0) @CIRCLE(radius="bad") };
+        $WITNESS = @DEFINE(roles=["x"],parameters=[["radius","bad"]]) { (0,0) @CIRCLE(radius=?radius) };
         # @SELECT-USAGE(drawn=true) $D => @AS $WITNESS"#,
     );
     assert!(r.diagnostics().iter().any(|d| d.message.contains("cannot convert")), "{:?}", r.diagnostics());
-    // The generated body was evaluated before the missing-pin check. Its own error is
+    // The parameter keeps the error dependent on this application's values, rather than a
+    // bad literal checked in an unused definition. The body ran before the missing-pin check:
+    // its own error is
     // retained even though the invalid role later makes both usages fail (8.2).
     assert!(
         r.diagnostics().iter().any(|d| d.severity == Severity::Error && d.origin.contains("$WITNESS")),

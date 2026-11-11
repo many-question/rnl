@@ -2216,8 +2216,102 @@ impl<'p> Interp<'p> {
         open_style: bool,
         resolve: Option<NameReader<'_, 'p>>,
     ) -> R<Vec<(String, Lit)>> {
+        self.params_mode(kw, seg, ctx, spec, positional, open_style, resolve, false)
+    }
+
+    /// Check structure and known values without treating a parameter's default as its actual value.
+    pub(super) fn params_at_definition(
+        &mut self,
+        kw: &str,
+        seg: &Segment,
+        ctx: &Ctx,
+        spec: &[ParamSpec],
+        open_style: bool,
+    ) -> R<Vec<(String, Lit)>> {
+        self.params_mode(kw, seg, ctx, spec, None, open_style, None, true)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn params_mode(
+        &mut self,
+        kw: &str,
+        seg: &Segment,
+        ctx: &Ctx,
+        spec: &[ParamSpec],
+        positional: Option<&[String]>,
+        open_style: bool,
+        resolve: Option<NameReader<'_, 'p>>,
+        static_check: bool,
+    ) -> R<Vec<(String, Lit)>> {
+        fn has_parameter(value: &Value) -> bool {
+            match value {
+                Value::Hole(_) => true,
+                Value::Arr(values) => values.iter().any(has_parameter),
+                _ => false,
+            }
+        }
+        #[allow(clippy::too_many_arguments)]
+        fn check_known_value_parts(
+            interp: &mut Interp<'_>,
+            kw: &str,
+            name: &str,
+            value: &Value,
+            parameter: Option<&ParamSpec>,
+            ctx: &Ctx,
+            off: usize,
+        ) -> R<()> {
+            if !has_parameter(value) {
+                if let Some(value) = interp.value(value, ctx, off)? {
+                    interp.check_value(kw, name, value, parameter, ctx, off)?;
+                }
+                return Ok(());
+            }
+            let Value::Arr(items) = value else { return Ok(()) };
+            if let Some(parameter) = parameter {
+                if parameter.list {
+                    let single = ParamSpec { list: false, ..parameter.clone() };
+                    for item in items {
+                        check_known_value_parts(interp, kw, name, item, Some(&single), ctx, off)?;
+                    }
+                    return Ok(());
+                }
+                // An array remains an array for every substitution of its elements.
+                // Preserve unknown elements instead of guessing from parameter defaults.
+                if let ParamType::Enum(allowed) = &parameter.ty {
+                    let choices: Vec<String> = allowed
+                        .iter()
+                        .map(|value| match value {
+                            crate::words::Literal::Str(value) => format!("{value:?}"),
+                            crate::words::Literal::Num(value) => crate::geom::fmt_num(*value),
+                        })
+                        .collect();
+                    return interp.fail(
+                        ctx,
+                        codes::PARAM_BAD_ENUM,
+                        format!("the {name} of @{kw} cannot be an array; one of {} (16.4)", choices.join(", ")),
+                        off,
+                    );
+                }
+                if !matches!(parameter.ty, ParamType::Array | ParamType::Any)
+                    && !(parameter.ty == ParamType::Term && kw == "PIN")
+                {
+                    return interp.fail(
+                        ctx,
+                        codes::PARAM_WRONG_TYPE,
+                        super::unit::parameter_type_message(kw, name, &parameter.ty, true),
+                        off,
+                    );
+                }
+            }
+            // Even in an untyped array, known literals must be valid literals.
+            for item in items {
+                check_known_value_parts(interp, kw, name, item, None, ctx, off)?;
+            }
+            Ok(())
+        }
         let call = seg.call.as_ref().unwrap();
         let mut out: Vec<(String, Option<Lit>)> = Vec::new();
+        let mut deferred = Vec::new();
         let Some(p) = &call.params else {
             self.require(kw, spec, &[], seg, ctx)?;
             return Ok(Vec::new());
@@ -2265,6 +2359,12 @@ impl<'p> Interp<'p> {
                 );
             }
             for (name, v) in order.iter().zip(&p.positional) {
+                if static_check && has_parameter(v) {
+                    check_known_value_parts(self, kw, name, v, spec.iter().find(|p| &p.name == name), ctx, p.start)?;
+                    deferred.push(name.clone());
+                    out.push((name.clone(), None));
+                    continue;
+                }
                 let val = self.value(v, ctx, p.start)?;
                 if val.is_none() {
                     // a named parameter left without a value counts as not written; a positional one has no
@@ -2316,6 +2416,17 @@ impl<'p> Interp<'p> {
                     n.off,
                 );
             }
+            if static_check && has_parameter(&n.value) {
+                let parameter = spec
+                    .iter()
+                    .find(|p| p.name == std)
+                    .cloned()
+                    .or_else(|| words().style_prop(&std).map(|p| ParamSpec::new(p.name.clone(), p.ty.clone())));
+                check_known_value_parts(self, kw, &std, &n.value, parameter.as_ref(), ctx, n.off)?;
+                deferred.push(std.clone());
+                out.push((std, None));
+                continue;
+            }
             let v = self.value(&n.value, ctx, n.off)?;
             out.push((std, v));
         }
@@ -2330,7 +2441,8 @@ impl<'p> Interp<'p> {
             let v = self.check_value(kw, &name, val, sp.as_ref(), ctx, p.start)?;
             done.push((name, v));
         }
-        let names: Vec<String> = done.iter().map(|(n, _)| n.clone()).collect();
+        let mut names: Vec<String> = done.iter().map(|(n, _)| n.clone()).collect();
+        names.extend(deferred);
         self.require(kw, spec, &names, seg, ctx)?;
         Ok(done)
     }

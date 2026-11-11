@@ -196,20 +196,38 @@ pub struct OverlayOptions {
 }
 impl OverlayOptions {
     pub fn validate(&self) -> Result<(), String> {
+        self.validate_coded().map_err(|(_, message)| message)
+    }
+
+    /// Validate export settings with the registered diagnostic kind for command-line callers.
+    pub fn validate_coded(&self) -> Result<(), (rnl_runtime::diag::Code, String)> {
+        use rnl_runtime::diag::codes;
         let color = |c: &str| {
             c.starts_with('#') && matches!(c.len(), 4 | 7 | 9) && c[1..].bytes().all(|b| b.is_ascii_hexdigit())
         };
-        if self.style.palette.is_empty()
-            || !self.style.palette.iter().all(|c| color(c))
-            || !color(&self.style.current_color)
-        {
-            return Err("overlay colors must be hex colors; palette must not be empty".into());
+        if self.style.palette.is_empty() {
+            return Err((codes::VIEW_OVERLAY_COLORS, "overlay palette must not be empty".into()));
+        }
+        if let Some((index, value)) = self.style.palette.iter().enumerate().find(|(_, c)| !color(c)) {
+            return Err((
+                codes::VIEW_OVERLAY_COLORS,
+                format!("overlay palette[{index}] is not a hex color: {value:?}"),
+            ));
+        }
+        if !color(&self.style.current_color) {
+            return Err((
+                codes::VIEW_OVERLAY_COLORS,
+                format!("overlay current_color is not a hex color: {:?}", self.style.current_color),
+            ));
         }
         if !self.style.width.is_finite()
             || self.style.width <= 0.0
             || self.style.dashes.iter().any(|d| !d.is_finite() || *d <= 0.0)
         {
-            return Err("overlay width and dash lengths must be finite and positive".into());
+            return Err((
+                codes::VIEW_OVERLAY_WIDTH,
+                "overlay width and dash lengths must be finite and positive".into(),
+            ));
         }
         Ok(())
     }

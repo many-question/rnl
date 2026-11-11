@@ -930,7 +930,45 @@ impl Interp<'_> {
         }
         if self.follows_0_4(self.source_unit(ctx)) {
             for member in &d.body.as_ref().unwrap().members {
+                self.check_definition_parameters(member, ctx);
                 self.mark_failed_body_members(id, member, ctx);
+            }
+        }
+    }
+
+    /// Names, counts and literal parameter values do not depend on an application's objects.
+    fn check_definition_parameters(&mut self, member: &Member, ctx: &Ctx) {
+        for segment in &member.segments {
+            if let Some(call) = &segment.call {
+                let keyword = self.kw(&call.kw, ctx.unit);
+                if !self.body_errors.contains_key(&super::eval::ptr(call)) {
+                    if let Some(signature) = words().keyword(&keyword) {
+                        // Application parameters come from the named definition; open signatures
+                        // have their own checks. Neither is described by this parameter list.
+                        if !signature.open_params && !matches!(signature.params, ParamsSpec::Definition) {
+                            let mut spec = self.sig_params(&keyword, ctx);
+                            if let Some(style) = &signature.style {
+                                spec.extend(style_specs(style));
+                            }
+                            let open_style = matches!(signature.params, ParamsSpec::Style);
+                            if let Err(Stop::Fail(Some(diagnostic))) =
+                                self.params_at_definition(&keyword, segment, ctx, &spec, open_style)
+                            {
+                                self.body_errors.insert(super::eval::ptr(call), diagnostic);
+                            }
+                        }
+                    }
+                }
+                if matches!(keyword.as_str(), "DEFINE" | "DEFINE-SYMBOL" | "DEFINE-STYLE" | "USE-PACKAGE") {
+                    continue;
+                }
+            }
+            for argument in &segment.args {
+                if let ObjExpr::Set(set) = &argument.obj {
+                    for member in &set.members {
+                        self.check_definition_parameters(member, ctx);
+                    }
+                }
             }
         }
     }

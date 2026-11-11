@@ -233,7 +233,12 @@ fn report(
             ),
             facts,
             statements,
-            errors: r.errors.clone(),
+            errors: r
+                .errors
+                .iter()
+                .cloned()
+                .chain(level.write_errors.iter().map(|error| rnl_runtime::diag::Sink::new().render(error)))
+                .collect(),
             warnings: r
                 .warnings
                 .iter()
