@@ -1202,6 +1202,7 @@ impl Interp<'_> {
                 valign: it.valign.clone().unwrap_or_else(|| "baseline".into()),
                 rotate: it.rotate.unwrap_or(0.0),
                 fix_rotate: it.fix_rotate,
+                baseline_mirrors: text.unit.is_some_and(|u| self.follows_0_4(u)),
                 orient,
                 style: self.style_of(s, t),
                 own_style: self.own_style_of(s, t),

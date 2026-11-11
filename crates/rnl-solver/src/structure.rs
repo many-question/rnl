@@ -933,6 +933,8 @@ const RUN_BELOW: (i64, i64) = (2, 5);
 /// baseline). The solver keeps the symbols' texts clear of their neighbours by it. None for a
 /// text without characters.
 pub(crate) fn text_box(t: &TextInfo, at: &(Q, Q), turn: Orient) -> Option<[Q; 4]> {
+    let alternate = t.column_position.filter(|_| turn.reverses_text_column()).map(|(x, y)| (number(x), number(y)));
+    let at = alternate.as_ref().unwrap_or(at);
     let style = |name: &str| t.style.iter().find(|(n, _)| n == name).map(|(_, v)| v);
     let size = style("size").and_then(|v| v.num()).filter(|s| s.is_finite() && *s > 0.0).unwrap_or(1.0);
     let flag = |name: &str| style(name).and_then(|v| v.boolean()).unwrap_or(false);
@@ -981,7 +983,12 @@ pub(crate) fn text_box(t: &TextInfo, at: &(Q, Q), turn: Orient) -> Option<[Q; 4]
         bars: Vec::new(),
     };
     // the renderer's own scale, which decides only how thin a bar may be
-    let laid_box = rnl_render::lay_out(&mut laid, rnl_render::RenderOptions::default().scale);
+    let scale = rnl_render::RenderOptions::default().scale;
+    let laid_box = if t.baseline_mirrors && upside_down && t.valign == "baseline" {
+        rnl_render::lay_out_reflected_baseline(&mut laid, scale)
+    } else {
+        rnl_render::lay_out(&mut laid, scale)
+    };
     let ratio = |(n, d): (i64, i64)| n as f64 / d as f64;
     // across the lines, the glyphs of each run rather than the ascender and the descender of the
     // face, which the renderer's box reaches and which go well past them

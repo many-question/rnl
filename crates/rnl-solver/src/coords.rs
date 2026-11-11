@@ -316,7 +316,8 @@ fn round(v: &Q, grid: &Option<Q>) -> Q {
 /// on the axes its owner's symbol gives (13.3); then a check.
 fn link(sx: &mut Simplex<Tag>, model: &Model, ori: &[Orient], axis: usize) -> bool {
     for (id, info) in &model.points {
-        let (Some(k), Some(local), true) = (info.object, &info.local, info.linked(axis)) else { continue };
+        let (Some(k), true) = (info.object, info.linked(axis)) else { continue };
+        let Some(local) = info.local_for(ori[k]) else { continue };
         let Some(base) = model.origin_point.get(k).copied().flatten() else { continue };
         if base == *id {
             continue;

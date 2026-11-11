@@ -473,6 +473,35 @@ impl Lay {
     }
 }
 
+/// Reflect the complete baseline box around its anchor while keeping all glyphs upright.
+/// Translation preserves the reading order of lines, scripts and fractions (9.2.5).
+pub fn lay_out_reflected_baseline(t: &mut TextPrim, scale: f64) -> [f64; 4] {
+    let mut bounds = lay_out(t, scale);
+    if t.valign != "baseline" {
+        return bounds;
+    }
+    let axis = if t.vertical { 0 } else { 1 };
+    let anchor = if t.vertical { t.anchor.0 } else { t.anchor.1 };
+    let offset = 2.0 * anchor - bounds[axis] - bounds[axis + 2];
+    let shift = |p: &mut Pt| {
+        if axis == 0 {
+            p.0 += offset;
+        } else {
+            p.1 += offset;
+        }
+    };
+    for run in &mut t.runs {
+        shift(&mut run.at);
+    }
+    for bar in &mut t.bars {
+        shift(&mut bar.a);
+        shift(&mut bar.b);
+    }
+    bounds[axis] += offset;
+    bounds[axis + 2] += offset;
+    bounds
+}
+
 /// Lay out a text (9.2.5, 13.6): its runs and bars, from its lines, size, faces, alignment and
 /// direction, with the bars at least `LEAST_BAR` pixels wide at `scale` pixels per scene unit.
 /// Gives the box they cover, each run from the ascender to the descender of its face.

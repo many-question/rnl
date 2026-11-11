@@ -306,6 +306,8 @@ pub struct TextView {
     pub rotate: f64,
     /// The effective fix_rotate item; None when no statement supplies it.
     pub fix_rotate: Option<bool>,
+    /// Apply the source file's baseline reflection rule (9.2.5).
+    pub baseline_mirrors: bool,
     /// Effective owner orientation; fixed-rotation and scene texts use R0.
     pub orient: Orient,
     pub style: Style,

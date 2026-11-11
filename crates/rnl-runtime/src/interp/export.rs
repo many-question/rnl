@@ -285,6 +285,8 @@ impl Interp<'_> {
                         valign: items.valign.clone().unwrap_or_else(|| "baseline".into()),
                         rotate: items.rotate.unwrap_or(0.0),
                         fix_rotate: items.fix_rotate.unwrap_or(false),
+                        baseline_mirrors: items.text.as_ref().and_then(|t| t.unit).is_some_and(|u| self.follows_0_4(u)),
+                        column_position: self.text_column_position(s, *o),
                         style,
                     });
                 }

@@ -250,7 +250,7 @@ impl Geometry {
                     Some(b) if depth < MAX_DEPTH => self.value_at(model, b, axis, depth + 1),
                     _ => Q::zero(),
                 };
-                match &info.local {
+                match info.local_for(self.orient[k]) {
                     Some(local) => base + turned(self.orient[k], local, axis),
                     None => base,
                 }
@@ -330,6 +330,17 @@ struct ClassLink {
     point: Var,
     base: Var,
     local: (Q, Q),
+    alternate_local: Option<(Q, Q)>,
+}
+
+impl ClassLink {
+    fn local_for(&self, orient: Orient) -> &(Q, Q) {
+        if orient.reverses_text_column() {
+            self.alternate_local.as_ref().unwrap_or(&self.local)
+        } else {
+            &self.local
+        }
+    }
 }
 
 /// The result of a node of the search.
@@ -602,7 +613,9 @@ impl<'a> Resolver<'a> {
                 vec![(model.centre_extreme(c, axis, high, v as usize), Tag::Lit(key, v))]
             }
             Held::Link(k, axis, p) => {
-                let (Some(origin), Some(local)) = (model.origin_point[k], &model.points[&p].local) else {
+                let (Some(origin), Some(local)) =
+                    (model.origin_point[k], model.points[&p].local_for(from_index(v as u8)))
+                else {
                     return Vec::new();
                 };
                 let c = turned(from_index(v as u8), local, axis);
@@ -912,7 +925,8 @@ impl<'a> Resolver<'a> {
         let mut seen: Vec<Vec<Q>> = Vec::new();
         for v in ordered {
             let o = from_index(v as u8);
-            let signature: Vec<Q> = links.iter().map(|l| turned(o.then(l.label), &l.local, l.axis)).collect();
+            let signature: Vec<Q> =
+                links.iter().map(|l| turned(o.then(l.label), l.local_for(o.then(l.label)), l.axis)).collect();
             if !seen.contains(&signature) {
                 seen.push(signature);
                 values.push(v);
@@ -979,6 +993,7 @@ impl<'a> Resolver<'a> {
                         point: info.var,
                         base,
                         local: info.local.clone().unwrap_or_default(),
+                        alternate_local: info.alternate_local.clone(),
                     });
                 }
             }
@@ -1000,7 +1015,7 @@ impl<'a> Resolver<'a> {
                 .iter()
                 .map(|l| {
                     let o = from_index(v as u8).then(l.label);
-                    let c = turned(o, &l.local, l.axis);
+                    let c = turned(o, l.local_for(o), l.axis);
                     let b =
                         Bound { axis: l.axis, expr: LinExpr::diff(l.point, l.base), lo: Some(c.clone()), hi: Some(c) };
                     (b, Tag::Ori(l.object, index(o)))
@@ -1249,7 +1264,7 @@ impl<'a> Resolver<'a> {
                 self.sx[axis].value(model.var(origin)).clone()
             } else {
                 let p = points[0];
-                let local = model.points[&p].local.clone().unwrap_or_default();
+                let local = model.points[&p].local_for(self.geometry.orient[k]).cloned().unwrap_or_default();
                 self.sx[axis].value(model.var(p)) - turned(self.geometry.orient[k], &local, axis)
             };
             self.geometry.origin[k][axis] = value;
@@ -1432,8 +1447,9 @@ pub(crate) fn point_value(problem: &LevelProblem, g: &Geometry, r: &PointRef, ax
             Position::At(main) => point_value(problem, g, main, axis, depth + 1),
             // on the axis that the scene gives it, a text is where it is placed (13.3)
             Position::InSymbol { replaced: Some((a, _)), .. } if ax(*a) == axis => Some(g.origin[k][axis].clone()),
-            Position::InSymbol { owner, local, .. } => {
+            Position::InSymbol { owner, .. } => {
                 let base = point_value(problem, g, &PointRef::Origin(*owner), axis, depth + 1)?;
+                let local = problem.objects[k].symbol_local(g.orient[*owner])?;
                 let local = (from_f64(local.0)?, from_f64(local.1)?);
                 Some(base + turned(g.orient[*owner], &local, axis))
             }

@@ -115,6 +115,7 @@ pub(crate) struct PointInfo {
     pub object: Option<usize>,
     /// For a pin or a text: its position in the object's symbol (9.2.4, 13.3).
     pub local: Option<(Q, Q)>,
+    pub alternate_local: Option<(Q, Q)>,
     /// For a text placed by its owner's symbol: the axis on which a PLACE or an offset in the scene
     /// replaces that position (13.3). On that axis the text is not a point of its owner, its
     /// orientation does not turn it, and its variable is its own coordinate.
@@ -122,6 +123,14 @@ pub(crate) struct PointInfo {
 }
 
 impl PointInfo {
+    pub(crate) fn local_for(&self, orient: Orient) -> Option<&(Q, Q)> {
+        if orient.reverses_text_column() {
+            self.alternate_local.as_ref().or(self.local.as_ref())
+        } else {
+            self.local.as_ref()
+        }
+    }
+
     /// Whether the point is tied to its object's origin on an axis by the object's orientation:
     /// a pin, or a text on an axis that its owner's symbol gives (9.2.4, 13.3).
     pub(crate) fn linked(&self, axis: usize) -> bool {
@@ -407,7 +416,7 @@ impl Model {
     fn add_point(&mut self, id: PointId, object: Option<usize>, local: Option<(Q, Q)>) -> PointId {
         if !self.points.contains_key(&id) {
             let var = self.new_var(VarKind::Point(id));
-            self.points.insert(id, PointInfo { var, object, local, free: None });
+            self.points.insert(id, PointInfo { var, object, local, alternate_local: None, free: None });
         }
         id
     }
@@ -427,6 +436,11 @@ impl Model {
                     let id = self.add_point(PointId::Text(*k), Some(*owner), Some(local));
                     if let Some(info) = self.points.get_mut(&id) {
                         info.free = replaced.as_ref().map(|(axis, _)| ax(*axis));
+                        info.alternate_local = problem.objects[*k]
+                            .text
+                            .as_ref()
+                            .and_then(|t| t.column_position)
+                            .and_then(|(x, y)| Some((from_f64(x)?, from_f64(y)?)));
                     }
                     Some(id)
                 }
@@ -476,7 +490,7 @@ impl Model {
         let c = self.centres.len();
         let id = PointId::Centre(c);
         let var = self.new_var(VarKind::Point(id));
-        self.points.insert(id, PointInfo { var, object: None, local: None, free: None });
+        self.points.insert(id, PointInfo { var, object: None, local: None, alternate_local: None, free: None });
         let lo = self.new_var(VarKind::CentreLo(c));
         let hi = self.new_var(VarKind::CentreHi(c));
         self.centre_index.insert(members.clone(), c);
