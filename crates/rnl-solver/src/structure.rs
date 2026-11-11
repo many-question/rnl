@@ -48,7 +48,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use num_traits::{One, Zero};
-use rnl_runtime::geom::Orient;
+use rnl_runtime::geom::{fixed_text_alignment, Orient};
 use rnl_runtime::markup::Run;
 use rnl_runtime::problem::{
     Axis, FactKind, Filler, LevelProblem, ObjectKind, PointRef, Position, Reference, Sense, TextInfo,
@@ -958,12 +958,17 @@ pub(crate) fn text_box(t: &TextInfo, at: &(Q, Q), turn: Orient) -> Option<[Q; 4]
     let vertical = u.0 == 0;
     let backwards = if vertical { u.1 < 0 } else { u.0 < 0 };
     let upside_down = if vertical { v.0 > 0 } else { v.1 < 0 };
-    let halign = match (backwards, t.halign.as_str()) {
+    let (written_halign, written_valign) = if t.baseline_mirrors && t.fix_rotate {
+        fixed_text_alignment(&t.halign, &t.valign, t.rotate, turn)
+    } else {
+        (t.halign.as_str(), t.valign.as_str())
+    };
+    let halign = match (backwards, written_halign) {
         (true, "start") => "end".to_string(),
         (true, "end") => "start".to_string(),
         (_, h) => h.to_string(),
     };
-    let valign = match (upside_down, t.valign.as_str()) {
+    let valign = match (upside_down, written_valign) {
         (true, "top") => "bottom".to_string(),
         (true, "bottom") => "top".to_string(),
         (_, h) => h.to_string(),
@@ -984,7 +989,7 @@ pub(crate) fn text_box(t: &TextInfo, at: &(Q, Q), turn: Orient) -> Option<[Q; 4]
     };
     // the renderer's own scale, which decides only how thin a bar may be
     let scale = rnl_render::RenderOptions::default().scale;
-    let laid_box = if t.baseline_mirrors && upside_down && t.valign == "baseline" {
+    let laid_box = if t.baseline_mirrors && upside_down && written_valign == "baseline" {
         rnl_render::lay_out_reflected_baseline(&mut laid, scale)
     } else {
         rnl_render::lay_out(&mut laid, scale)

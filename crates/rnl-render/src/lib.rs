@@ -17,7 +17,7 @@ mod line;
 mod svg;
 mod text;
 
-use rnl_runtime::geom::{Orient, Pt};
+use rnl_runtime::geom::{fixed_text_alignment, Orient, Pt};
 use rnl_runtime::interp::obj::{Lit, PrimParams, Shape};
 use rnl_runtime::markup::{self, Line};
 use rnl_runtime::model::{Layer, LevelView, Style, SymbolView, TextView};
@@ -473,6 +473,7 @@ impl Out {
             t.order.clone(),
             t.orient,
             t.baseline_mirrors,
+            t.fix_rotate.unwrap_or(false),
         );
     }
 
@@ -493,6 +494,7 @@ impl Out {
         order: Vec<f64>,
         code: Orient,
         baseline_mirrors: bool,
+        fix_rotate: bool,
     ) {
         if lines.iter().all(|l| l.is_empty()) {
             return;
@@ -500,6 +502,12 @@ impl Out {
         let e = Eff::from(st);
         let size = if e.size > 0.0 { e.size } else { 1.0 };
         let color = e.textcolor.clone().unwrap_or_else(|| e.linecolor.clone());
+        let (halign, valign) = if baseline_mirrors && fix_rotate {
+            fixed_text_alignment(halign, valign, rotate, code)
+        } else {
+            (halign, valign)
+        };
+        let code = if fix_rotate { Orient::R0 } else { code };
         let rot = rotate as i64;
         let u = code.apply(rot_vec((1.0, 0.0), rot));
         let v = code.apply(rot_vec((0.0, 1.0), rot));
@@ -575,8 +583,9 @@ impl Out {
                     &st,
                     layer,
                     key,
-                    if p.fix_rotate { Orient::R0 } else { code },
+                    code,
                     p.text_name_formats,
+                    p.fix_rotate,
                 );
                 continue;
             }
@@ -649,6 +658,7 @@ impl Out {
                 sub(order, (labels_after + k) as f64),
                 code,
                 pin.label_name_formats,
+                false,
             );
         }
         for (k, n) in sym.nested.iter().enumerate() {
