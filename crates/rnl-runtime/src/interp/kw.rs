@@ -210,6 +210,7 @@ impl Interp<'_> {
                 self.target_each(kw, &args, seg, ctx, 7, op, "target")
             }
             "TABLE" => self.kw_table(&args, seg, ctx),
+            "SOLVER-CONFIG" => self.kw_solver_config(&args, seg, ctx),
             "GROUP" => {
                 let params = self.params(kw, seg, ctx, &self.sig_params(kw, ctx), None, false, None)?;
                 let spacing_x = get(&params, "spacing_x").and_then(Lit::num);

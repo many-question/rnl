@@ -630,7 +630,13 @@ impl Interp<'_> {
                 }
             };
             eff.index.insert(u, eff.entries.len());
-            eff.entries.push(EffPackage { decl: uses[i].decl.clone(), unit: u, place, languages: Languages::NONE });
+            eff.entries.push(EffPackage {
+                decl: uses[i].decl.clone(),
+                unit: u,
+                place,
+                languages: Languages::NONE,
+                solver_config: false,
+            });
         }
         // Propagate each effective use's section mask through the effective reference graph.
         // A package still binds its names once; only its object rules and DEVICE are restricted.
@@ -639,6 +645,7 @@ impl Interp<'_> {
                 if let Some(&index) = eff.index.get(&unit) {
                     let language = uses[i].decl.as_ref().map_or(Languages::ALL, |decl| decl.languages);
                     eff.entries[index].languages = eff.entries[index].languages.union(language);
+                    eff.entries[index].solver_config |= uses[i].decl.as_ref().is_none_or(|decl| decl.solver_config);
                 }
             }
         }
@@ -653,6 +660,11 @@ impl Interp<'_> {
                     }
                     let Some(Some(target)) = eff.unit.get(&decl.name) else { continue };
                     let Some(&target) = eff.index.get(target) else { continue };
+                    let config = eff.entries[index].solver_config && decl.solver_config;
+                    if config && !eff.entries[target].solver_config {
+                        eff.entries[target].solver_config = true;
+                        changed = true;
+                    }
                     let old = eff.entries[target].languages;
                     let new = old.union(language.intersect(decl.languages));
                     if old != new {

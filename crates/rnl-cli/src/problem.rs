@@ -197,6 +197,9 @@ pub fn level(p: &LevelProblem, solver_options: &str) -> Value {
             entry
         }).collect::<Vec<_>>(),
     });
+    if !p.solver_config.is_empty() {
+        v["solver_config"] = serde_json::to_value(rnl_view::solver_settings(p)).unwrap();
+    }
     if numbers {
         v.as_object_mut().unwrap().insert("authored_numbers".into(), json!(p.authored_numbers));
     }

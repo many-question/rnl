@@ -193,6 +193,7 @@ pub struct Scene {
     pub currents: Vec<super::currents::CurrentFact>,
     /// The sets given GROUP (11.5), in the order of writing.
     pub groups: Vec<GroupFact>,
+    pub solver_config: Vec<super::solver_config::ConfigFact>,
     pub tasks: Vec<Vec<(Pos, Task)>>,
     pub created: HashMap<ObjId, Pos>,
     /// Contexts that created objects, for failures learned after symbol assignment.
@@ -325,6 +326,7 @@ impl Scene {
             prioritys: Vec::new(),
             currents: Vec::new(),
             groups: Vec::new(),
+            solver_config: Vec::new(),
             tasks: (0..10).map(|_| Vec::new()).collect(),
             created: HashMap::new(),
             creation_sites: HashMap::new(),

@@ -155,6 +155,8 @@ impl UnitMember {
 /// USE-PACKAGE is a reference to another package (16.2).
 #[derive(Clone, Debug)]
 pub struct UseDecl {
+    /// At least one unqualified header declares this effective reference (14.10).
+    pub solver_config: bool,
     pub name: String,
     pub version: Option<String>,
     pub path: Option<String>,
@@ -202,6 +204,7 @@ pub struct AliasDecl {
 
 #[derive(Debug)]
 pub struct Unit {
+    pub solver_config: Vec<crate::problem::SolverSetting>,
     pub kind: UnitKind,
     pub name: String,
     /// The host level of a level unit.
@@ -252,6 +255,7 @@ pub struct Unit {
 impl Unit {
     pub fn new(kind: UnitKind, name: &str) -> Unit {
         Unit {
+            solver_config: Vec::new(),
             kind,
             name: name.to_string(),
             level: None,
@@ -311,6 +315,8 @@ pub enum Place {
 /// A package in effect on a chain of levels.
 #[derive(Clone, Debug)]
 pub struct EffPackage {
+    /// Reached by an effective use path with no host-language restriction (14.10).
+    pub solver_config: bool,
     /// The USE-PACKAGE written in a file that brings it in; none for the standard package used
     /// implicitly (16.3) and for a package checked on its own (2.7).
     pub decl: Option<UseDecl>,
@@ -1327,6 +1333,10 @@ impl Interp<'_> {
             let call = seg.call.clone().unwrap();
             let kw = call.kw.clone();
             let loc = self.recs[rec].loc(call.start);
+            if kw == "SOLVER-CONFIG" && self.follows_0_4(u) {
+                self.header_solver_config(u, rec, &seg);
+                continue;
+            }
             if self.rec_header[&rec].languages != Languages::ALL && !matches!(kw.as_str(), "USE-PACKAGE" | "DEVICE") {
                 self.diag_in(Severity::Error, codes::HEADER_KEYWORD_NOT_ALLOWED,
                     format!("@{kw} cannot be written in a header record with language; only USE-PACKAGE and DEVICE are allowed (2.8)"),
@@ -1873,6 +1883,7 @@ impl Interp<'_> {
             version: str_val(p.get("version")),
             path: str_val(p.get("path")),
             body: None,
+            solver_config: true,
             unit: u,
             in_header: true,
             languages: Languages::ALL,
@@ -2091,6 +2102,7 @@ impl Interp<'_> {
             version: str_val(p.get("version")),
             path: str_val(p.get("path")),
             body: body.clone(),
+            solver_config: rec.and_then(|r| self.rec_header.get(&r)).is_none_or(|h| h.languages == Languages::ALL),
             unit: u,
             in_header,
             languages: rec.and_then(|r| self.rec_header.get(&r)).map_or(Languages::ALL, |h| h.languages),
@@ -2156,6 +2168,7 @@ impl Interp<'_> {
                 } else if old.pkg.is_some() {
                     let declarations = if reference { &mut self.units[u].refs } else { &mut self.units[u].uses };
                     declarations[index].languages = old.languages.union(decl.languages);
+                    declarations[index].solver_config = old.solver_config || decl.solver_config;
                     return;
                 }
             }
@@ -2626,9 +2639,11 @@ pub fn standard_original(orig: &str) -> bool {
     }
 }
 
-/// Keep the released alias vocabulary unchanged when introducing draft words.
+/// Keep the released alias vocabulary unchanged when introducing solver settings.
 fn standard_original_in(orig: &str, version: &str) -> bool {
-    if !keeps_0_4(version) && matches!(orig, "@TABLE" | "transpose" | "spacing_x" | "spacing_y") {
+    if !keeps_0_4(version)
+        && matches!(orig, "@TABLE" | "transpose" | "spacing_x" | "spacing_y" | "@SOLVER-CONFIG" | "junction")
+    {
         return false;
     }
     standard_original(orig)

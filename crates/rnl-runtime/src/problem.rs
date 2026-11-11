@@ -23,6 +23,16 @@ use crate::interp::obj::{Lit, Priority};
 use crate::markup::{Line, Run};
 use crate::model::PinView;
 
+/// One effective SOLVER-CONFIG key (14.10). The core passes its literal value unchanged;
+/// a solver validates the keys and values it supports. Source metadata is not hashed.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SolverSetting {
+    pub key: String,
+    pub value: Lit,
+    pub source: Option<Loc>,
+    pub package: String,
+}
+
 /// An axis of the scene: x to the right, y up (11.7).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Axis {
@@ -584,6 +594,8 @@ pub struct UsageEntry {
 /// What a solver needs of one drawing level.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LevelProblem {
+    /// Effective settings, by key, after package, file-header and level overrides (14.10).
+    pub solver_config: Vec<SolverSetting>,
     /// The host level: its index in the host document's levels.
     pub level: usize,
     pub title: String,
@@ -1111,6 +1123,13 @@ pub fn canonical_sig1(p: &LevelProblem) -> String {
         c.points(&r.pins);
         c.indexes(&r.wires);
     }
+    if !p.solver_config.is_empty() {
+        c.word("solver-config");
+        for setting in &p.solver_config {
+            c.str(&setting.key);
+            c.word(&setting.value.show());
+        }
+    }
     c.word("groups");
     for g in &p.groups {
         c.str(&g.label);
@@ -1365,6 +1384,7 @@ mod tests {
     #[test]
     fn the_input_segment_is_compared_alone() {
         let p = LevelProblem {
+            solver_config: Vec::new(),
             level: 0,
             title: "t.sp".into(),
             kind: "file",
@@ -1415,6 +1435,7 @@ mod tests {
             port,
         };
         let p = LevelProblem {
+            solver_config: Vec::new(),
             level: 0,
             title: "t.sp".into(),
             kind: "file",

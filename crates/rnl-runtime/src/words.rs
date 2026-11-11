@@ -686,7 +686,15 @@ mod tests {
         let added: Vec<_> = w.keywords.iter().filter(|k| !k.in_version("0.3")).map(|k| k.name.as_str()).collect();
         assert_eq!(
             added,
-            ["SELECT-PIN", "TABLE", "ASSERT-INSTANCE", "ASSERT-TERMINAL", "ASSERT-NET", "ASSERT-TOPOLOGY"]
+            [
+                "SELECT-PIN",
+                "SOLVER-CONFIG",
+                "TABLE",
+                "ASSERT-INSTANCE",
+                "ASSERT-TERMINAL",
+                "ASSERT-NET",
+                "ASSERT-TOPOLOGY"
+            ]
         );
         assert!(!w.all_words_in("0.3").contains("different") && w.all_words_in("0.4").contains("different"));
         let place = w.keyword("PLACE").unwrap();
