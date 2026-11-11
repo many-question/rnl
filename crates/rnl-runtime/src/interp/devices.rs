@@ -3,7 +3,7 @@
 use crate::diag::{codes, Severity};
 use crate::host::{glob, LevelKind};
 
-use super::obj::{ObjData, ObjId, SceneId};
+use super::obj::{ObjData, ObjId, SceneId, UnitId};
 use super::Interp;
 
 #[derive(Clone, Debug)]
@@ -94,6 +94,18 @@ impl Interp<'_> {
                 }
             }
             self.scenes[s].device_info.insert(object, info);
+        }
+    }
+
+    /// Type conditions share one matcher in circuit selections, pin selections and assertions.
+    /// Read the statement's version: an included file need not use its objects' version.
+    pub(super) fn instance_type_matches(&self, object: ObjId, pattern: &str, writer: UnitId) -> bool {
+        let kind = self.instance_type(object);
+        let pattern = pattern.to_lowercase();
+        if self.follows_0_4(writer) {
+            kind.is_some_and(|kind| glob(&pattern, kind, true))
+        } else {
+            kind.unwrap_or("") == pattern
         }
     }
 
