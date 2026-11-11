@@ -1376,6 +1376,34 @@ impl<'p> Interp<'p> {
         r
     }
 
+    pub(super) fn missing_reference<T>(&mut self, e: &Ref, ctx: &Ctx) -> R<T> {
+        let name = e.name.clone().unwrap_or_default();
+        let u = self.name_unit(ctx);
+        if e.prefix == '$' {
+            self.hint_standard_name(&name, ctx, e.start);
+        }
+        if let Some(gone) = (e.prefix == '$').then(|| self.missing_from_reference(&name, u)).flatten() {
+            return self.fail(
+                ctx,
+                codes::REF_MISSING_FROM_PACKAGE, format!("${name} cannot be found: it is in package {gone}, and the {gone} in effect here does not have it (dropped, replaced, or its reference failed); this statement fails (16.2)"),
+                e.start,
+            );
+        }
+        // a name of the standard series 0.2 where the series 0.3 is in effect
+        if let Some((code, why)) = (e.prefix == '$').then(|| self.renamed_in_0_3(&name, ctx)).flatten() {
+            return self.fail(ctx, code, format!("${name} cannot be found: {why}"), e.start);
+        }
+        let close = {
+            let mut names: Vec<String> =
+                self.units[ctx.unit].names.keys().filter(|(p, _)| *p == e.prefix).map(|(_, n)| n.clone()).collect();
+            // in name order, not the map's: of names equally close the first is named
+            names.sort_unstable();
+            closest(&name, names.iter().map(String::as_str))
+        };
+        let hint = close.map(|c| format!(", did you mean {}{c}?", e.prefix)).unwrap_or_default();
+        self.fail(ctx, codes::REF_NOT_FOUND, format!("{}{name} cannot be found{hint} (6.6)", e.prefix), e.start)
+    }
+
     pub(crate) fn resolve_ref(&mut self, e: &Ref, ctx: &Ctx) -> R<(ObjId, bool)> {
         if let Some(diagnostic) = self.reported_body_error(e, ctx) {
             return Err(Stop::Fail(Some(diagnostic)));
@@ -1409,41 +1437,7 @@ impl<'p> Interp<'p> {
                     };
                     return Err(Stop::Fail(Some(d)));
                 }
-                None => {
-                    let u = self.name_unit(ctx);
-                    if e.prefix == '$' {
-                        self.hint_standard_name(&name, ctx, e.start);
-                    }
-                    if let Some(gone) = (e.prefix == '$').then(|| self.missing_from_reference(&name, u)).flatten() {
-                        return self.fail(
-                            ctx,
-                            codes::REF_MISSING_FROM_PACKAGE, format!("${name} cannot be found: it is in package {gone}, and the {gone} in effect here does not have it (dropped, replaced, or its reference failed); this statement fails (16.2)"),
-                            e.start,
-                        );
-                    }
-                    // a name of the standard series 0.2 where the series 0.3 is in effect
-                    if let Some((code, why)) = (e.prefix == '$').then(|| self.renamed_in_0_3(&name, ctx)).flatten() {
-                        return self.fail(ctx, code, format!("${name} cannot be found: {why}"), e.start);
-                    }
-                    let close = {
-                        let mut names: Vec<String> = self.units[ctx.unit]
-                            .names
-                            .keys()
-                            .filter(|(p, _)| *p == e.prefix)
-                            .map(|(_, n)| n.clone())
-                            .collect();
-                        // in name order, not the map's: of names equally close the first is named
-                        names.sort_unstable();
-                        closest(&name, names.iter().map(String::as_str))
-                    };
-                    let hint = close.map(|c| format!(", did you mean {}{c}?", e.prefix)).unwrap_or_default();
-                    return self.fail(
-                        ctx,
-                        codes::REF_NOT_FOUND,
-                        format!("{}{name} cannot be found{hint} (6.6)", e.prefix),
-                        e.start,
-                    );
-                }
+                None => return self.missing_reference(e, ctx),
                 Some(Found::Nested(Nested::Member(m, k))) => {
                     let nested = ctx.nested.clone().unwrap();
                     let last = self.nested_member(&m.m, ctx, &nested)?;
