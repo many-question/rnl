@@ -5098,6 +5098,16 @@
     "3.7",
     "14.10"
    ]
+  },
+  {
+   "number": "RNL8118",
+   "name": "junction-definition-invalid",
+   "severity": "warning",
+   "message": "junction must name a definition whose first role accepts a point in the target level; no dots are written (13.2)",
+   "sections": [
+    "13.2",
+    "14.10"
+   ]
   }
  ]
 }

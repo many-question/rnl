@@ -287,6 +287,12 @@ pub fn define_style(name: &str, props: &[(String, Literal)]) -> String {
 /// The statements of a level op, in order (`use-package` writes none: it goes into the header);
 /// `style` names the style that the op's `style` is defined as in its level.
 pub fn statements(op: &Op, style: Option<&str>) -> Vec<String> {
+    statements_with_junction(op, style, Some("$JUNCTION"))
+}
+
+/// Statements with the junction definition resolved by the caller in the target level (13.2).
+/// None writes points without dots. Use this entry for draft 0.4.
+pub fn statements_with_junction(op: &Op, style: Option<&str>, definition: Option<&str>) -> Vec<String> {
     match op {
         Op::Set { object, symbol, at, orient, .. } => {
             let mut facts: Vec<String> = symbol.iter().map(|s| format!("@SET-SYMBOL {s}")).collect();
@@ -312,8 +318,8 @@ pub fn statements(op: &Op, style: Option<&str>) -> Vec<String> {
         }
         Op::AddPoint { name, at, junction } => {
             let mut out = vec![format!("{name} = {}", point(*at))];
-            if *junction {
-                out.push(format!("$JUNCTION @ATTACH {name}"));
+            if let (true, Some(definition)) = (junction, definition) {
+                out.push(format!("{definition} @ATTACH {name}"));
             }
             out
         }

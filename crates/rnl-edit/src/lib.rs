@@ -105,7 +105,8 @@ pub fn write(request: &WriteRequest) -> Result<String, String> {
 /// Write with stable diagnostic kinds and the host reader's diagnostics. Draft 0.4 refuses
 /// host errors before writing; released output versions retain their existing behavior.
 pub fn write_diagnosed(request: &WriteRequest) -> Result<Written, Refusal> {
-    write_in(request, None)
+    let written = write_in(request, None)?;
+    add_junctions(request, written, &MemoryProvider::new(), &rnl_runtime::Options::default())
 }
 
 fn write_in(request: &WriteRequest, files: Option<&dyn rnl_runtime::source::Provider>) -> Result<Written, Refusal> {
@@ -254,7 +255,11 @@ fn write_in(request: &WriteRequest, files: Option<&dyn rnl_runtime::source::Prov
             }
             _ => None,
         };
-        levels.entry(level).or_default().extend(form::statements(&lop.op, style.as_deref()));
+        levels.entry(level).or_default().extend(if version == "0.4" {
+            form::statements_with_junction(&lop.op, style.as_deref(), None)
+        } else {
+            form::statements(&lop.op, style.as_deref())
+        });
         first_op.entry(level).or_insert(k);
     }
     // a record goes at the end of a level, or before a region written to be encrypted that the end
@@ -322,14 +327,14 @@ pub fn write_with_options_diagnosed(
     let mut written = write_in(request, Some(files))?;
     let text = &written.text;
     if !options.include_std || request.language_version.as_deref() != Some("0.4") {
-        return Ok(written);
+        return add_junctions(request, written, files, options);
     }
     let entry = entry_of(request);
     let memory = MemoryProvider::new().with(&entry, text);
     let both = rnl_runtime::source::Layered { layers: vec![&memory, files] };
     let read = rnl_view::interpret_with(&entry, Some(&request.dialect), &BTreeMap::new(), &both, options)
         .map_err(|e| Refusal::new(codes::VIEW_CANNOT_READ, e))?;
-    let Some(version) = read.included_standard else { return Ok(written) };
+    let Some(version) = read.included_standard else { return add_junctions(request, written, files, options) };
     let saved = rnl_runtime::writeback::with_standard_package(&read.doc, text, &version);
     if saved == *text {
         return Err(Refusal::new(
@@ -338,6 +343,64 @@ pub fn write_with_options_diagnosed(
         ));
     }
     written.text = saved;
+    add_junctions(request, written, files, options)
+}
+
+/// Resolve only after package ops and include_std have been written. These usages are in a
+/// final record, so they see exactly the target-level names that a solver record would see.
+fn add_junctions(
+    request: &WriteRequest,
+    mut written: Written,
+    files: &dyn rnl_runtime::source::Provider,
+    options: &rnl_runtime::Options,
+) -> Result<Written, Refusal> {
+    if request.language_version.as_deref() != Some("0.4") {
+        return Ok(written);
+    }
+    let ops: Vec<_> =
+        request.ops.iter().enumerate().map(|(k, v)| ops::parse_diagnosed(k, v)).collect::<Result<_, _>>()?;
+    if !ops.iter().any(|op| matches!(op.op, Op::AddPoint { junction: true, .. })) {
+        return Ok(written);
+    }
+    let entry = entry_of(request);
+    let memory = MemoryProvider::new().with(&entry, &written.text);
+    let both = rnl_runtime::source::Layered { layers: vec![&memory, files] };
+    let options = rnl_runtime::Options { problems: true, generated: true, ..options.clone() };
+    let read = rnl_view::interpret_with(&entry, Some(&request.dialect), &BTreeMap::new(), &both, &options)
+        .map_err(|e| Refusal::new(codes::VIEW_CANNOT_READ, e))?;
+    let doc = &read.doc;
+    let file = &doc.main().file;
+    let mut levels: BTreeMap<LevelId, Vec<String>> = BTreeMap::new();
+    let mut warnings = Sink::new();
+    for op in ops {
+        let Op::AddPoint { name, junction: true, .. } = op.op else { continue };
+        let level = find_level(doc, file, op.level.as_deref().unwrap_or_default())?;
+        let Some(problem) = read.problems.iter().find(|p| p.level == level) else { continue };
+        if let Some(d) = problem.junction.warning() {
+            warnings.add(
+                d.severity,
+                d.code,
+                d.message,
+                d.loc,
+                rnl_runtime::diag::Extra { cause: None, origin: d.origin, in_package: d.in_package },
+            );
+        }
+        if let Some(definition) = &problem.junction.definition {
+            levels.entry(level).or_default().push(format!("{definition} @ATTACH {name}"));
+        }
+    }
+    written.diagnostics.extend(error::diagnostics(&warnings));
+    let mut order = Vec::new();
+    for &level in levels.keys() {
+        let line = record_line(doc, level, &written.text)
+            .map_err(|_| Refusal::new(codes::EDIT_REREAD_DIFFERS, "the netlist reads otherwise with its header"))?;
+        order.push((line, level));
+    }
+    order.sort_by_key(|(line, _)| std::cmp::Reverse(*line));
+    for (line, level) in order {
+        let record = record(&request.author, &levels[&level], carrier_at(doc, file, &written.text, line));
+        written.text = append_record(doc, level, &written.text, &record);
+    }
     Ok(written)
 }
 

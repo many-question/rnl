@@ -234,7 +234,12 @@ fn report(
             facts,
             statements,
             errors: r.errors.clone(),
-            warnings: r.warnings.clone(),
+            warnings: r
+                .warnings
+                .iter()
+                .cloned()
+                .chain(level.written.warnings.iter().map(|w| rnl_runtime::diag::Sink::new().render(w)))
+                .collect(),
             unsolved: level.written.unsolved.iter().map(|u| u.to_string()).collect(),
             unrouted,
             notes: r.notes.iter().chain(&level.written.notes).cloned().collect(),

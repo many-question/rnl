@@ -505,12 +505,27 @@ impl Interp<'_> {
                 symbol_view: None,
             });
         }
-        let junction_at: Vec<ObjId> = self.scenes[s]
-            .usages
-            .iter()
-            .filter(|a| self.label(self.usage(**a).definition) == "$JUNCTION")
-            .flat_map(|a| self.usage(*a).roles.iter().map(|(_, r)| *r).collect::<Vec<_>>())
-            .collect();
+        let junction_at: Vec<ObjId> = if self.follows_0_4(self.level_unit[self.scenes[s].level]) {
+            let settings = self.solver_config_for(s);
+            let definition = self.junction_for(s, &settings).1;
+            let roles: Vec<_> = self.scenes[s]
+                .usages
+                .iter()
+                .filter_map(|a| {
+                    let usage = self.usage(*a);
+                    (Some(usage.definition) == definition).then(|| usage.roles.first().map(|(_, r)| *r)).flatten()
+                })
+                .collect();
+            let members: Vec<_> = roles.into_iter().flat_map(|r| self.flatten(s, r, 7, None)).collect();
+            members.into_iter().map(|r| self.input_value(r)).collect()
+        } else {
+            self.scenes[s]
+                .usages
+                .iter()
+                .filter(|a| self.label(self.usage(**a).definition) == "$JUNCTION")
+                .flat_map(|a| self.usage(*a).roles.iter().map(|(_, r)| *r).collect::<Vec<_>>())
+                .collect()
+        };
         let points = points
             .iter()
             .map(|p| PointInfo { id: ids[p].clone(), at: self.xy(s, *p), junction: junction_at.contains(p) })

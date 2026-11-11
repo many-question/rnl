@@ -8,6 +8,7 @@ pub mod diag;
 pub mod geom;
 pub mod host;
 pub mod interp;
+pub mod junction;
 pub mod markup;
 pub mod model;
 pub mod numbering;
