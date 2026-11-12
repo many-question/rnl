@@ -194,7 +194,7 @@ fn standard_packages_check_clean() {
 
 /// The keywords of the draft language 0.4 that the draft series 0.4 writes and the toolkit does not
 /// read yet: those of the selective routing (13.7). Each change that reads
-/// one takes it out here, and with it the aliases rnl-zh gives it (16.5).
+/// one takes it out here, and with it the aliases alias-zh gives it (16.5).
 const KEYWORDS_NOT_READ_YET: [&str; 0] = [];
 
 /// The other statements of 0.4 that the draft series writes and the toolkit does not read yet: the
@@ -218,7 +218,7 @@ fn the_draft_standard_series_has_only_what_is_not_read_yet() {
         known.push(format!("the original @{k} is not a standard keyword (16.5)"));
     }
     let drafts = standard_packages().1;
-    assert!(drafts.len() >= 16, "only {} package files", drafts.len());
+    assert_eq!(drafts.len(), 14, "expected 14 package files, got {}", drafts.len());
     for f in drafts {
         let r = interpret_file(&f, None, &FsProvider::new(&[]), &Options::default()).unwrap();
         for d in r.diagnostics() {
