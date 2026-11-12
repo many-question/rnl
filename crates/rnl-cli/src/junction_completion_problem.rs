@@ -1,7 +1,7 @@
 //! Extract conservative proposals from normally interpreted new-usage facts.
 //! Proposals are never proof that a fact is retained; `verified_record` must reread and validate.
 use super::junction_completion::{Axis, Point, Suggestion};
-use rnl_runtime::problem::{Axis as ProblemAxis, FactKind, LevelProblem, PointRef, Sense};
+use rnl_runtime::problem::{Axis as ProblemAxis, FactKind, Filler, LevelProblem, PointRef, Sense};
 
 fn axis(a: ProblemAxis) -> Axis {
     match a {
@@ -63,11 +63,15 @@ where
     out
 }
 
+fn mapped_index(map: &[usize], i: usize) -> Result<usize, &'static str> {
+    map.get(i).copied().filter(|i| *i != usize::MAX).ok_or("referenced original object is not mapped")
+}
+
 fn remap_point(point: &mut PointRef, map: &[usize]) -> Result<(), &'static str> {
     match point {
-        PointRef::Origin(i) => *i = *map.get(*i).ok_or("invalid point index")?,
+        PointRef::Origin(i) => *i = mapped_index(map, *i)?,
         PointRef::Pin { object, .. } | PointRef::SymbolPin { object, .. } | PointRef::PinPosition { object, .. } => {
-            *object = *map.get(*object).ok_or("invalid pin owner index")?;
+            *object = mapped_index(map, *object)?;
         }
         PointRef::Centre(points) => {
             for point in points {
@@ -80,12 +84,12 @@ fn remap_point(point: &mut PointRef, map: &[usize]) -> Result<(), &'static str> 
 fn remap_fact(fact: &mut FactKind, map: &[usize]) -> Result<(), &'static str> {
     match fact {
         FactKind::Place { at, .. } => remap_point(at, map)?,
-        FactKind::PointCoordinate { point, .. } => *point = *map.get(*point).ok_or("invalid point index")?,
+        FactKind::PointCoordinate { point, .. } => *point = mapped_index(map, *point)?,
         FactKind::Offset { text, from, .. } => {
-            *text = *map.get(*text).ok_or("invalid text index")?;
+            *text = mapped_index(map, *text)?;
             remap_point(from, map)?;
         }
-        FactKind::Orient { object, .. } => *object = *map.get(*object).ok_or("invalid orient index")?,
+        FactKind::Orient { object, .. } => *object = mapped_index(map, *object)?,
         FactKind::Align { members, .. } | FactKind::Order { members, .. } | FactKind::Distribute { members, .. } => {
             for point in members {
                 remap_point(point, map)?;
@@ -97,15 +101,15 @@ fn remap_fact(fact: &mut FactKind, map: &[usize]) -> Result<(), &'static str> {
             }
         }
         FactKind::PinOrient { pin, .. } => {
-            pin.object = *map.get(pin.object).ok_or("invalid pin owner")?;
+            pin.object = mapped_index(map, pin.object)?;
         }
         FactKind::PinOrientRelation { from, to, .. } => {
-            from.object = *map.get(from.object).ok_or("invalid pin owner")?;
-            to.object = *map.get(to.object).ok_or("invalid pin owner")?;
+            from.object = mapped_index(map, from.object)?;
+            to.object = mapped_index(map, to.object)?;
         }
         FactKind::OrientRelation { from, to, .. } => {
             for object in from.iter_mut().chain(to.iter_mut()) {
-                *object = *map.get(*object).ok_or("invalid oriented owner")?;
+                *object = mapped_index(map, *object)?;
             }
         }
         FactKind::Table { rows, .. } => {
@@ -137,52 +141,126 @@ fn equivalent_source(
     mapped == Some(b.line)
 }
 
-/// Match retained first-pass facts after unique reference-based object remapping. This rejects
-/// ambiguous objects and unsupported fact shapes rather than
-/// guessing by label, coordinates, or runtime IDs, which are not stable across readings. Presence
-/// does not prove 8.5 retention; an independent post-interpretation status check is still required.
+struct IdentityMapping {
+    objects: Vec<usize>,
+    usages: Vec<usize>,
+    reified: Vec<bool>,
+}
+
+fn unique_ids(ids: &[Option<String>], current: &[String]) -> Result<Vec<usize>, &'static str> {
+    let mut used = std::collections::BTreeSet::new();
+    ids.iter()
+        .map(|id| {
+            // Unreferenced symbol text can disappear when a generated usage is
+            // written out. Any fact or role that needs it must still reject it.
+            let Some(id) = id.as_ref() else { return Ok(usize::MAX) };
+            let mut found = current.iter().enumerate().filter(|(_, candidate)| *candidate == id);
+            let (index, _) = found.next().ok_or("original identity missing in trial")?;
+            if found.next().is_some() || !used.insert(index) {
+                return Err("original identity is ambiguous in trial");
+            }
+            Ok(index)
+        })
+        .collect()
+}
+
+fn identity_mapping(
+    original: &LevelProblem,
+    trial: &LevelProblem,
+    read: &rnl_runtime::Interpretation,
+) -> Result<IdentityMapping, &'static str> {
+    // Runtime IDs are used only after the core maps original references into this
+    // particular reading. Generated usages are reified under their written names.
+    let ids = rnl_runtime::previous::document_ids(original, read);
+    let objects = unique_ids(&ids.objects, &trial.ids.objects)?;
+    let usages = unique_ids(&ids.usages, &trial.ids.usages)?;
+    let reified: Vec<_> = original.usages.iter().map(|u| u.rule_made).collect();
+    if usages.contains(&usize::MAX) {
+        return Err("original usage identity is not mapped");
+    }
+    for (old, &index) in original.objects.iter().zip(&objects) {
+        if index == usize::MAX {
+            continue;
+        }
+        if old.kind != trial.objects[index].kind {
+            return Err("original object kind changed");
+        }
+    }
+    let mapped_filler = |f: &Filler| -> Result<Filler, &'static str> {
+        Ok(match f {
+            Filler::Object(i) => Filler::Object(mapped_index(&objects, *i)?),
+            Filler::Usage(i) => Filler::Usage(*usages.get(*i).ok_or("invalid role usage")?),
+            Filler::Terminal { object, terminal, pin } => {
+                Filler::Terminal { object: mapped_index(&objects, *object)?, terminal: terminal.clone(), pin: *pin }
+            }
+            Filler::Pin { object, pin } => Filler::Pin { object: mapped_index(&objects, *object)?, pin: *pin },
+            Filler::Wire(i) => {
+                let old = original.wires.get(*i).ok_or("invalid role wire")?;
+                let mut matching = trial.wires.iter().enumerate().filter(|(_, w)| w.reference == old.reference);
+                let (index, _) = matching.next().ok_or("role wire missing")?;
+                if matching.next().is_some() {
+                    return Err("role wire ambiguous");
+                }
+                Filler::Wire(index)
+            }
+            Filler::Net(_) | Filler::Other(_) => f.clone(),
+        })
+    };
+    for ((old, &index), &reified) in original.usages.iter().zip(&usages).zip(&reified) {
+        let new = &trial.usages[index];
+        // A rule-made usage is written as a top-level ATTACH. Its body still
+        // retains its definition, parameters, roles and nested usage identities.
+        let parent = if reified {
+            None
+        } else {
+            old.parent.map(|i| usages.get(i).copied().ok_or("invalid parent usage")).transpose()?
+        };
+        let object = old.object.map(|i| mapped_index(&objects, i)).transpose()?;
+        if old.definition != new.definition
+            || old.params != new.params
+            || parent != new.parent
+            || object != new.object
+            || old.roles.len() != new.roles.len()
+        {
+            return Err("original usage identity changed");
+        }
+        for (a, b) in old.roles.iter().zip(&new.roles) {
+            let members = a.members.iter().map(&mapped_filler).collect::<Result<Vec<_>, _>>()?;
+            if a.role != b.role || members != b.members {
+                return Err("original usage role changed");
+            }
+        }
+    }
+    Ok(IdentityMapping { objects, usages, reified })
+}
+
+fn mapped_chain(chain: &[usize], map: &IdentityMapping) -> Result<Vec<usize>, &'static str> {
+    let start = chain.iter().rposition(|i| map.reified.get(*i) == Some(&true)).unwrap_or(0);
+    chain[start..].iter().map(|i| map.usages.get(*i).copied().ok_or("invalid fact usage chain")).collect()
+}
+
+/// Prove the first-pass kept facts against the interpreted drawing. Reifying a rule-made
+/// usage can empty its former local collection, so presence in the new expanded fact list
+/// is not a retention proof. The original authored records are unchanged by this transaction.
 pub fn retained_facts_preserved(
     original: &LevelProblem,
     trial: &LevelProblem,
     host_file: &str,
     line_map: &[Option<u32>],
     kept: &[usize],
+    read: &rnl_runtime::Interpretation,
+    tolerance: f64,
 ) -> Result<(), &'static str> {
     if kept.is_empty() {
         return Ok(());
     }
-    let mut mapping = Vec::new();
-    for old in &original.objects {
-        if original.objects.iter().filter(|other| other.reference == old.reference && other.kind == old.kind).count()
-            != 1
-        {
-            return Err("original reference is ambiguous");
-        }
-        let mut matches =
-            trial.objects.iter().enumerate().filter(|(_, new)| old.kind == new.kind && old.reference == new.reference);
-        let (index, _) = matches.next().ok_or("original object missing in trial")?;
-        if matches.next().is_some() {
-            return Err("trial object reference is ambiguous");
-        }
-        mapping.push(index);
-    }
-    if original.usages.len() > trial.usages.len() {
-        return Err("original usage disappeared");
-    }
-    for (old, new) in original.usages.iter().zip(&trial.usages) {
-        if old.reference != new.reference
-            || old.definition != new.definition
-            || old.roles != new.roles
-            || old.params != new.params
-            || old.parent != new.parent
-        {
-            return Err("original usage identity mapping needs a richer adapter");
-        }
-    }
+    let mapping = identity_mapping(original, trial, read)?;
+    let drawn = rnl_runtime::previous::drawn(original, read);
     for &index in kept {
         let fact = original.facts.get(index).ok_or("invalid kept fact index")?;
         let mut kind = fact.kind.clone();
-        remap_fact(&mut kind, &mapping)?;
+        remap_fact(&mut kind, &mapping.objects)?;
+        let chain = mapped_chain(&fact.chain, &mapping)?;
         // Loc + kind + priority is not sufficient if it matches more than once; do not guess.
         let matches = trial
             .facts
@@ -191,11 +269,14 @@ pub fn retained_facts_preserved(
                 equivalent_source(fact.source.as_ref(), candidate.source.as_ref(), host_file, line_map)
                     && candidate.priority == fact.priority
                     && candidate.kind == kind
-                    && candidate.chain == fact.chain
+                    && candidate.chain == chain
             })
             .count();
-        if matches != 1 {
-            return Err("retained fact missing or ambiguous in trial");
+        if matches > 1 {
+            return Err("retained fact ambiguous in trial");
+        }
+        if rnl_solver::problem_fact_holds_as_drawn(original, &drawn, index, tolerance) != Some(true) {
+            return Err("retained fact is unresolved or not satisfied in the drawing");
         }
     }
     Ok(())
@@ -208,48 +289,24 @@ pub fn added_fact_indices(
     trial: &LevelProblem,
     host_file: &str,
     line_map: &[Option<u32>],
+    read: &rnl_runtime::Interpretation,
 ) -> Result<Vec<usize>, &'static str> {
-    let mut map = Vec::new();
-    for old in &original.objects {
-        if original.objects.iter().filter(|o| o.kind == old.kind && o.reference == old.reference).count() != 1 {
-            return Err("original object reference ambiguous");
-        }
-        let mut found =
-            trial.objects.iter().enumerate().filter(|(_, o)| o.kind == old.kind && o.reference == old.reference);
-        let (i, _) = found.next().ok_or("original object missing")?;
-        if found.next().is_some() {
-            return Err("trial object reference ambiguous");
-        }
-        map.push(i);
-    }
-    if original.usages.len() > trial.usages.len() {
-        return Err("original usage missing");
-    }
-    for (a, b) in original.usages.iter().zip(&trial.usages) {
-        if a.reference != b.reference
-            || a.definition != b.definition
-            || a.roles != b.roles
-            || a.params != b.params
-            || a.parent != b.parent
-        {
-            return Err("original usage identity mapping ambiguous");
-        }
-    }
+    let map = identity_mapping(original, trial, read)?;
     let mut old_kinds = Vec::new();
     for fact in &original.facts {
         let mut kind = fact.kind.clone();
-        remap_fact(&mut kind, &map)?;
-        old_kinds.push((fact, kind));
+        remap_fact(&mut kind, &map.objects)?;
+        old_kinds.push((fact, kind, mapped_chain(&fact.chain, &map)?));
     }
     let mut added = Vec::new();
     for (index, candidate) in trial.facts.iter().enumerate() {
         let count = old_kinds
             .iter()
-            .filter(|(fact, kind)| {
+            .filter(|(fact, kind, chain)| {
                 equivalent_source(fact.source.as_ref(), candidate.source.as_ref(), host_file, line_map)
                     && fact.priority == candidate.priority
                     && *kind == candidate.kind
-                    && fact.chain == candidate.chain
+                    && *chain == candidate.chain
             })
             .count();
         if count > 1 {
@@ -310,7 +367,7 @@ pub struct TrialValidation<'a> {
     pub tolerance: f64,
 }
 
-pub fn validate_interpreted_trial(input: TrialValidation<'_>) -> Result<(), &'static str> {
+pub fn validate_interpreted_trial(input: TrialValidation<'_>) -> Result<(), String> {
     let TrialValidation {
         original_problem,
         host_file,
@@ -327,18 +384,18 @@ pub fn validate_interpreted_trial(input: TrialValidation<'_>) -> Result<(), &'st
     let left = before.model.levels.iter().find(|v| v.level == level).ok_or("missing initial level")?;
     let right = after.model.levels.iter().find(|v| v.level == level).ok_or("missing trial level")?;
     let trial_problem = after.problems.iter().find(|v| v.level == level).ok_or("missing trial problem")?;
-    retained_facts_preserved(original_problem, trial_problem, host_file, line_map, kept)?;
+    retained_facts_preserved(original_problem, trial_problem, host_file, line_map, kept, after, tolerance)?;
     let drawn = current_drawn(trial_problem, after);
     for &index in added_facts {
         if rnl_solver::problem_fact_holds_as_drawn(trial_problem, &drawn, index, tolerance) != Some(true) {
-            return Err("new or changed fact is unresolved or not satisfied");
+            return Err("new or changed fact is unresolved or not satisfied".into());
         }
     }
     if after.failed.iter().any(|failed| !before.failed.contains(failed)) {
-        return Err("trial newly failed or dropped a statement");
+        return Err("trial newly failed or dropped a statement".into());
     }
     if after.diagnostics().iter().any(|d| d.severity == Severity::Error || d.severity == Severity::Violation) {
-        return Err("trial interpretation has an error or violation");
+        return Err("trial interpretation has an error or violation".into());
     }
     for (usage_id, candidate) in targets {
         let mut selected = right.objects.iter().filter(|v| &v.id == usage_id);
@@ -349,10 +406,10 @@ pub fn validate_interpreted_trial(input: TrialValidation<'_>) -> Result<(), &'st
             || original_dot.definition != dot.definition
             || original_dot.attach != dot.attach
         {
-            return Err("junction definition or role identity changed");
+            return Err("junction definition or role identity changed".into());
         }
         if selected.next().is_some() || dot.at != Some((candidate.x, candidate.y)) {
-            return Err("trial usage identity or placement incorrect");
+            return Err("trial usage identity or placement incorrect".into());
         }
     }
     for old in left.objects.iter().filter(|v| !targets.iter().any(|(id, _)| *id == v.id)) {
@@ -360,58 +417,64 @@ pub fn validate_interpreted_trial(input: TrialValidation<'_>) -> Result<(), &'st
         let new = matches.next().ok_or("old object missing")?;
         if matches.next().is_some() || old.at != new.at || old.orient != new.orient || old.pins.len() != new.pins.len()
         {
-            return Err("old object geometry changed");
+            return Err("old object geometry changed".into());
         }
         for (a, b) in old.pins.iter().zip(&new.pins) {
             if a.at != b.at || a.dir != b.dir || a.terminals != b.terminals || a.nets != b.nets {
-                return Err("old pin geometry or connection changed");
+                return Err("old pin geometry or connection changed".into());
             }
             match (&a.identity, &b.identity) {
                 (Some(a), Some(b)) if a.index == b.index && a.reference == b.reference => {}
                 (None, None) => {}
-                _ => return Err("physical pin identity changed"),
+                _ => return Err("physical pin identity changed".into()),
             }
         }
     }
     if left.points.len() != right.points.len() {
-        return Err("named point count changed");
+        return Err("named point count changed".into());
     }
     for old in &left.points {
         let mut matches = right.points.iter().filter(|point| point.id == old.id);
         let new = matches.next().ok_or("old point missing")?;
         if matches.next().is_some() || old.at != new.at || old.junction != new.junction {
-            return Err("old point geometry or junction identity changed");
+            return Err("old point geometry or junction identity changed".into());
         }
     }
     if left.wires.len() != right.wires.len() {
-        return Err("wire count changed");
+        return Err("wire count changed".into());
     }
     for (a, b) in left.wires.iter().zip(&right.wires) {
         if a.object_id != b.object_id || a.nets != b.nets || a.points != b.points || a.via != b.via || a.mode != b.mode
         {
-            return Err("wire geometry or endpoint identity changed");
+            return Err("wire geometry or endpoint identity changed".into());
         }
     }
-    // Without source-level status proofs, accepting a dropped/unchecked fact would guess 8.5.
+    // The first pass can already have dropped a lower-priority constraint. Its
+    // unchanged outcome needs no new resolution; newly introduced dropped facts
+    // are still exported and must pass the actual-drawing check above.
     for (index, constraint) in right.constraints.iter().enumerate() {
         if matches!(constraint.status.as_str(), "ok" | "disabled") {
             continue;
         }
         // Added/changed facts were independently checked against the actual drawing above.
         // A label alone is not a unique identity: different constraints can share it.
-        let unchanged_pending = constraint.status == "unsolved"
+        let unchanged_pending = matches!(constraint.status.as_str(), "unsolved" | "dropped")
             && left.constraints.get(index).is_some_and(|old| {
-                old.status == "unsolved"
+                old.status == constraint.status
                     && old.label == constraint.label
                     && old.kind == constraint.kind
                     && old.priority == constraint.priority
             });
         if !unchanged_pending {
-            return Err("constraint outcome requires general resolution");
+            return Err(format!(
+                "constraint outcome requires general resolution: index {index}, status {}, previous {:?}",
+                constraint.status,
+                left.constraints.get(index).map(|old| (&old.status, &old.label, &old.kind, &old.priority))
+            ));
         }
     }
     if right.unplaced.iter().any(|id| targets.iter().any(|(target, _)| target == id) || !left.unplaced.contains(id)) {
-        return Err("junction or new generated object remains unplaced");
+        return Err("junction or new generated object remains unplaced".into());
     }
     Ok(())
 }

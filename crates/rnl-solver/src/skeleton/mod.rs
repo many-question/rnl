@@ -355,7 +355,6 @@ pub(crate) struct Strict {
 }
 
 #[allow(clippy::too_many_arguments)]
-#[cfg_attr(not(test), expect(dead_code, reason = "Entry point for the subsequent line-layout integration"))]
 pub(crate) fn compact_strict(
     problem: &LevelProblem,
     s: &Structure,
@@ -553,8 +552,8 @@ pub(crate) fn compact_strict(
                 read::Kind::Segment(g) => {
                     let seg = &sk.segs[g];
                     for v in [seg.a, seg.b] {
-                        for axis in 0..2 {
-                            out.conflicts.push((axis, sk.vertices[v].at[axis].clone()));
+                        for (axis, at) in sk.vertices[v].at.iter().enumerate() {
+                            out.conflicts.push((axis, at.clone()));
                         }
                     }
                 }
@@ -621,7 +620,6 @@ pub(crate) fn compact_strict(
 }
 
 /// Apply final spacing and compose each routed vertex's displacement with compaction.
-#[cfg_attr(not(test), expect(dead_code, reason = "Entry point for the subsequent line-layout integration"))]
 pub(crate) fn spaced(
     problem: &LevelProblem,
     s: &Structure,

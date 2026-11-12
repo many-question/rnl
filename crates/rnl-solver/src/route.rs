@@ -221,6 +221,8 @@ pub(crate) struct Layout {
     pub texts: Vec<[Q; 4]>,
     /// The box of each symbol, by its object: x1, y1, x2, y2, the smaller first.
     pub boxes: Vec<(usize, [Q; 4])>,
+    /// Actual source object when a box uses its attachment owner for electrical clearance.
+    pub box_sources: BTreeMap<usize, usize>,
     /// Where every pin of every symbol is.
     pub pins: Vec<[Q; 2]>,
     /// The wires written, each by the vertices it is drawn through.
@@ -1606,13 +1608,13 @@ fn finish_net(net: &NetIn, out: &mut NetOut) {
     }
     // an anchor where three now meet: the wires made end at a branch point on it
     let written = |a: usize| net.joined.iter().filter(|(x, y)| *x == a || *y == a).count();
-    for a in 0..n {
+    for (a, anchor) in net.anchors.iter().enumerate() {
         let ends = out.wires.iter().flat_map(|w| [w.start, w.end]).filter(|e| *e == End::Anchor(a)).count();
-        let pin = usize::from(net.anchors[a].connects_pin);
+        let pin = usize::from(anchor.connects_pin);
         if ends == 0 || pin + written(a) + ends < 3 {
             continue;
         }
-        let at = net.anchors[a].at.clone();
+        let at = anchor.at.clone();
         let b = out.branches.len();
         out.branches.push(at.clone());
         for w in &mut out.wires {
@@ -2077,6 +2079,44 @@ fn clear_static_default(layout: &Layout, index: usize, path: &[[Q; 2]]) -> bool 
     true
 }
 
+/// The core default path for an eligible two-anchor tree, clear of static geometry.
+/// Callers check route mode and authored-wire merges before requesting it.
+pub(crate) fn default_candidate(layout: &Layout, i: usize) -> Option<Vec<[Q; 2]>> {
+    let n = layout.nets.get(i)?;
+    if !layout.modern || n.anchors.len() != 2 || !n.joined.is_empty() {
+        return None;
+    }
+    let obstacle_work = layout
+        .boxes
+        .len()
+        .saturating_add(layout.texts.len())
+        .saturating_add(layout.pins.len())
+        .saturating_add(layout.nets.iter().map(|net| net.anchors.len()).sum::<usize>())
+        .saturating_add(layout.written.iter().map(|wire| wire.len()).sum::<usize>());
+    if !crate::budget::permit(crate::budget::Step::Route, 4096usize.saturating_add(obstacle_work)) {
+        return None;
+    }
+    default_geometry(layout, i)
+}
+
+/// Geometry-only form for deterministic final materialization after the search stops.
+pub(crate) fn default_geometry(layout: &Layout, i: usize) -> Option<Vec<[Q; 2]>> {
+    let n = layout.nets.get(i)?;
+    if !layout.modern || n.anchors.len() != 2 || !n.joined.is_empty() {
+        return None;
+    }
+    let dir = |a: &AnchorIn| match a.exit {
+        Some((1, 0)) => Some(Direction::Right),
+        Some((0, 1)) => Some(Direction::Up),
+        Some((-1, 0)) => Some(Direction::Left),
+        Some((0, -1)) => Some(Direction::Down),
+        _ => None,
+    };
+    let candidate =
+        shared_auto_path(&[n.anchors[0].at.clone(), n.anchors[1].at.clone()], dir(&n.anchors[0]), dir(&n.anchors[1]));
+    candidate.filter(|path| clear_static_default(layout, i, path))
+}
+
 /// One job per route tree in 0.4; released inputs merge by net name in first-ROUTE order.
 /// The order matches `crate::structure::Connections::drawn`.
 fn jobs(problem: &LevelProblem) -> Vec<Job> {
@@ -2257,32 +2297,9 @@ pub(crate) fn route(
         {
             continue;
         }
-        let obstacle_work = layout
-            .boxes
-            .len()
-            .saturating_add(layout.texts.len())
-            .saturating_add(layout.pins.len())
-            .saturating_add(layout.nets.iter().map(|net| net.anchors.len()).sum::<usize>())
-            .saturating_add(layout.written.iter().map(|wire| wire.len()).sum::<usize>());
-        if !crate::budget::permit(crate::budget::Step::Route, 4096usize.saturating_add(obstacle_work)) {
+        layout.nets[i].preferred = default_candidate(&layout, i);
+        if crate::budget::stopped() {
             break;
-        }
-        let dir = |a: &AnchorIn| match a.exit {
-            Some((1, 0)) => Some(Direction::Right),
-            Some((0, 1)) => Some(Direction::Up),
-            Some((-1, 0)) => Some(Direction::Left),
-            Some((0, -1)) => Some(Direction::Down),
-            _ => None,
-        };
-        let candidate = shared_auto_path(
-            &[n.anchors[0].at.clone(), n.anchors[1].at.clone()],
-            dir(&n.anchors[0]),
-            dir(&n.anchors[1]),
-        );
-        if let Some(path) = candidate {
-            if clear_static_default(&layout, i, &path) {
-                layout.nets[i].preferred = Some(path);
-            }
         }
     }
     let (outs, expansions) = route_layout(&layout, options.budget.astar_expansions);
