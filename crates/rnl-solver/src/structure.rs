@@ -311,7 +311,9 @@ fn anchors(problem: &LevelProblem, connections: &Connections, objects: &[ObjectI
     let mut out = BTreeMap::new();
     let zero = || [Q::zero(), Q::zero()];
     for (k, o) in problem.objects.iter().enumerate() {
-        let (ObjectKind::Text, Position::Own { .. }, Some(t)) = (o.kind, &o.position, &o.text) else { continue };
+        let (ObjectKind::Text, Position::Own { .. }, Some(t)) = (o.kind, &o.position, &o.text) else {
+            continue;
+        };
         let anchor = match &t.attach {
             Filler::Object(j) => match problem.objects.get(*j).map(|a| a.kind) {
                 Some(ObjectKind::Point) => Anchor { from: vec![(*j, None)], offset: zero(), point: true },
@@ -324,7 +326,9 @@ fn anchors(problem: &LevelProblem, connections: &Connections, objects: &[ObjectI
                 Anchor { from: vec![(*object, Some(*pin))], offset: beside(), point: true }
             }
             Filler::Wire(w) => {
-                let Some(w) = problem.wires.get(*w) else { continue };
+                let Some(w) = problem.wires.get(*w) else {
+                    continue;
+                };
                 let points: Vec<(usize, Option<usize>)> = w.anchors.iter().filter_map(anchor_point).collect();
                 if points.len() < 2 {
                     continue;
@@ -339,7 +343,9 @@ fn anchors(problem: &LevelProblem, connections: &Connections, objects: &[ObjectI
                     let net = connections.nets.iter().find(|n| n.name == *name)?;
                     net.pins.iter().find(|p| !objects[p.0].left_free).map(|&(object, pin)| (object, Some(pin)))
                 };
-                let Some(point) = wire.or_else(route).or_else(pin) else { continue };
+                let Some(point) = wire.or_else(route).or_else(pin) else {
+                    continue;
+                };
                 Anchor { from: vec![point], offset: zero(), point: false }
             }
             _ => continue,
@@ -684,7 +690,9 @@ impl Structure {
 
     /// Text boxes anchored on this pin, relative to the symbol's origin.
     pub(crate) fn labels_on_pin(&self, k: usize, pin: usize, orient: Orient) -> Vec<[Q; 4]> {
-        let Some(at) = self.pin_offset(k, pin, orient) else { return Vec::new() };
+        let Some(at) = self.pin_offset(k, pin, orient) else {
+            return Vec::new();
+        };
         self.pin_texts
             .get(&(k, pin))
             .into_iter()
@@ -934,7 +942,9 @@ pub(crate) fn analyse(
     for o in &problem.objects {
         // the texts that move with their owner on both axes; one that the scene places on an axis
         // does not (13.3)
-        let (Position::InSymbol { owner, local, replaced: None }, Some(t)) = (&o.position, &o.text) else { continue };
+        let (Position::InSymbol { owner, local, replaced: None }, Some(t)) = (&o.position, &o.text) else {
+            continue;
+        };
         let local = (number(local.0), number(local.1));
         let Some(boxes) = Orient::ALL.into_iter().map(|turn| text_box(t, &local, turn)).collect::<Option<Vec<_>>>()
         else {
@@ -952,7 +962,9 @@ pub(crate) fn analyse(
         else {
             continue;
         };
-        let (Some(o), Some(value)) = (objects.get(*owner), from_f64(*value)) else { continue };
+        let (Some(o), Some(value)) = (objects.get(*owner), from_f64(*value)) else {
+            continue;
+        };
         if o.role == Role::Element {
             offsets.entry(*text).or_default()[usize::from(*axis == Axis::Y)] = Some((*owner, value));
         }
@@ -1014,11 +1026,15 @@ pub(crate) fn analyse(
         // Main's text anchors already describe the renderer's position. Use those offsets,
         // with its orientation-aware text boxes, rather than a separate layout of text.
         for (&k, a) in &anchors {
-            let [(object, Some(pin))] = a.from.as_slice() else { continue };
+            let [(object, Some(pin))] = a.from.as_slice() else {
+                continue;
+            };
             if objects[k].left_free || objects[k].fact_axes.iter().any(|f| *f) {
                 continue;
             }
-            let Some(t) = problem.objects[k].text.as_ref() else { continue };
+            let Some(t) = problem.objects[k].text.as_ref() else {
+                continue;
+            };
             if let Some(b) = text_box(t, &(a.offset[0].clone(), a.offset[1].clone()), Orient::R0) {
                 pin_texts.entry((*object, *pin)).or_default().push(b);
             }
@@ -1203,10 +1219,47 @@ pub(crate) fn text_box(t: &TextInfo, at: &(Q, Q), turn: Orient) -> Option<[Q; 4]
     let alternate = t.column_position.filter(|_| turn.reverses_text_column()).map(|(x, y)| (number(x), number(y)));
     let at = alternate.as_ref().unwrap_or(at);
     let style = |name: &str| t.style.iter().find(|(n, _)| n == name).map(|(_, v)| v);
+    if style("textvisible").and_then(|v| v.boolean()) == Some(false) {
+        return None;
+    }
     let size = style("size").and_then(|v| v.num()).filter(|s| s.is_finite() && *s > 0.0).unwrap_or(1.0);
     let flag = |name: &str| style(name).and_then(|v| v.boolean()).unwrap_or(false);
     if t.lines.iter().all(|l| line_chars(l) == 0) {
         return None;
+    }
+    if t.baseline_mirrors {
+        // Use the exact same transformed local bounds as drawing; outward rounding
+        // makes the rational solver box contain the rendered four-corner box.
+        let st = t.style.iter().cloned().collect();
+        let (_, b) = rnl_render::modern_text(
+            (0.0, 0.0),
+            t.lines.clone(),
+            &t.halign,
+            &t.valign,
+            t.rotate,
+            &st,
+            turn,
+            t.fix_rotate,
+            t.upright,
+            rnl_render::RenderOptions::default().scale,
+        );
+        let q = |v: f64, up: bool| {
+            let exact = from_f64(v)?;
+            let x = v * 100.0;
+            if x.is_finite() {
+                let rounded = from_f64(if up { x.ceil() } else { x.floor() })? / int(100);
+                Some(if up { rounded.max(exact) } else { rounded.min(exact) })
+            } else {
+                Some(exact)
+            }
+        };
+        let a = [turned(turn, at, 0), turned(turn, at, 1)];
+        return Some([
+            q(b[0], false)? + &a[0],
+            q(b[1], false)? + &a[1],
+            q(b[2], true)? + &a[0],
+            q(b[3], true)? + &a[1],
+        ]);
     }
     // 0, 90, 180 or 270 (9.2.5), read exactly
     let r = from_f64(t.rotate).unwrap_or_default();
@@ -1251,6 +1304,7 @@ pub(crate) fn text_box(t: &TextInfo, at: &(Q, Q), turn: Orient) -> Option<[Q; 4]
         halign,
         valign,
         vertical: false,
+        transform: None,
         runs: Vec::new(),
         bars: Vec::new(),
     };
@@ -1304,7 +1358,13 @@ fn number(v: f64) -> Q {
 fn symbol_info(s: &rnl_runtime::problem::ProblemSymbol) -> SymbolInfo {
     // the corners compared as rationals, as every decision is
     let b = s.bbox.map(number);
-    let order = |a: &Q, c: &Q| if a <= c { (a.clone(), c.clone()) } else { (c.clone(), a.clone()) };
+    let order = |a: &Q, c: &Q| {
+        if a <= c {
+            (a.clone(), c.clone())
+        } else {
+            (c.clone(), a.clone())
+        }
+    };
     let ((x1, x2), (y1, y2)) = (order(&b[0], &b[2]), order(&b[1], &b[3]));
     let pins = s
         .pins
@@ -1410,7 +1470,9 @@ pub(crate) fn hang(problem: &LevelProblem, k: usize) -> Option<Hang> {
         .flat_map(|r| &r.members)
         .any(|m| matches!(m, Filler::Net(_) | Filler::Terminal { pin: Some(_), .. } | Filler::Pin { .. }));
     let symbol = problem.symbols.get(o.symbol?)?;
-    let [pin] = symbol.pins.as_slice() else { return None };
+    let [pin] = symbol.pins.as_slice() else {
+        return None;
+    };
     if !attached || usage.object != Some(k) {
         return None;
     }
@@ -1517,7 +1579,9 @@ fn power(problem: &LevelProblem, kept: &[usize], objects: &mut [ObjectInfo]) -> 
             _ => None,
         });
         // drawn at a point of its own, not right on the terminal (12.1)
-        let (Some(host), true) = (host, objects[k].own) else { continue };
+        let (Some(host), true) = (host, objects[k].own) else {
+            continue;
+        };
         let gap = int(crate::search::ATTACH_GAP);
         let rise = stub_rise(problem, kept, k, host).unwrap_or_else(|| if supply { gap } else { -gap });
         let rises = rise.is_positive();
@@ -1731,7 +1795,9 @@ fn pairs(problem: &LevelProblem, objects: &[ObjectInfo]) -> Vec<Pair> {
                 _ => None,
             }
         };
-        let (Some(a), Some(b)) = (one(roles.0), one(roles.1)) else { continue };
+        let (Some(a), Some(b)) = (one(roles.0), one(roles.1)) else {
+            continue;
+        };
         if a == b || objects.get(a).is_none_or(|o| !o.oriented) || objects.get(b).is_none_or(|o| !o.oriented) {
             continue;
         }
@@ -1979,7 +2045,9 @@ fn even_sets(problem: &LevelProblem, s: &Structure) -> Vec<Vec<usize>> {
     let mut joined = Joined::new(&s.elements);
     let is_element = |k: usize| s.objects.get(k).is_some_and(|o| o.role == Role::Element);
     for &f in &s.kept {
-        let FactKind::Distribute { axis: Axis::X, members, .. } = &problem.facts[f].kind else { continue };
+        let FactKind::Distribute { axis: Axis::X, members, .. } = &problem.facts[f].kind else {
+            continue;
+        };
         let mut ks = Vec::new();
         for m in members {
             elements_of(m, &mut ks);
@@ -2585,7 +2653,9 @@ fn precedence(problem: &LevelProblem, s: &Structure) -> (BTreeSet<(usize, usize)
     let at = |ms: &[PointRef]| -> Vec<(usize, Q)> {
         let mut out = Vec::new();
         for m in ms {
-            let Some(v) = point_value(problem, &s.witness, m, 0, 0) else { continue };
+            let Some(v) = point_value(problem, &s.witness, m, 0, 0) else {
+                continue;
+            };
             out.extend(elements(m).into_iter().map(|k| (k, v.clone())));
         }
         out
@@ -2669,7 +2739,9 @@ fn precedence(problem: &LevelProblem, s: &Structure) -> (BTreeSet<(usize, usize)
     for mut r in open {
         loop {
             let shared = unordered(&r);
-            let Some(i) = merged.iter().position(|m| !unordered(m).is_disjoint(&shared)) else { break };
+            let Some(i) = merged.iter().position(|m| !unordered(m).is_disjoint(&shared)) else {
+                break;
+            };
             let mut m = merged.remove(i);
             // the way of `r`, where they run against each other
             if m.pairs.iter().any(|&(a, b)| r.pairs.contains(&(b, a))) {

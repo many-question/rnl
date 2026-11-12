@@ -689,7 +689,7 @@ fn wires_written_do_not_touch_other_nets_or_run_through_symbols() {
     ] {
         for p in problems(&repo().join(file)) {
             let (solved, e) = check_level(file, &p);
-            let wires = crate::score::drawn(&p, &e.structure, &e.placed.geometry, &e.routing);
+            let wires = crate::score::drawn(&p, &e.structure, &e.placed.geometry, &e.routing).unwrap();
             assert!(!wires.paths.is_empty(), "{file}");
             let n = crate::score::misleading(&p, &e.structure, &e.placed.origins, &e.placed.geometry, &wires);
             assert_eq!(n, 0, "{file}: {n} places where the wires mislead\n{}", summary(&p, &solved, &e));
@@ -1387,10 +1387,16 @@ fn violated_exits(p: &LevelProblem, solved: &Solved, e: &Exact) -> Vec<String> {
     for (w, path) in solved.solution.wires.iter().zip(&e.routing.paths) {
         let backwards: Vec<[Q; 2]> = path.iter().rev().cloned().collect();
         for (end, path) in [(w.points.first(), path), (w.points.last(), &backwards)] {
-            let Some(WirePoint::Anchor(PointRef::Pin { object, pin, terminal })) = end else { continue };
-            let Some((x, y)) = s.exit(*object, *pin, ori[*object]) else { continue };
+            let Some(WirePoint::Anchor(PointRef::Pin { object, pin, terminal })) = end else {
+                continue;
+            };
+            let Some((x, y)) = s.exit(*object, *pin, ori[*object]) else {
+                continue;
+            };
             let Some(start) = path.first() else { continue };
-            let Some(next) = path.iter().find(|q| *q != start) else { continue };
+            let Some(next) = path.iter().find(|q| *q != start) else {
+                continue;
+            };
             let way = ((&next[0] - &start[0]).signum(), (&next[1] - &start[1]).signum());
             if way != (int(x), int(y)) {
                 let label = &p.objects[*object].label;
@@ -1657,7 +1663,7 @@ fn the_drawings_are_not_stretched() {
     let [vdd, xu1] = ["#VDD", "#XU1"].map(|l| object(&p, l));
     assert!(&e.placed.origins[xu1][0] - &e.placed.origins[vdd][0] <= int(12), "{what}");
     assert!(extent(&e)[0] < num(50.5), "{what}");
-    let wires = crate::score::drawn(&p, &e.structure, &e.placed.geometry, &e.routing);
+    let wires = crate::score::drawn(&p, &e.structure, &e.placed.geometry, &e.routing).unwrap();
     let view = crate::objectives::View { s: &e.structure, at: &e.placed.origins, orient: &e.placed.geometry.orient };
     let crossings = crate::objectives::score(crate::objectives::Objective::Crossings, &view, Some(&wires));
     assert!(crossings.is_zero(), "{what}");
@@ -1805,6 +1811,50 @@ fn only_groups_pairs_and_elements_of_one_role_are_spaced_evenly() {
 /// whole lay mirrored across it (review of phase 2 of the quality review: the names and values of
 /// T6's legs and RS6, turned R270).
 #[test]
+fn modern_text_solver_contains_rendered_bounds() {
+    use rnl_runtime::problem::{Filler, TextInfo};
+    for size in [1.0, 1e12, 1e100] {
+        for angle in [0.0, 30.0, 90.0, 180.0, 270.0, -45.0] {
+            for turn in Orient::ALL {
+                for fix_rotate in [false, true] {
+                    for upright in [false, true] {
+                        let t = TextInfo {
+                            attach: Filler::Other(String::new()),
+                            key: None,
+                            lines: rnl_runtime::markup::parse("ABC"),
+                            halign: "start".into(),
+                            valign: "baseline".into(),
+                            rotate: angle,
+                            fix_rotate,
+                            upright,
+                            baseline_mirrors: true,
+                            column_position: None,
+                            style: vec![("size".into(), rnl_runtime::interp::obj::Lit::Num(size))],
+                        };
+                        let b = crate::structure::text_box(&t, &(int(0), int(0)), turn).unwrap();
+                        let (_, render) = rnl_render::modern_text(
+                            (0.0, 0.0),
+                            t.lines.clone(),
+                            &t.halign,
+                            &t.valign,
+                            angle,
+                            &t.style.iter().cloned().collect(),
+                            turn,
+                            fix_rotate,
+                            upright,
+                            14.0,
+                        );
+                        let solver = b.map(|q| crate::rational::to_f64(&q));
+                        assert!(solver[0] <= render[0] && solver[1] <= render[1]);
+                        assert!(solver[2] >= render[2] && solver[3] >= render[3]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn a_text_is_as_wide_as_it_is_drawn() {
     use rnl_runtime::problem::{Filler, TextInfo};
     let text = |s: &str, halign: &str, rotate: f64| TextInfo {
@@ -1815,6 +1865,7 @@ fn a_text_is_as_wide_as_it_is_drawn() {
         valign: "baseline".to_string(),
         rotate,
         fix_rotate: false,
+        upright: true,
         baseline_mirrors: false,
         column_position: None,
         style: Vec::new(),
@@ -1870,7 +1921,9 @@ fn texts_that_offsets_place_are_kept_clear() {
             assert!(k == j || !meet(a, b), "{} {}: {what}", p.objects[*k].label, p.objects[*j].label);
         }
         for j in s.components().filter(|j| j != k) {
-            let Some(b) = s.box_at(at, ori, j) else { continue };
+            let Some(b) = s.box_at(at, ori, j) else {
+                continue;
+            };
             assert!(!meet(a, &b), "{} {}: {what}", p.objects[*k].label, p.objects[j].label);
         }
     }
@@ -1978,7 +2031,9 @@ fn grounded(problem: &LevelProblem, s: &Structure, c: &Candidate, ori: &[Orient]
         }
     }
     for &f in &s.kept {
-        let (Some(unit), Some(fact)) = (s.model.units.get(f), problem.facts.get(f)) else { continue };
+        let (Some(unit), Some(fact)) = (s.model.units.get(f), problem.facts.get(f)) else {
+            continue;
+        };
         let fixes = match &fact.kind {
             FactKind::Place { axis, .. } | FactKind::PointCoordinate { axis, .. } => Some(ax(*axis)),
             _ => None,
@@ -2215,9 +2270,13 @@ fn symbol_texts(p: &LevelProblem, e: &Exact) -> Vec<(usize, [Q; 4])> {
     let (at, ori) = (&e.placed.origins, &e.placed.geometry.orient);
     let mut out = Vec::new();
     for o in &p.objects {
-        let (Position::InSymbol { owner, local, replaced: None }, Some(t)) = (&o.position, &o.text) else { continue };
+        let (Position::InSymbol { owner, local, replaced: None }, Some(t)) = (&o.position, &o.text) else {
+            continue;
+        };
         let local = (from_f64(local.0).unwrap(), from_f64(local.1).unwrap());
-        let Some(b) = crate::structure::text_box(t, &local, ori[*owner]) else { continue };
+        let Some(b) = crate::structure::text_box(t, &local, ori[*owner]) else {
+            continue;
+        };
         let a = &at[*owner];
         out.push((*owner, [&a[0] + &b[0], &a[1] + &b[1], &a[0] + &b[2], &a[1] + &b[3]]));
     }
@@ -2263,7 +2322,9 @@ fn the_members_of_a_distribute_keep_its_order_and_their_texts_clear() {
         let host = |k: usize| s.objects[k].stub.as_ref().map(|stub| stub.host.0);
         for &(k, ref t) in &texts {
             for j in s.components().filter(|&j| j != k && host(j) != Some(k) && host(k) != Some(j)) {
-                let Some(b) = s.box_at(at, ori, j) else { continue };
+                let Some(b) = s.box_at(at, ori, j) else {
+                    continue;
+                };
                 assert!(!meet(t, &b), "{} over {}: {what}", p.objects[k].label, p.objects[j].label);
             }
         }
@@ -2288,7 +2349,9 @@ fn pins_alike(a: &Exact, b: &Exact, mirror: bool) -> bool {
         return false;
     }
     let x = |p: &[Q; 2], q: &[Q; 2]| if mirror { &p[0] + &q[0] } else { &q[0] - &p[0] };
-    let Some(((_, p0), (_, q0))) = pa.first().zip(pb.first()) else { return true };
+    let Some(((_, p0), (_, q0))) = pa.first().zip(pb.first()) else {
+        return true;
+    };
     let (dx, dy) = (x(p0, q0), &q0[1] - &p0[1]);
     pa.iter().zip(&pb).all(|((_, p), (_, q))| x(p, q) == dx && &q[1] - &p[1] == dy)
 }
@@ -2424,6 +2487,7 @@ fn fixed_rotation_text_boxes_move_the_anchor_without_turning_the_extent() {
             valign: "top".into(),
             rotate,
             fix_rotate: true,
+            upright: true,
             baseline_mirrors: false,
             column_position: None,
             style: Vec::new(),
@@ -2449,6 +2513,7 @@ fn mirrored_baselines_use_the_same_box_side_in_the_solver() {
         valign: "baseline".into(),
         rotate: 0.0,
         fix_rotate: false,
+        upright: true,
         baseline_mirrors: true,
         column_position: None,
         style: Vec::new(),
@@ -2459,7 +2524,11 @@ fn mirrored_baselines_use_the_same_box_side_in_the_solver() {
     assert!(&reflected[1] + &reflected[3] < int(0));
     assert_eq!(&upright[2] - &upright[0], &reflected[2] - &reflected[0]);
     text.baseline_mirrors = false;
-    assert_eq!(crate::structure::text_box(&text, &(int(0), int(0)), Orient::MX).unwrap(), upright);
+    // Released files retain their own glyph-height collision estimate; modern text
+    // uses the complete transformed font box. Compare the legacy orientations to
+    // each other so this still verifies that legacy baselines do not flip sides.
+    let legacy_upright = crate::structure::text_box(&text, &(int(0), int(0)), Orient::R0).unwrap();
+    assert_eq!(crate::structure::text_box(&text, &(int(0), int(0)), Orient::MX).unwrap(), legacy_upright);
 }
 
 #[test]
@@ -2473,6 +2542,7 @@ fn modern_fixed_text_boxes_follow_the_owner_side() {
         valign: "bottom".into(),
         rotate: 0.0,
         fix_rotate: true,
+        upright: true,
         baseline_mirrors: true,
         column_position: None,
         style: Vec::new(),
@@ -2509,6 +2579,7 @@ fn modern_fixed_quarter_turn_mirrors_the_box_in_scene_axes() {
         valign: "bottom".into(),
         rotate: 90.0,
         fix_rotate: true,
+        upright: true,
         baseline_mirrors: true,
         column_position: None,
         style: Vec::new(),

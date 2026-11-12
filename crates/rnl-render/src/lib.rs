@@ -25,6 +25,133 @@ use rnl_runtime::model::{Layer, LevelView, Style, SymbolView, TextView};
 pub use svg::svg_document;
 pub use text::{lay_out, lay_out_reflected_baseline, Face};
 
+/// Lay out 0.4 text once for drawing and solving. Coordinates are scene x-right/y-up.
+/// The local layout is transformed as a whole, including bars and markup. The separate
+/// alignment in the final glyph axes keeps the frame on its transformed side.
+#[allow(clippy::too_many_arguments)]
+pub fn modern_text(
+    anchor: Pt,
+    lines: Vec<Line>,
+    halign: &str,
+    valign: &str,
+    rotate: f64,
+    style: &Style,
+    owner: Orient,
+    fix_rotate: bool,
+    upright: bool,
+    scale: f64,
+) -> (TextPrim, [f64; 4]) {
+    let e = Eff::from(style);
+    let mut t = TextPrim {
+        anchor,
+        lines,
+        size: if e.size > 0.0 { e.size } else { 1.0 },
+        color: e.textcolor.clone().unwrap_or_else(|| e.linecolor.clone()),
+        font: e.font.clone(),
+        bold: e.bold,
+        italic: e.italic,
+        halign: halign.into(),
+        valign: valign.into(),
+        vertical: false,
+        transform: None,
+        runs: Vec::new(),
+        bars: Vec::new(),
+    };
+    let angle = rotate.rem_euclid(360.0);
+    let (sn, cs) = if angle == 0.0 {
+        (0.0, 1.0)
+    } else if angle == 90.0 {
+        (1.0, 0.0)
+    } else if angle == 180.0 {
+        (0.0, -1.0)
+    } else if angle == 270.0 {
+        (-1.0, 0.0)
+    } else {
+        let rad = angle.to_radians();
+        (libm::sin(rad), libm::cos(rad))
+    };
+    let (box_u, box_v) = (owner.apply((cs, sn)), owner.apply((-sn, cs)));
+    let (mut u, mut v) = if fix_rotate { ((cs, sn), (-sn, cs)) } else { (box_u, box_v) };
+    if upright {
+        // Remove glyph reflection while leaving the box-side transform independent.
+        if u.0 * v.1 - u.1 * v.0 < 0.0 {
+            v = (-v.0, -v.1);
+        }
+        // Determine the half-plane from the written angle and the exact owner
+        // matrix, rather than tolerances on sin/cos near 90 and 270 degrees.
+        let (a, b, c, d) = owner.matrix();
+        let base = match (a, c) {
+            (1, 0) => 0.0,
+            (0, 1) => 90.0,
+            (-1, 0) => 180.0,
+            (0, -1) => 270.0,
+            _ => unreachable!("an orientation has an orthogonal unit x axis"),
+        };
+        let rotation = rotate.rem_euclid(360.0);
+        let angle = if fix_rotate { rotation } else { (base + f64::from(a * d - b * c) * rotation).rem_euclid(360.0) };
+        if angle > 90.0 && angle <= 270.0 {
+            u = (-u.0, -u.1);
+            v = (-v.0, -v.1);
+        }
+    }
+    // Alignment names describe the side of the anchor, not a text-box centre.
+    // Transform that side through the owner and express it in the final glyph axes;
+    // then lay out from the resulting alignment. This matters for fixed rotation:
+    // an R90 owner changes middle/bottom to end/middle, regardless of text width.
+    let hx = match halign {
+        "start" => 1.0,
+        "end" => -1.0,
+        _ => 0.0,
+    };
+    let vy = match valign {
+        "top" => -1.0,
+        "bottom" | "baseline" => 1.0,
+        _ => 0.0,
+    };
+    let side = (box_u.0 * hx + box_v.0 * vy, box_u.1 * hx + box_v.1 * vy);
+    let (x, y) = (side.0 * u.0 + side.1 * u.1, side.0 * v.0 + side.1 * v.1);
+    let sign = |n: f64| {
+        if n > 1e-9 {
+            1
+        } else if n < -1e-9 {
+            -1
+        } else {
+            0
+        }
+    };
+    // For fixed rotation, 13.3 changes a baseline to top only when the
+    // owner's orientation puts that side below the original glyph basis.
+    // A later 180-degree upright correction is a separate 9.2.5 operation.
+    let owner_side_y = side.0 * -sn + side.1 * cs;
+    let keep_baseline = valign == "baseline" && !(fix_rotate && sign(owner_side_y) < 0);
+    t.halign = match sign(x) {
+        1 => "start",
+        -1 => "end",
+        _ => "middle",
+    }
+    .into();
+    t.valign = match sign(y) {
+        1 if keep_baseline => "baseline",
+        1 => "bottom",
+        -1 if keep_baseline => "baseline",
+        -1 => "top",
+        _ => "middle",
+    }
+    .into();
+    let local =
+        if keep_baseline && sign(y) < 0 { lay_out_reflected_baseline(&mut t, scale) } else { lay_out(&mut t, scale) };
+    let tx = anchor.0 - u.0 * anchor.0 - v.0 * anchor.1;
+    let ty = anchor.1 - u.1 * anchor.0 - v.1 * anchor.1;
+    let affine = [u.0, v.0, u.1, v.1, tx, ty];
+    let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+    for (x, y) in [(local[0], local[1]), (local[0], local[3]), (local[2], local[1]), (local[2], local[3])] {
+        let p = (affine[0] * x + affine[1] * y + tx, affine[2] * x + affine[3] * y + ty);
+        b = [b[0].min(p.0), b[1].min(p.1), b[2].max(p.0), b[3].max(p.1)];
+    }
+    t.transform = Some(affine);
+    (t, b)
+}
+
 /// Options of the drawing.
 #[derive(Clone, Debug)]
 pub struct RenderOptions {
@@ -142,6 +269,8 @@ pub struct TextPrim {
     pub valign: String,
     /// Reads from bottom to top.
     pub vertical: bool,
+    /// Optional scene-space affine [a,b,c,d,tx,ty] applied to the laid-out runs.
+    pub transform: Option<[f64; 6]>,
     pub runs: Vec<TextRun>,
     pub bars: Vec<TextBar>,
 }
@@ -474,6 +603,7 @@ impl Out {
             t.orient,
             t.baseline_mirrors,
             t.fix_rotate.unwrap_or(false),
+            t.upright.unwrap_or(true),
         );
     }
 
@@ -495,13 +625,23 @@ impl Out {
         code: Orient,
         baseline_mirrors: bool,
         fix_rotate: bool,
+        upright: bool,
     ) {
+        if st.get("textvisible").and_then(|v| v.boolean()) == Some(false) {
+            return;
+        }
         if lines.iter().all(|l| l.is_empty()) {
             return;
         }
         let e = Eff::from(st);
         let size = if e.size > 0.0 { e.size } else { 1.0 };
         let color = e.textcolor.clone().unwrap_or_else(|| e.linecolor.clone());
+        if baseline_mirrors {
+            let (t, bbox) =
+                modern_text(anchor, lines, halign, valign, rotate, st, code, fix_rotate, upright, self.scale);
+            self.push(owner, layer, sub(&order, 0.9), Kind::Text(t), &[(bbox[0], bbox[1]), (bbox[2], bbox[3])]);
+            return;
+        }
         let (halign, valign) = if baseline_mirrors && fix_rotate {
             fixed_text_alignment(halign, valign, rotate, code)
         } else {
@@ -542,6 +682,7 @@ impl Out {
             halign,
             valign,
             vertical,
+            transform: None,
             runs: Vec::new(),
             bars: Vec::new(),
         };
@@ -584,8 +725,9 @@ impl Out {
                     layer,
                     key,
                     code,
-                    p.text_name_formats,
+                    p.modern_text,
                     p.fix_rotate,
+                    p.upright.unwrap_or(true),
                 );
                 continue;
             }
@@ -602,7 +744,9 @@ impl Out {
         let labels_after =
             sym.prims.iter().map(|p| p.order).chain(sym.nested.iter().map(|n| n.order)).max().map_or(0, |n| n + 1);
         for (k, pin) in sym.pins.iter().enumerate() {
-            let (Some(label), Some(dir)) = (&pin.label, pin.dir) else { continue };
+            let (Some(label), Some(dir)) = (&pin.label, pin.dir) else {
+                continue;
+            };
             let inward = match dir {
                 0 => (-1.0, 0.0),
                 90 => (0.0, -1.0),
@@ -659,6 +803,7 @@ impl Out {
                 code,
                 pin.label_name_formats,
                 false,
+                true,
             );
         }
         for (k, n) in sym.nested.iter().enumerate() {
@@ -772,6 +917,248 @@ pub fn primitives(lv: &LevelView, o: &RenderOptions) -> Vec<Primitive> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn large_text_angles_use_the_same_period_for_glyphs_and_upright() {
+        for rotate in [1e20_f64, -1e20_f64, 1e100_f64, -1e100_f64] {
+            for owner in Orient::ALL {
+                for fix in [false, true] {
+                    for upright in [false, true] {
+                        let draw = |angle| {
+                            modern_text(
+                                (3.0, -2.0),
+                                markup::parse("ABC"),
+                                "start",
+                                "baseline",
+                                angle,
+                                &Style::new(),
+                                owner,
+                                fix,
+                                upright,
+                                14.0,
+                            )
+                        };
+                        let (large, bounds) = draw(rotate);
+                        let (reduced, expected) = draw(rotate.rem_euclid(360.0));
+                        assert_eq!(large.transform, reduced.transform);
+                        assert_eq!((large.halign, large.valign), (reduced.halign, reduced.valign));
+                        assert_eq!(bounds, expected);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fixed_rotation_changes_box_alignment_when_owner_turns() {
+        let (text, b) = modern_text(
+            (0.0, 0.0),
+            markup::parse("asymmetric text"),
+            "middle",
+            "bottom",
+            0.0,
+            &Style::new(),
+            Orient::R90,
+            true,
+            true,
+            14.0,
+        );
+        assert_eq!((text.halign.as_str(), text.valign.as_str()), ("end", "middle"));
+        assert!(b[0] < -1.0 && b[2].abs() < 1e-9, "{b:?}");
+        assert!((b[1] + b[3]).abs() < 1e-9, "{b:?}");
+    }
+
+    #[test]
+    fn fixed_baseline_flipped_by_owner_uses_top_alignment() {
+        let (text, b) = modern_text(
+            (0.0, 0.0),
+            markup::parse("ABC"),
+            "start",
+            "baseline",
+            0.0,
+            &Style::new(),
+            Orient::MX,
+            true,
+            true,
+            14.0,
+        );
+        assert_eq!(text.valign, "top");
+        assert!(b[1] < 0.0 && b[3].abs() < 1e-9, "{b:?}");
+        let (normal, _) = modern_text(
+            (0.0, 0.0),
+            markup::parse("ABC"),
+            "start",
+            "baseline",
+            0.0,
+            &Style::new(),
+            Orient::MX,
+            false,
+            true,
+            14.0,
+        );
+        assert_eq!(normal.valign, "baseline");
+    }
+
+    #[test]
+    fn fixed_baseline_upright_turn_does_not_change_owner_r0_box() {
+        for rotate in [0.0, 90.0, 180.0, 270.0] {
+            let (fixed, a) = modern_text(
+                (0.0, 0.0),
+                markup::parse("ABC"),
+                "start",
+                "baseline",
+                rotate,
+                &Style::new(),
+                Orient::R0,
+                true,
+                true,
+                14.0,
+            );
+            let (normal, b) = modern_text(
+                (0.0, 0.0),
+                markup::parse("ABC"),
+                "start",
+                "baseline",
+                rotate,
+                &Style::new(),
+                Orient::R0,
+                false,
+                true,
+                14.0,
+            );
+            assert_eq!(fixed.valign, normal.valign, "rotate={rotate}");
+            for (x, y) in a.into_iter().zip(b) {
+                assert!((x - y).abs() < 1e-9, "rotate={rotate}: {a:?} != {b:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn quarter_turn_glyph_matrices_are_exact() {
+        for (rotate, expected) in [
+            (0.0, [1.0, 0.0, 0.0, 1.0]),
+            (90.0, [0.0, -1.0, 1.0, 0.0]),
+            (180.0, [-1.0, 0.0, 0.0, -1.0]),
+            (270.0, [0.0, 1.0, -1.0, 0.0]),
+            (-90.0, [0.0, 1.0, -1.0, 0.0]),
+            (450.0, [0.0, -1.0, 1.0, 0.0]),
+        ] {
+            let (text, _) = modern_text(
+                (0.0, 0.0),
+                markup::parse("ABC"),
+                "start",
+                "baseline",
+                rotate,
+                &Style::new(),
+                Orient::R0,
+                false,
+                false,
+                14.0,
+            );
+            let m = text.transform.unwrap();
+            assert_eq!([m[0], m[1], m[2], m[3]], expected, "rotate={rotate}");
+        }
+    }
+
+    #[test]
+    fn exact_270_reads_as_90() {
+        let (text, _) = modern_text(
+            (0.0, 0.0),
+            markup::parse("ABC"),
+            "start",
+            "baseline",
+            270.0,
+            &Style::new(),
+            Orient::R0,
+            false,
+            true,
+            14.0,
+        );
+        let m = text.transform.unwrap();
+        assert!(m[0].abs() < 1e-14 && (m[2] - 1.0).abs() < 1e-14, "{m:?}");
+    }
+
+    #[test]
+    fn upright_boundaries_use_the_exact_angle_for_all_owner_orientations() {
+        for owner in Orient::ALL {
+            let (a, b, c, d) = owner.matrix();
+            let base = match (a, c) {
+                (1, 0) => 0.0,
+                (0, 1) => 90.0,
+                (-1, 0) => 180.0,
+                (0, -1) => 270.0,
+                _ => unreachable!(),
+            };
+            let det = f64::from(a * d - b * c);
+            for fix in [false, true] {
+                for target in [90.0 - 1e-8, 90.0, 90.0 + 1e-8, 270.0 - 1e-8, 270.0, 270.0 + 1e-8] {
+                    let rotate = if fix { target } else { det * (target - base) };
+                    let rad = rotate.to_radians();
+                    let raw = (libm::cos(rad), libm::sin(rad));
+                    let raw = if fix { raw } else { owner.apply(raw) };
+                    let (text, _) = modern_text(
+                        (0.0, 0.0),
+                        markup::parse("ABC"),
+                        "start",
+                        "baseline",
+                        rotate,
+                        &Style::new(),
+                        owner,
+                        fix,
+                        true,
+                        14.0,
+                    );
+                    let m = text.transform.unwrap();
+                    let dot = m[0] * raw.0 + m[2] * raw.1;
+                    let flip = target > 90.0 && target <= 270.0;
+                    assert!(
+                        (dot - if flip { -1.0 } else { 1.0 }).abs() < 1e-12,
+                        "owner={owner:?} fix={fix} target={target} rotate={rotate} dot={dot}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn modern_text_affine_has_required_handedness_and_contains_all_corners() {
+        let style = Style::new();
+        for angle in [0.0, 30.0, 90.0, 180.0, 270.0, -45.0] {
+            for owner in Orient::ALL {
+                for fix in [false, true] {
+                    for upright in [false, true] {
+                        let lines = markup::parse("ABC");
+                        let (t, bounds) = modern_text(
+                            (1.0, 2.0),
+                            lines,
+                            "start",
+                            "baseline",
+                            angle,
+                            &style,
+                            owner,
+                            fix,
+                            upright,
+                            14.0,
+                        );
+                        let m = t.transform.unwrap();
+                        let det = m[0] * m[3] - m[1] * m[2];
+                        assert!((det.abs() - 1.0).abs() < 1e-9);
+                        if upright || fix {
+                            assert!(det > 0.0);
+                        }
+                        if upright {
+                            let direction = libm::atan2(m[2], m[0]).to_degrees().rem_euclid(360.0);
+                            assert!(
+                                direction <= 90.0 + 1e-9 || direction > 270.0 - 1e-9,
+                                "{angle} {owner:?} {direction}"
+                            );
+                        }
+                        assert!(bounds[0] < bounds[2] && bounds[1] < bounds[3]);
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn bezier_arrows_skip_coincident_control_points() {
