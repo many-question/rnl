@@ -29,10 +29,10 @@ Vdd vdd 0 1.8
 * # @SELECT-USAGE(recursive=true) $DIFFPAIR => @SELECT-INSTANCE(recursive=true) => @SET-STYLE $signal;
 *
 *   %ax = (0, _);
-* #M1 #M2 %ax @AS $MIRRORED;
-* #M3 #M4 %ax @AS $MIRRORED;
+* #M1 #M2 %ax @AS $MIRRORED_LAYOUT;
+* #M3 #M4 %ax @AS $MIRRORED_LAYOUT;
 * %tc = #M1 #M2 #M5 @AS $TAIL_CENTER;
-*   {#M1 #M2 #CL} @AS $FLOW; {#M1 #M2 #CL} @ORDER("left-to-right", priority="low");
+*   {#M1 #M2 #CL} @AS $SIGNAL_FLOW; {#M1 #M2 #CL} @ORDER("left-to-right", priority="low");
 *   {#M1 #M3} @ALIGN("x");
 *   {#M5 #M1 #M3} @ORDER("bottom-to-top");
 *   #M5 #M1 @DISTANCE("bottom-to-top", min=4, max=8);
