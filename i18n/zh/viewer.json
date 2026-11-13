@@ -771,5 +771,13 @@
   "1 candidate tried": "已试 1 个候选",
   "{0} candidates tried": "已试 {0} 个候选",
   "1 better one found": "已找到 1 个更好的",
-  "{0} better ones found": "已找到 {0} 个更好的"
+  "{0} better ones found": "已找到 {0} 个更好的",
+  "Names on hover: {0}": "光标悬停时的名称：{0}",
+  "Roles on hover: {0}": "光标悬停时的角色：{0}",
+  "Registration points: {0}": "注册点：{0}",
+  "Flylines: {0}": "飞线：{0}",
+  "Net names: {0}": "网络名：{0}",
+  "Layout table: {0}": "布局表：{0}",
+  "Component and pin skeleton lines: {0}": "元件和引脚的骨架线：{0}",
+  "Wire skeleton lines: {0}": "导线骨架线：{0}"
 }

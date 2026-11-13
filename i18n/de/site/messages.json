@@ -30,6 +30,7 @@
   "dirty": " + nicht committete Änderungen",
   "compare": "mit {w} vergleichen",
   "compare_title": "RNL {v} im Vergleich mit {w}",
+  "english_only": "Nur Englisch",
   "compared": "Im Vergleich mit {label}:",
   "added": "hinzugefügt",
   "removed": "entfernt",
@@ -49,5 +50,7 @@
   "timeline_notes": "Versionshinweise",
   "timeline_range": "{start} bis {end}",
   "timeline_next": "Ausblick",
-  "timeline_all": "Gesamter Zeitstrahl"
+  "timeline_all": "Gesamter Zeitstrahl",
+  "archived": "archiviert",
+  "archived_banner": "Dies ist eine archivierte Version ({v}). Der aktuelle Standard ist {current}. Um Dateien von {v} zu aktualisieren, verwenden Sie <a href=\"{href}\">das Upgrade-Werkzeug</a>."
 }

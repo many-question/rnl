@@ -771,5 +771,13 @@
   "1 candidate tried": "1 Kandidat versucht",
   "{0} candidates tried": "{0} Kandidaten versucht",
   "1 better one found": "1 besserer gefunden",
-  "{0} better ones found": "{0} bessere gefunden"
+  "{0} better ones found": "{0} bessere gefunden",
+  "Names on hover: {0}": "Namen beim Zeigen: {0}",
+  "Roles on hover: {0}": "Rollen beim Zeigen: {0}",
+  "Registration points: {0}": "Registrierungspunkte: {0}",
+  "Flylines: {0}": "Luftlinien: {0}",
+  "Net names: {0}": "Netznamen: {0}",
+  "Layout table: {0}": "Layout-Tabelle: {0}",
+  "Component and pin skeleton lines: {0}": "Skelettlinien der Bauteile und Pins: {0}",
+  "Wire skeleton lines: {0}": "Skelettlinien der Leitungen: {0}"
 }

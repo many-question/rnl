@@ -30,6 +30,7 @@
   "dirty": " + cambios sin confirmar",
   "compare": "comparar con {w}",
   "compare_title": "RNL {v} comparado con {w}",
+  "english_only": "Solo en inglés",
   "compared": "Comparado con {label}:",
   "added": "añadido",
   "removed": "eliminado",
@@ -49,5 +50,7 @@
   "timeline_notes": "Notas de la versión",
   "timeline_range": "{start} a {end}",
   "timeline_next": "Próximamente",
-  "timeline_all": "Cronología completa"
+  "timeline_all": "Cronología completa",
+  "archived": "archivada",
+  "archived_banner": "Esta es una versión archivada ({v}). El estándar actual es {current}. Para actualizar archivos de {v}, usa <a href=\"{href}\">la herramienta de actualización</a>."
 }
