@@ -352,6 +352,39 @@ pub fn solve_with_clock(problem: &LevelProblem, options: &SolverOptions, clock: 
     budget::without(|| solve_isolated(problem, options, clock, driver::solve))
 }
 
+/// The level as its previous result has it, spaced again to the options' spacing: each object
+/// placed and turned as the record of the solver put it, the wires routed again, then the drawing
+/// spaced with its line identities and wire topology kept. Nothing is searched. `previous` is that
+/// record, read onto this problem (`rnl_runtime::previous::previous`); it must be of this problem as
+/// it is now (its hash's input digest is the problem's) and place something, or nothing is done.
+/// The budget is as for [`solve_with_clock`], and a work replay gives the same result from the
+/// same record.
+pub fn respace_with_clock(
+    problem: &LevelProblem,
+    previous: &rnl_runtime::previous::Previous,
+    options: &SolverOptions,
+    clock: &dyn Clock,
+) -> Result<Solved, String> {
+    if problem.version != "0.4" {
+        return Err("respacing needs an RNL 0.4 level".into());
+    }
+    if previous.same_input != Some(true) || previous.numbering == Some(false) {
+        return Err("the record of the solver is not of the netlist as it is now".into());
+    }
+    if previous.placements.is_empty() {
+        return Err("the record of the solver places nothing".into());
+    }
+    let from = driver::Respace { previous, refused: std::cell::RefCell::new(None) };
+    let mut solved =
+        budget::without(|| solve_isolated(problem, options, clock, |p, o, c| driver::respace(p, o, c, &from)));
+    if let Some(why) = from.refused.into_inner() {
+        return Err(why);
+    }
+    // the warning is of a solve, whose row and tree layouts keep their gaps; a respace spaces any of them
+    solved.report.warnings.retain(|w| w != config::SPACING_NOT_USED);
+    Ok(solved)
+}
+
 fn solve_isolated(
     problem: &LevelProblem,
     options: &SolverOptions,

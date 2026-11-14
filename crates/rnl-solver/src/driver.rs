@@ -44,6 +44,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use rnl_runtime::geom::Orient;
+use rnl_runtime::previous::Previous;
 use rnl_runtime::problem::{LevelProblem, Position};
 use rnl_runtime::solution::{Placement, Solution};
 
@@ -81,7 +82,41 @@ pub(crate) fn solve(problem: &LevelProblem, options: &SolverOptions, clock: &dyn
 }
 
 pub(crate) fn solve_skeleton(problem: &LevelProblem, options: &SolverOptions, clock: &dyn Clock, rounds: u8) -> Solved {
-    solve_exact_mode(problem, options, clock, CAPS, Some(rounds)).0
+    solve_exact_mode(problem, options, clock, CAPS, Some(rounds), None).0
+}
+
+/// What a respace starts from, and why it is refused, when it is.
+pub(crate) struct Respace<'a> {
+    pub previous: &'a Previous,
+    pub refused: std::cell::RefCell<Option<String>>,
+}
+
+impl Respace<'_> {
+    /// The first reason stands.
+    fn refuse(&self, why: String) {
+        self.refused.borrow_mut().get_or_insert(why);
+    }
+}
+
+/// The note of every respace, in the place of [`METHOD_NOTE`].
+pub(crate) const RESPACE_NOTE: &str = "the facts are resolved (8.5), each object put where the record of the solver \
+     has it and turned as it turns it, the wires routed again (13.7), and the drawing spaced; no candidate is searched";
+
+/// The level as its previous result has it, spaced again ([`crate::respace_with_clock`]). A run
+/// that its limit stops is refused, as its drawing is not the one the settings ask for.
+pub(crate) fn respace(
+    problem: &LevelProblem,
+    options: &SolverOptions,
+    clock: &dyn Clock,
+    from: &Respace<'_>,
+) -> Solved {
+    let solved = solve_exact_mode(problem, options, clock, CAPS, None, Some(from)).0;
+    if crate::budget::stopped() {
+        from.refuse(
+            "the limit of the run stopped it before the drawing was routed and spaced; give it a higher limit".into(),
+        );
+    }
+    solved
 }
 
 /// A count and its noun, singular for one: `count(1, "wire")` is "1 wire", `count(2, "wire")` "2
@@ -118,7 +153,7 @@ pub(crate) fn solve_exact_with(
     clock: &dyn Clock,
     caps: Caps,
 ) -> (Solved, Exact) {
-    solve_exact_mode(problem, options, clock, caps, None)
+    solve_exact_mode(problem, options, clock, caps, None, None)
 }
 
 fn solve_exact_mode(
@@ -127,8 +162,9 @@ fn solve_exact_mode(
     clock: &dyn Clock,
     caps: Caps,
     skeleton: Option<u8>,
+    previous: Option<&Respace<'_>>,
 ) -> (Solved, Exact) {
-    let mut notes = vec![METHOD_NOTE.to_string()];
+    let mut notes = vec![if previous.is_some() { RESPACE_NOTE } else { METHOD_NOTE }.to_string()];
     if let Err(e) = options.validate() {
         notes.push(format!("the options are not valid: {e}"));
     }
@@ -153,7 +189,9 @@ fn solve_exact_mode(
         if problem.version == "0.4" { crate::search_choices::for_layout(&structure, &mut work) } else { structure };
     notes.extend(structure.notes.iter().cloned());
     drop(phase);
-    let (candidate, placed, routing, mut entry) = if use_tree {
+    let (candidate, placed, routing, mut entry) = if let Some(previous) = previous {
+        respaced(problem, &structure, previous, options, &mut work, &mut notes)
+    } else if use_tree {
         let laid = if use_lines {
             crate::budget::enter("lines");
             let (laid, description) = crate::lines::lay_out(problem, &structure, options, &mut work);
@@ -602,6 +640,119 @@ fn solve_exact_mode(
 /// nothing else places (11.1).
 pub(crate) fn left_free(s: &Structure, k: usize) -> bool {
     s.objects.get(k).is_some_and(|o| o.left_free)
+}
+
+/// The layout of a previous result, from its record: each object where the record puts it and
+/// turned as it turns it, the others where the resolution's witness has them; routed again, then
+/// spaced to the options' spacing with its line identities and wire topology kept
+/// (`crate::skeleton::space`). Nothing is searched: the candidate is the record's orientations.
+/// A record that does not keep a fact the resolution kept is refused: it is not this solver's
+/// drawing of the level, such as after an edit to the record itself.
+fn respaced(
+    problem: &LevelProblem,
+    s: &Structure,
+    from: &Respace<'_>,
+    options: &SolverOptions,
+    work: &mut crate::Work,
+    notes: &mut Vec<String>,
+) -> (Candidate, Placed, Routing, Entry) {
+    crate::budget::enter("respace");
+    let mut geometry = s.witness.clone();
+    for p in &from.previous.placements {
+        for (axis, value) in [p.x, p.y].into_iter().enumerate() {
+            if let Some(q) = value.and_then(crate::rational::from_f64) {
+                geometry.origin[p.object][axis] = q;
+            }
+        }
+        if let Some(orient) = p.orient {
+            geometry.orient[p.object] = orient;
+        }
+    }
+    let placed = Placed {
+        origins: s.origins(problem, &geometry),
+        geometry,
+        dropped: Vec::new(),
+        overlaps: Vec::new(),
+        optimised: true,
+        undecided: false,
+    };
+    let broken = s
+        .kept
+        .iter()
+        .filter(|&&f| {
+            let g = &placed.geometry;
+            let tol = if s.model.exact.contains(&f) { Q::default() } else { s.model.tol.clone() };
+            let at = |point: &rnl_runtime::problem::PointRef, axis| {
+                crate::resolve::point_value(problem, g, point, crate::model::ax(axis), 0)
+            };
+            let ori = |k: usize| g.orient.get(k).copied();
+            crate::holds::check_problem(problem, f, &at, &ori, &tol, &Q::default()) != Some(true)
+        })
+        .count();
+    if broken > 0 {
+        from.refuse(format!(
+            "the record of the solver does not keep {} of the level, as after an edit to the record; solve the level \
+             again",
+            count(broken, "fact")
+        ));
+    }
+    let routing = route(problem, s, &placed.geometry, &placed.origins, options, work);
+    let spacing = options.settings.spacing.map(i64::from);
+    let spaced = crate::skeleton::space::space(problem, s, &placed, &routing, spacing, options, work);
+    notes.extend(spaced.notes);
+    let moved = (0..placed.geometry.origin.len())
+        .filter(|&k| placed.geometry.origin[k] != spaced.placed.geometry.origin[k])
+        .count();
+    notes.push(format!(
+        "respaced from the previous result: {} moved for spacing_x={}, spacing_y={}; nothing searched",
+        count(moved, "object"),
+        spacing[0],
+        spacing[1]
+    ));
+    let (placed, routing) = (spaced.placed, spaced.routing);
+    let entry = match drawn(problem, s, &placed.geometry, &routing) {
+        Ok(wires) => Entry {
+            annotation_error: crate::annotation::bounds(problem, &placed.geometry).err(),
+            written_path_error: None,
+            overlaps: placed.overlaps.len(),
+            crowding: crowding(s, &placed.origins, &placed.geometry.orient, &placed.dropped),
+            misleading: misleading(problem, s, &placed.origins, &placed.geometry, &wires),
+            joins_left: routing.joins_left(),
+            layers: measured_layers(problem, s, &placed, Some(&wires)),
+            code: Vec::new(),
+        },
+        Err(wire) => Entry {
+            annotation_error: None,
+            written_path_error: Some(wire),
+            overlaps: 0,
+            crowding: 0,
+            misleading: 0,
+            joins_left: 0,
+            layers: Vec::new(),
+            code: Vec::new(),
+        },
+    };
+    crate::budget::best(cost(&entry));
+    // the orientation of each free class, read off its root as the record turns it
+    let values = s
+        .open
+        .classes
+        .iter()
+        .map(|class| {
+            let label = class.members.iter().find(|(m, _)| *m == class.root).map_or(Orient::R0, |(_, l)| *l);
+            Orient::ALL.into_iter().find(|v| v.then(label) == placed.geometry.orient[class.root]).unwrap_or(Orient::R0)
+        })
+        .collect();
+    let candidate = Candidate {
+        values,
+        ways: vec![0; s.open.ways.len()],
+        rows: Vec::new(),
+        apart: Vec::new(),
+        even: false,
+        columns: false,
+        origin: "previous",
+    };
+    (candidate, placed, routing, entry)
 }
 
 /// What the progress observer is shown of a candidate's rank: the counts the order compares
