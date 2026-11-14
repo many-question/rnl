@@ -779,17 +779,20 @@ impl Reader<'_> {
     }
 }
 
-/// A terminal name `terminals` can write back: 0.4 reads an all-digit name as a number, and a
-/// line break would end the comment that carries the record.
-/// `$NAME`: a definition or a symbol of a package, an identifier after the `$`.
+/// `$NAME` as it is written: an identifier after the `$`, or any other name in quotes, a quote in
+/// it doubled, which is the name itself and never an alias (16.5): `$"大点"`.
 fn dollar_name(s: &str) -> bool {
-    s.strip_prefix('$').is_some_and(|rest| {
-        !rest.is_empty()
-            && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-            && !rest.starts_with(|c: char| c.is_ascii_digit())
-    })
+    let Some(rest) = s.strip_prefix('$') else { return false };
+    if let Some(quoted) = rest.strip_prefix('"').and_then(|r| r.strip_suffix('"')) {
+        return !quoted.is_empty() && !quoted.contains(['\n', '\r']) && !quoted.replace("\"\"", "").contains('"');
+    }
+    !rest.is_empty()
+        && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && !rest.starts_with(|c: char| c.is_ascii_digit())
 }
 
+/// A terminal name `terminals` can write back: 0.4 reads an all-digit name as a number, and a
+/// line break would end the comment that carries the record.
 fn plain_name(s: &str) -> bool {
     !s.is_empty() && !s.contains(['\n', '\r']) && !s.chars().all(|c| c.is_ascii_digit())
 }
