@@ -1376,6 +1376,49 @@ C1 a b 1n
 }
 
 #[test]
+fn a_rule_sets_the_symbol_of_the_usages_of_a_definition_and_reads_back() {
+    let net = "* dots
+R1 a b 1k
+C1 a b 1n
+.end
+";
+    let ops = json!([
+        {"level": "file", "op": "use-package", "name": "rnl-std-all", "version": "0.4"},
+        {"level": "file", "op": "define-symbol", "name": "$BIG_DOT", "box": [-1, -1, 1, 1], "pins": [],
+         "prims": [{"shape": "circle", "points": [[0, 0]], "params": {"radius": 0.8, "fill": "linecolor"}}]},
+        {"level": "file", "op": "add-rule",
+         "select": {"kind": "usage", "definition": "$JUNCTION", "params": {"recursive": true}},
+         "action": {"op": "set", "symbol": "$BIG_DOT"}},
+    ]);
+    let mut req = request("spice", net, ops);
+    req.language_version = Some("0.4".into());
+    let out = write(&req).unwrap();
+    assert!(out.contains("# @SELECT-USAGE(recursive=true) $JUNCTION => @SET-SYMBOL $BIG_DOT"), "{out}");
+    let files = MemoryProvider::new().with(entry("spice"), &out);
+    let r = rnl_view::interpret(entry("spice"), Some("spice"), &files, &Options::default()).unwrap();
+    assert!(!r.diagnostics().iter().any(|d| d.severity == Severity::Error), "{out}");
+}
+
+#[test]
+fn a_rule_that_sets_a_symbol_or_names_a_definition_is_checked() {
+    let mut req = request("spice", RC, json!([]));
+    req.language_version = Some("0.4".into());
+    let refused = |req: &mut WriteRequest, select: Value, action: Value| {
+        req.ops = vec![json!({"level": "subckt:rc_lowpass", "op": "add-rule", "select": select, "action": action})];
+        write(req).unwrap_err()
+    };
+    let set = json!({"op": "set", "symbol": "$X"});
+    assert!(refused(&mut req, json!({"kind": "instance", "definition": "$JUNCTION"}), set.clone())
+        .contains("only for the kind usage"));
+    assert!(refused(&mut req, json!({"kind": "usage", "definition": "JUNCTION"}), set.clone()).contains("`$NAME`"));
+    assert!(refused(&mut req, json!({"kind": "usage", "definition": "$"}), set.clone()).contains("`$NAME`"));
+    assert!(refused(&mut req, json!({"kind": "usage"}), json!({"op": "set", "symbol": "X"})).contains("`$NAME`"));
+    assert!(refused(&mut req, json!({"kind": "usage"}), json!({"op": "set"})).contains("`$NAME`"));
+    assert!(refused(&mut req, json!({"kind": "usage"}), json!({"op": "set", "symbol": "$X", "object": "#R1"}))
+        .contains("takes only a `symbol`"));
+}
+
+#[test]
 fn the_same_rule_of_a_level_is_written_once_where_it_first_comes() {
     let ops = json!([
         rule("subckt:rc_lowpass", "instance", json!({"name": "R*"}), "name"),
