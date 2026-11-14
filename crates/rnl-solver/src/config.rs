@@ -1,5 +1,9 @@
-//! Solver-owned values of SOLVER-CONFIG. The runtime has already applied package, header
-//! and level precedence; explicitly supplied tool values come last.
+//! Solver-owned values of SOLVER-CONFIG. The runtime gives every value of each key, in the order
+//! of 14.10 (packages, the file's header, the level), having left out the values it does not take
+//! of the keys the standard names; the solver judges the values of its own keys in that order,
+//! and a value it does not take fails its key alone, the value before it staying in effect. So of
+//! each key the last value the solver accepts is in effect. Explicitly supplied tool values come
+//! last and replace the file's values of their keys.
 
 use rnl_runtime::interp::obj::Lit;
 use rnl_runtime::problem::{LevelProblem, SolverSetting};
@@ -119,12 +123,81 @@ fn apply(o: &mut SolverOptions, s: &SolverSetting) -> Result<(), String> {
 pub struct SettingProblem {
     pub key: Option<String>,
     pub message: String,
+    /// The value of the file that is refused, by its index in the level's settings
+    /// ([`LevelProblem::solver_config`]).
+    pub refused: Option<usize>,
 }
 
 impl SettingProblem {
-    fn new(key: Option<&str>, message: impl Into<String>) -> SettingProblem {
-        SettingProblem { key: key.map(str::to_string), message: message.into() }
+    pub fn new(key: Option<&str>, message: impl Into<String>) -> SettingProblem {
+        SettingProblem { key: key.map(str::to_string), message: message.into(), refused: None }
     }
+}
+
+/// A value of the file as a warning names it: `key=value`, and where it is written.
+fn written(s: &SolverSetting) -> String {
+    let at = s.source.as_ref().map(|l| format!(" at {}:{}", l.file, l.line)).unwrap_or_default();
+    format!("{}={}{at}", s.key, s.value.show())
+}
+
+/// The file's settings applied key by key ([`file_settings`]).
+struct FileSettings {
+    /// Each value in effect, by its index in the level's settings.
+    taken: Vec<usize>,
+    /// Each value not taken, by its index, with the problem, in the order of the settings: an
+    /// error for its key (14.10).
+    refused: Vec<SettingProblem>,
+    /// The tool-only run settings the file gives, each key once, which are ignored.
+    run: Vec<String>,
+    /// The keys the file gives that the solver does not know, each once, which are ignored.
+    unknown: Vec<String>,
+}
+
+/// The file's settings applied to `o` in their order (14.10), of each key that `tool` does not
+/// give: a value the solver accepts replaces the one before it, and a value it does not take
+/// fails its key alone, saying so, and the value before it stays in effect, or the default. So of
+/// each key the last value the solver accepts is in effect. A value of a key that `tool` gives is
+/// judged too, so that the file's errors do not depend on the tool, and the tool's value is in
+/// effect.
+fn file_settings(o: &mut SolverOptions, settings: &[SolverSetting], tool: &[SolverSetting]) -> FileSettings {
+    let mut out = FileSettings { taken: Vec::new(), refused: Vec::new(), run: Vec::new(), unknown: Vec::new() };
+    let mut taken: BTreeMap<&str, usize> = BTreeMap::new();
+    for (k, s) in settings.iter().enumerate() {
+        if is_run_setting(&s.key) {
+            if !out.run.contains(&s.key) {
+                out.run.push(s.key.clone());
+            }
+            continue;
+        }
+        if !known(&s.key) {
+            if !out.unknown.contains(&s.key) {
+                out.unknown.push(s.key.clone());
+            }
+            continue;
+        }
+        let by_tool = tool.iter().rev().find(|t| t.key == s.key);
+        let mut next = o.clone();
+        match apply(&mut next, s) {
+            Ok(()) if by_tool.is_some() => {}
+            Ok(()) => {
+                *o = next;
+                taken.insert(&s.key, k);
+            }
+            Err(e) => {
+                let before = match by_tool {
+                    Some(t) => format!("the tool's {}", written(t)),
+                    None => taken.get(s.key.as_str()).map_or("the default".to_string(), |&j| written(&settings[j])),
+                };
+                out.refused.push(SettingProblem {
+                    key: Some(s.key.clone()),
+                    message: format!("{e}; {} is left out, and {before} stays in effect", written(s)),
+                    refused: Some(k),
+                });
+            }
+        }
+    }
+    out.taken = taken.into_values().collect();
+    out
 }
 
 /// Where an effective setting comes from (14.10).
@@ -132,8 +205,8 @@ impl SettingProblem {
 pub enum SettingFrom {
     /// The solver's default ([`SolverOptions::defaults_config`]).
     Default,
-    /// The level's own settings, [`LevelProblem::solver_config`], by index: from a package, the
-    /// file's header or the level, as the runtime merged them.
+    /// The level's own settings, [`LevelProblem::solver_config`], by the index of the value in
+    /// effect: from a package, the file's header or the level.
     File(usize),
     /// The tool: a command line, or a viewer.
     Tool,
@@ -145,9 +218,11 @@ pub enum SettingFrom {
 pub struct SettingsCheck {
     /// Each setting in effect, by key: its value, and where it comes from.
     pub values: BTreeMap<String, (Lit, SettingFrom)>,
-    /// What a solve ignores, saying so: a bad value or a run setting in the file, an unknown key.
+    /// What a solve ignores, saying so: a run setting in the file, an unknown key.
     pub warnings: Vec<SettingProblem>,
-    /// What a solve refuses: the tool's bad values. A solve with them does not start.
+    /// The values not taken, each an error for its key (14.10): of the file, which a solve leaves
+    /// out, the value before staying in effect, and then of the tool, with which a solve does not
+    /// start.
     pub errors: Vec<SettingProblem>,
 }
 
@@ -300,12 +375,13 @@ impl SolverOptions {
     }
 
     /// What a solve of `problem` would take, key by key, with where each setting comes from, and
-    /// what is wrong (14.10): the solver's defaults, then the level's settings as the runtime merged
-    /// them (packages, the file's header, the level), then the tool's, `tool`, merged by key, each
-    /// with whether it comes from an old `--solver-options` text. Without a problem, the tool's
-    /// over the defaults. As in a solve, a bad value of the file is a warning and is ignored, and a
-    /// bad value of the tool is an error; a level before 0.4 reads no SOLVER-CONFIG, and of the
-    /// tool only the old `--solver-options`.
+    /// what is wrong (14.10): the solver's defaults, then the level's settings (packages, the
+    /// file's header, the level), of each key the last value the solver accepts, then the tool's,
+    /// `tool`, merged by key, each with whether it comes from an old `--solver-options` text.
+    /// Without a problem, the tool's over the defaults. As in a solve, a value of the file that the
+    /// solver does not take is an error for its key, which names the value that stays in effect
+    /// instead, and a bad value of the tool is an error too; a level before 0.4 reads no SOLVER-CONFIG, and of the tool only the
+    /// old `--solver-options`.
     pub fn check_settings(tool: &[(SolverSetting, bool)], problem: Option<&LevelProblem>) -> SettingsCheck {
         let defaults = rnl_runtime::solver_settings::parse_overrides(&Self::defaults_config()).unwrap_or_default();
         let mut values: BTreeMap<_, _> =
@@ -328,25 +404,21 @@ impl SolverOptions {
             }
         }
         let mut o = Self::default();
+        let mut refused = Vec::new();
         if let Some(p) = problem.filter(|_| modern) {
-            for (k, s) in p.solver_config.iter().enumerate() {
-                if is_run_setting(&s.key) {
-                    let message = format!("{} is a tool-only run setting and is ignored in the file", s.key);
-                    warnings.push(SettingProblem::new(Some(&s.key), message));
-                    continue;
-                }
-                if read.iter().any(|t| t.key == s.key) {
-                    continue;
-                }
-                let mut next = o.clone();
-                match apply(&mut next, s) {
-                    Ok(()) => {
-                        o = next;
-                        values.insert(s.key.clone(), (s.value.clone(), SettingFrom::File(k)));
-                    }
-                    Err(e) => warnings.push(SettingProblem::new(Some(&s.key), format!("{e}; ignored"))),
-                }
+            let file = file_settings(&mut o, &p.solver_config, &read);
+            for key in file.run {
+                let message = format!("{key} is a tool-only run setting and is ignored in the file");
+                warnings.push(SettingProblem::new(Some(&key), message));
             }
+            for key in file.unknown {
+                warnings.push(SettingProblem::new(Some(&key), format!("unknown solver setting {key}; ignored")));
+            }
+            for k in file.taken {
+                let s = &p.solver_config[k];
+                values.insert(s.key.clone(), (s.value.clone(), SettingFrom::File(k)));
+            }
+            refused = file.refused;
         }
         let errors = tool_problems(&mut o, &read);
         for s in &read {
@@ -384,36 +456,35 @@ impl SolverOptions {
             let rows = Lit::Str(rnl_runtime::interp::obj::WStr::new("rows", None));
             values.insert("layout".into(), (rows, SettingFrom::Default));
         }
-        SettingsCheck { values, warnings, errors }
+        // a value of the file that is not taken is an error for its key, as one of the tool's is
+        refused.extend(errors);
+        SettingsCheck { values, warnings, errors: refused }
     }
 
-    /// Materialize effective settings. Bad file values warn and keep the previous/default value.
-    pub fn for_problem(&self, p: &LevelProblem) -> (Self, Vec<String>) {
+    /// Materialize effective settings, with the warnings and the errors. Of each key of the file,
+    /// the last value the solver accepts; a value it does not take is an error for that key, and
+    /// the value before it, or the default, stays in effect (14.10). An unknown key and a run
+    /// setting in the file are warnings.
+    pub fn for_problem(&self, p: &LevelProblem) -> (Self, Vec<String>, Vec<String>) {
         let mut out = self.clone();
         let mut warnings = Vec::new();
         if p.version != "0.4" {
             // the layouts are those of 0.4: an earlier level is laid out in rows, as it always was,
             // and the options its hash covers name no layout, as they never did
             out.settings.layout = Layout::default();
-            return (out, warnings);
+            return (out, warnings, Vec::new());
         }
         if self.settings.legacy_alias {
             warnings.push("--solver-options is deprecated; use --solver-config with RNL named parameters".into());
         }
-        for s in &p.solver_config {
-            if is_run_setting(&s.key) {
-                warnings.push(format!("{} is a tool-only run setting and is ignored in the file", s.key));
-                continue;
-            }
-            if self.settings.overrides.iter().any(|o| o.key == s.key) {
-                continue;
-            }
-            let mut next = out.clone();
-            match apply(&mut next, s) {
-                Ok(()) => out = next,
-                Err(e) => warnings.push(format!("{e}; ignored")),
-            }
+        let file = file_settings(&mut out, &p.solver_config, &self.settings.overrides);
+        for key in file.run {
+            warnings.push(format!("{key} is a tool-only run setting and is ignored in the file"));
         }
+        for key in file.unknown {
+            warnings.push(format!("unknown solver setting {key}; ignored"));
+        }
+        let errors: Vec<String> = file.refused.into_iter().map(|p| p.message).collect();
         if let Err(e) = apply_tool(&mut out, &self.settings.overrides) {
             warnings.push(format!("invalid tool settings: {e}"));
         }
@@ -431,7 +502,7 @@ impl SolverOptions {
             warnings.push(SPACING_NOT_USED.into());
         }
         out.settings.overrides.clear();
-        (out, warnings)
+        (out, warnings, errors)
     }
 }
 
@@ -464,6 +535,49 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_value_of_the_file_leaves_the_earlier_one_in_effect() {
+        let settings = |text: &str| rnl_runtime::solver_settings::parse_overrides(text).unwrap();
+        let mut p = problem_of(Vec::new(), Vec::new());
+        p.version = "0.4".into();
+        // as the runtime gives them: by key, the values of a key in the order of 14.10
+        p.solver_config = [settings("beam=6"), settings("grid=2"), settings("grid=\"x\"")].concat();
+        // a value not taken is an error for its key alone, and the solve goes on with the one before
+        let (o, warnings, errors) = SolverOptions::default().for_problem(&p);
+        assert_eq!((o.grid, o.beam), (Some(2.0), 6));
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(errors, ["grid must be a finite number; grid=\"x\" is left out, and grid=2 stays in effect"]);
+        let check = SolverOptions::check_settings(&[], Some(&p));
+        assert_eq!(check.values["grid"], (Lit::Num(2.0), SettingFrom::File(1)));
+        assert_eq!(check.values["beam"], (Lit::Num(6.0), SettingFrom::File(0)));
+        assert!(check.warnings.is_empty(), "{:?}", check.warnings);
+        assert_eq!(check.errors.len(), 1);
+        assert_eq!((check.errors[0].key.as_deref(), check.errors[0].refused), (Some("grid"), Some(2)));
+        // a bad value before a good one fails its place too, and the later one is in effect
+        p.solver_config = [settings("grid=\"x\""), settings("grid=3")].concat();
+        let (o, _, errors) = SolverOptions::default().for_problem(&p);
+        assert_eq!(o.grid, Some(3.0));
+        assert_eq!(errors, ["grid must be a finite number; grid=\"x\" is left out, and the default stays in effect"]);
+        // each value not taken is an error, in order, and with none taken the default stays
+        p.solver_config = [settings("grid=0"), settings("grid=\"x\"")].concat();
+        let (o, _, errors) = SolverOptions::default().for_problem(&p);
+        assert_eq!(o.grid, SolverOptions::default().grid);
+        assert_eq!(errors.len(), 2);
+        assert!(errors[0].contains("grid=0 is left out, and the default stays"), "{errors:?}");
+        assert!(errors[1].contains("grid=\"x\" is left out, and the default stays"), "{errors:?}");
+        // the tool's value replaces every value of the file's, which are judged all the same: the
+        // file's errors do not depend on the tool
+        let (o, warnings, errors) = SolverOptions::default().with_config("grid=5").unwrap().for_problem(&p);
+        assert_eq!(o.grid, Some(5.0));
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(errors.len(), 2, "{errors:?}");
+        assert!(errors[1].ends_with("grid=\"x\" is left out, and the tool's grid=5 stays in effect"), "{errors:?}");
+        // a key the solver does not know is a warning, not an error
+        p.solver_config = settings("unknown=1");
+        let (_, warnings, errors) = SolverOptions::default().for_problem(&p);
+        assert_eq!((warnings, errors.len()), (vec!["unknown solver setting unknown; ignored".to_string()], 0));
+    }
+
+    #[test]
     fn validate_gives_the_first_of_the_problems() {
         let o = SolverOptions { beam: 0, tolerance: -1.0, ..Default::default() };
         let keys: Vec<_> = o.problems().into_iter().map(|(key, _)| key).collect();
@@ -480,18 +594,20 @@ mod tests {
         )
         .unwrap();
         let o = SolverOptions::default().with_config("spacing_y=6,seconds=2").unwrap();
-        let (effective, warnings) = o.for_problem(&p);
+        let (effective, warnings, errors) = o.for_problem(&p);
         assert_eq!(effective.settings.spacing, [3, 6]);
         assert_eq!(effective.beam, 4);
         assert_eq!(effective.run_limit, Some(RunLimit::Time(2.0)));
-        // the lines layout, the default, spaces by the spacing: no warning of it
-        assert_eq!(warnings.len(), 4, "{warnings:?}");
+        // the lines layout, the default, spaces by the spacing: no warning of it; beam=0 of the
+        // file is an error for its key (14.10)
+        assert_eq!(warnings.len(), 3, "{warnings:?}");
+        assert_eq!(errors.len(), 1, "{errors:?}");
         assert!(warnings.iter().filter(|w| w.contains("tool-only")).count() == 2);
         assert_eq!(SolverOptions::parse(&effective.canonical()).unwrap(), effective);
         // the rows and the group tree keep their gaps, and say so
         for layout in ["rows", "tree"] {
-            let (_, warnings) = o.with_config(&format!("layout=\"{layout}\"")).unwrap().for_problem(&p);
-            assert_eq!(warnings.len(), 5, "{layout} {warnings:?}");
+            let (_, warnings, _) = o.with_config(&format!("layout=\"{layout}\"")).unwrap().for_problem(&p);
+            assert_eq!(warnings.len(), 4, "{layout} {warnings:?}");
             assert!(warnings.contains(&SPACING_NOT_USED.to_string()), "{layout} {warnings:?}");
         }
     }
@@ -531,11 +647,11 @@ mod tests {
             .unwrap()
             .with_config("spacing_y=4")
             .unwrap();
-        let (effective, _) = options.for_problem(&p);
+        let (effective, _, _) = options.for_problem(&p);
         assert_eq!(effective.beam, 8);
         assert_eq!(effective.settings.spacing, [3, 4]);
         assert_eq!(effective.run_limit, Some(RunLimit::Time(2.0)));
-        let (last, _) = options.with_config("beam=6").unwrap().with_legacy_config("beam=7").unwrap().for_problem(&p);
+        let (last, _, _) = options.with_config("beam=6").unwrap().with_legacy_config("beam=7").unwrap().for_problem(&p);
         assert_eq!(last.beam, 7);
     }
 

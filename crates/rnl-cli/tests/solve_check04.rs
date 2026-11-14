@@ -45,7 +45,8 @@ fn keyed(problems: &[rnl_cli::solve::CheckedProblem]) -> Vec<String> {
 #[test]
 fn each_setting_says_where_it_comes_from_in_the_order_of_14_10() {
     let c = check(MAIN, &[ToolSettings::Config("spacing_y=4".into())]);
-    assert!(c.ok, "{c:?}");
+    // the only errors are the values of the file that the solver does not take
+    assert!(c.levels.iter().all(|l| l.errors.iter().all(|e| e.refused.is_some())), "{c:?}");
     let top = level(&c, "main.sp");
     assert_eq!(setting(top, "astar_expansions"), "astar_expansions=200000 (default)");
     assert_eq!(setting(top, "grid"), "grid=2 (package:fixture)");
@@ -65,21 +66,36 @@ fn each_setting_says_where_it_comes_from_in_the_order_of_14_10() {
 }
 
 #[test]
-fn a_bad_value_of_the_file_is_a_warning_and_is_not_in_effect() {
+fn a_bad_value_of_the_file_is_an_error_for_its_key_and_the_value_before_it_stays() {
     let c = check(MAIN, &[]);
     let amp = level(&c, "amp");
+    let errors = keyed(&amp.errors);
+    let grid =
+        "grid: grid must be a finite number; grid=\"x\" at main.sp:5 is left out, and grid=2 at fixture.rnl:1 stays in effect";
+    assert!(errors.contains(&grid.to_string()), "{errors:?}");
     let warnings = keyed(&amp.warnings);
-    assert!(warnings.contains(&"grid: grid must be a finite number; ignored".to_string()), "{warnings:?}");
     assert!(warnings.contains(&"seconds: seconds is a tool-only run setting and is ignored in the file".to_string()));
-    assert!(warnings.iter().any(|w| w.starts_with("tolerance: the tolerance must be a number not below 0")));
-    // the level's grid took the place of the package's when the runtime merged them by key, so a
-    // solve, which ignores it, takes the default, and so does the check
-    assert_eq!(setting(amp, "grid"), "grid=1 (default)");
+    let tolerance = "tolerance: the tolerance must be a number not below 0, not -1; tolerance=-1 at main.sp:2 is left out, and the default stays in effect";
+    assert!(errors.contains(&tolerance.to_string()), "{errors:?}");
+    // the level's grid is not taken, so the package's stays in effect: a refused value does not discard
+    // the values before it
+    assert_eq!(setting(amp, "grid"), "grid=2 (package:fixture)");
     assert_eq!(setting(level(&c, "main.sp"), "grid"), "grid=2 (package:fixture)");
     assert_eq!(setting(amp, "seconds"), "seconds=10 (default)");
-    // a warning of the level stays with its level
-    assert!(!keyed(&level(&c, "main.sp").warnings).iter().any(|w| w.starts_with("grid")));
-    assert!(amp.errors.is_empty() && c.ok);
+    // the refused value, with where it comes from
+    let refused = amp.errors.iter().find(|w| w.key.as_deref() == Some("grid")).unwrap().refused.clone().unwrap();
+    assert_eq!(refused.value, "x");
+    assert_eq!((refused.from.as_str(), refused.at.as_deref()), ("level", Some("main.sp:5")));
+    // the other settings of the same SOLVER-CONFIG apply
+    assert_eq!(setting(amp, "beam"), "beam=6 (level)");
+    assert_eq!(setting(amp, "layout"), "layout=\"tree\" (level)");
+    // and so it reads in the text
+    let lines = rnl_cli::solve::check_lines(&c);
+    assert!(lines.contains(&"  grid=2 (package:fixture, fixture.rnl:1)".to_string()), "{lines:?}");
+    assert!(lines.contains(&format!("  error: {grid}")), "{lines:?}");
+    // an error of the level stays with its level
+    assert!(!keyed(&level(&c, "main.sp").errors).iter().any(|w| w.starts_with("grid")));
+    assert!(!c.ok);
 }
 
 #[test]
@@ -114,7 +130,7 @@ fn every_bad_value_of_the_command_line_is_an_error_not_only_the_first() {
     assert_eq!(setting(l, "beam"), "beam=4 (default)");
     // with a file, the command line's errors are every level's
     let c = check(MAIN, &tool);
-    assert!(c.levels.iter().all(|l| l.errors.len() == 4), "{c:?}");
+    assert!(c.levels.iter().all(|l| l.errors.iter().filter(|e| e.refused.is_none()).count() == 4), "{c:?}");
 }
 
 #[test]
@@ -154,9 +170,10 @@ fn a_solver_config_that_the_reading_fails_is_an_error_of_its_level() {
     let c = check(&main, &[]);
     assert!(!c.ok);
     let amp = level(&c, "amp");
-    assert_eq!(amp.errors.len(), 1, "{amp:?}");
-    assert!(amp.errors[0].message.contains("SOLVER-CONFIG value"), "{amp:?}");
-    assert!(level(&c, "main.sp").errors.is_empty());
+    let read: Vec<_> = amp.errors.iter().filter(|e| e.refused.is_none()).collect();
+    assert_eq!(read.len(), 1, "{amp:?}");
+    assert!(read[0].message.contains("SOLVER-CONFIG value"), "{amp:?}");
+    assert!(level(&c, "main.sp").errors.iter().all(|e| e.refused.is_some()));
 }
 
 #[test]
